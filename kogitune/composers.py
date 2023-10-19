@@ -151,7 +151,7 @@ class ChunkedDataset(Dataset):
             for chunk in chunks:
                 splits = np.array_split(chunk, self.n_subblocks)
                 newchunks.extend(splits)
-            assert len(newchunks) == len(chunks) * self.n_subbloks
+            # assert len(newchunks) == len(chunks) * self.n_subbloks
             return newchunks
         return chunks
 
