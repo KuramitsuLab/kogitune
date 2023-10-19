@@ -58,18 +58,18 @@ def get_filebase(filename):
 def zopen(filepath):
     if filepath.endswith('.gz'):
         return gzip.open(filepath, 'rt')
-    elif filepath.endswith('.zstd'):
+    elif filepath.endswith('.zst'):
         return pyzstd.open(filepath, 'rt')
     else:
         return open(filepath, 'r')
 
 def get_filelines(filepath):
     with zopen(filepath) as f:
+        c=0
         line = f.readline()
-        c=1
         while line:
-            line = f.readline()
             c+=1
+            line = f.readline()
     return c
 
 def parse_strip(s):
@@ -78,12 +78,12 @@ def parse_strip(s):
 def parse_jsonl(line):
     d = json.loads(line)
     if 'out' in d:
-        return f"{d['in']}<outpuT>{d['out']}"
+        return d['in'], d['out']
     return d['text']
 
 def file_iterator(filename, N=None, kwargs={}):
     if N == -1:
-        N = get_filelines(filename)-1
+        N = get_filelines(filename)
     if N:
         from tqdm import tqdm
         pbar = tqdm(total=N, desc=filename)
@@ -102,7 +102,6 @@ def file_iterator(filename, N=None, kwargs={}):
             line = f.readline()
     if N:
         pbar.close()
-
 
 
 def _remove_heading_nL(s):
@@ -182,7 +181,12 @@ def resolve_file(url_base, file_path, cache_dir, sync=True):
                 return cache_file
         touch(cache_file)
         subprocess.call(cmd, shell=True)
-        verbose_print(f'Downloaded {get_filesize(cache_file):,} bytes:', cmd)
+        cache_file_size = get_filesize(cache_file)
+        if cache_file_size == 0:
+            verbose_print(f'ダウンロード失敗 file={cache_file} {cache_file_size} bytes', cmd)
+            os.remove(cache_file)
+        else:
+            verbose_print(f'Downloaded {get_filesize(cache_file):,} bytes:', cmd)
         return cache_file
 
     if get_filesize(cache_file) == -1:
@@ -209,13 +213,16 @@ def save_chunk_file(base_dir:str, chunk_file:str, chunks:List[np.ndarray]):
     #         'sha1': get_file_sha1(filepath)}
 
 def load_chunk_file(base_dir:str, chunk_file:str=None):
-    filepath = safe_join_path(base_dir, chunk_file)
+    if base_dir=='':
+        filepath = chunk_file
+    else:
+        filepath = safe_join_path(base_dir, chunk_file)
     try:
         #if filepath.endswith('.npz'):
         npz = np.load(filepath)
         return [npz[n] for n in npz.files]
     except BaseException as e:
-        verbose_print(f'broken chunk file {chunk_file}: {e}')
+        verbose_print(f'チャンクファイルの破損 {filepath}: 原因 {e}')
         return None
 
 def check_chunk_file(base_dir:str, chunk_file:str, checks: dict):
@@ -241,12 +248,16 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
         d[chunk_file] = checks
     return d
 
-def shuffle_chunk_files(base_dir:str, chunk_file:str, chunk_file2:str):
-    assert chunk_file != chunk_file2
-    chunks = load_chunk_file(base_dir, chunk_file)
-    chunks2 = load_chunk_file(base_dir, chunk_file2)
-    length = len(chunks)
-    merged_chunks = chunks+chunks2
-    random.shuffle(merged_chunks)
-    save_chunk_file(base_dir, chunk_file, merged_chunks[:length])
-    save_chunk_file(base_dir, chunk_file, merged_chunks[length:])
+def shuffle_chunk_files(files:List[str], random_seed=42):
+    random.seed(random_seed)
+    for _ in range(4):
+        random.shuffle(files)
+        for i in range(len(files)-1, 2):
+            chunks = load_chunk_file('', files[i])
+            chunks2 = load_chunk_file('', files[i+1])
+            length = len(chunks)
+            merged_chunks = chunks+chunks2
+            random.shuffle(merged_chunks)
+            save_chunk_file('', files[i], merged_chunks[:length])
+            save_chunk_file('', files[i+1], merged_chunks[length:])
+

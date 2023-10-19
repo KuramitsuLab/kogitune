@@ -13,15 +13,6 @@ def safe_join(dir, file):
         file = file[1:]
     return f'{dir}/{file}'
 
-DEFAULT_TOKENIZER = os.environ.get('PT_TOKENIZER', 'kkuramitsu/kawagoe')
-DEFAULT_SPLIT='train'
-DEFAULT_CACHE_DIR = safe_dir(os.environ.get('PT_CACHE_DIR', '.'))
-
-DEFAULT_BLOCK_SIZE = 2096
-DEFAULT_MAX_LENGTH = 4096
-N_CHUNKS = 4096
-
-
 def getint(kwargs:dict, 
            key:str, default_value=0, 
            specified:Optional[int]=None) -> int:
@@ -47,6 +38,13 @@ def getint_from_environ(key, given=None, default=None):
                   default_value=default, 
                   specified=given)
 
+DEFAULT_TOKENIZER = os.environ.get('KG_TOKENIZER_PATH', 'kkuramitsu/kawagoe')
+DEFAULT_CACHE_DIR = safe_dir(os.environ.get('KG_CACHE_DIR', '.'))
+
+DEFAULT_BLOCK_SIZE = getint_from_environ('KG_BLOCK_SIZE', 2048)
+DEFAULT_MAX_LENGTH = 4096
+N_CHUNKS = 4096
+CHUNK_MAGIC = 8
 
 def format_unit(num: int, scale=1000)->str:
     """

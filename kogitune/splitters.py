@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union, Tuple
 import random
 import json
 import numpy as np
@@ -31,9 +31,7 @@ def _record_tokens(counts):
 def _update_fn(blocks: List[List[int]]):
     return blocks
 
-
 empty_tokens = []
-
 
 class DefaultSplitter(object):
 
@@ -44,11 +42,11 @@ class DefaultSplitter(object):
         self.pad_token_id = getint(kwargs, 'pad_token_id', tokenizer.pad_token_id)
         self.eos_token_id = getint(kwargs, 'eos_token_id', tokenizer.eos_token_id)
         self.ellipsis_token_id = find_ellipsis_token_id(tokenizer)
-        # self.output_token_id = None # <sftの場合>
         self.trancate_size=getint(kwargs, 'trancate_size', 0)
         self.sep = kwargs.get('sep', None)
         self.token_counts = []
         self.text_length_count = 0
+        self.drop_count = 0
         self.trimmed_size = 0
         self.padded_size = 0
     
@@ -94,6 +92,11 @@ class DefaultSplitter(object):
                 print(f'padding: {self.padded_size:,} {self.padded_size*100/token_count:.2f}%')
             if logs:
                 logs['padding_rate'] = self.padded_size / token_count
+        if self.drop_count > 0:
+            if verbose:
+                print(f'drops: {self.drop_count:,}')
+            if logs:
+                logs['drops'] = self.drop_count
 
 
 class SimpleTextBlockSplitter(DefaultSplitter):
@@ -262,70 +265,27 @@ class MultiTextBlockSplitter(DefaultSplitter):
             logs['block_size'] = self.block_size
             logs['work_size'] = self.work_size
 
-class TextPairSplitter(DefaultSplitter):
+class SimpleTextSplitter(DefaultSplitter):
     def __init__(self, tokenizer, block_size, **kwargs):
         super().__init__(tokenizer, block_size, **kwargs)
         self.prefix=''
         self.output_sep_token_id = find_token_id(tokenizer, 
                                                  kwargs.get('output_sep', '<outpuT>'), 
                                                  kwargs.get('sep', '<seP>'), 
-                                                 '<nL>')
+                                                 '<sep>', '<nL>', '\n')
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
         if self.output_sep_token_id is not None:
             logs['output_sep_token_id'] = self.output_sep_token_id            
-        if self.sep is not None:
-            logs['corpus_sep'] = self.sep            
 
-    def trancate_pair(self, inputs: List[int], labels: List[int], blocks: List[List[int]]):
-        if self.block_size is not None:
-            if len(labels) > self.block_size:
-                # ラベルの方が大きい場合は諦める
-                return
-            if len(inputs)+len(labels) > self.block_size:
-                trimmed_size = self.block_size - len(labels)
-                if len(inputs) - trimmed_size > self.trancate_size:
-                    # 諦める                
-                    return
-                self.trimmed_size += len(inputs) - trimmed_size
-                inputs = inputs[:trimmed_size]
-            else:
-                self.padded_size += self.block_size - (len(inputs)+len(labels))
-        index = len(inputs)
-        inputs[-1] = self.output_sep_token_id
-        blocks.append(inputs+labels+[index])
-
-    def split(self, text:str, blocks: List[List[int]]):
-        t = text.split(self.sep)
-        if len(t)==2:
-            inputs = self.encode_and_count(t[0])        
-            labels = self.encode_and_count(t[1])
-            self.trancate_pair(inputs, labels, blocks)
-        else:
-            print(self.sep, text)
-            raise ValueError(f'In text, the {self.sep} token is required.')
-
-class SimpleTextSplitter(TextPairSplitter):
-    def __init__(self, tokenizer, block_size, **kwargs):
-        super().__init__(tokenizer, block_size, **kwargs)
-        # セパレータ字句があるか調べる
-        # self.sep: コーパス上のセパレータ
-        # self.output_sep トークンナイザのセパレータ
-        self.output_sep_token_id = None
-        self.output_sep = str(kwargs.get('output_sep', self.sep))
-        if self.output_sep:
-            self.output_sep_token_id = find_token_id(tokenizer, self.output_sep)
-            if self.output_sep_token_id == tokenizer.unk_token_id:
-                verbose_print(f'undefined token {self.output_sep} in {tokenizer.name_or_path}')
-                self.output_sep_token_id = None            
-
-    def trancate_text(self, inputs: List[int], labels: List[int], blocks: List[List[int]]):
+    def trancate_text(self, inputs: List[int], blocks: List[List[int]]):
         if self.block_size is not None:
             inputs_size = len(inputs)
             if inputs_size > self.block_size:
                 if inputs_size - self.block_size > self.trancate_size:
                     # 切り詰めが大きすぎる
+                    self.drop_count +=1
                     return
                 half_size = self.block_size // 2
                 prefix = inputs[:half_size]
@@ -336,20 +296,38 @@ class SimpleTextSplitter(TextPairSplitter):
                 self.trimmed_size += (inputs_size - len(inputs))
             else:
                 self.padded_size += self.block_size - inputs_size
-        blocks.append(inputs)
+        blocks.append([0] + inputs)
 
-    def split(self, text:str, blocks: List[List[int]]):
-        if self.sep:
-            text = text.replace(self.sep, self.output_sep, 1)
-        inputs = self.encode_and_count(text)
-        if self.output_sep_token_id is not None:
-            index = inputs.find(self.output_sep_token_id)
-            if index == -1:
-                sep = self.sep or self.output_sep
-                raise ValueError(f'{sep} が見つかりません')
-            self.trancate_pair(inputs[:index+1], inputs[index+1:], blocks)
+    def trancate_pair(self, inputs: List[int], labels: List[int], blocks: List[List[int]]):
+        if self.block_size is not None:
+            if len(labels) > self.block_size:
+                # ラベルの方が大きい場合は諦める
+                self.drop_count +=1
+                return
+            if len(inputs)+len(labels) > self.block_size:
+                trimmed_size = self.block_size - len(labels)
+                if len(inputs) - trimmed_size > self.trancate_size:
+                    # 諦める                
+                    self.drop_count +=1
+                    return
+                self.trimmed_size += len(inputs) - trimmed_size
+                inputs = inputs[:trimmed_size]
+            else:
+                self.padded_size += self.block_size - (len(inputs)+len(labels))
+        index = len(inputs)
+        inputs[-1] = self.output_sep_token_id
+        blocks.append([(index * CHUNK_MAGIC) + 1] + inputs + labels)
+
+    def split(self, text:Union[str, Tuple[str,str]], blocks: List[List[int]]):
+        if isinstance(text, tuple):
+            inputs = self.encode_and_count(text[0])        
+            labels = self.encode_and_count(text[1])
+            self.trancate_pair(inputs, labels, blocks)
         else:
+            inputs = self.encode_and_count(text)
             self.trancate_text(inputs, blocks)
+            self.output_sep_token_id = None
+
 
 def new_TextSplitter(tokenizer, training_type, format='simple', block_size=None, **kwargs):
     splitter = None
@@ -363,13 +341,6 @@ def new_TextSplitter(tokenizer, training_type, format='simple', block_size=None,
             if format != 'simple':
                 verbose_print(f"format={format}は、サポートされていません。")
         splitter = SimpleTextBlockSplitter(tokenizer, block_size, **kwargs)
-    elif training_type.startswith('seq2seq'):
-        # if splitter is None:
-        #     if format != 'simple':
-        #         verbose_print(f"format={format}は、サポートされていません。")
-        if 'sep' not in kwargs:
-            kwargs['sep'] = '<outpuT>'
-        splitter = TextPairSplitter(tokenizer, block_size, **kwargs)
     else: # ファインチューニング用
         # if splitter is None:
         #     if format != 'simple':
@@ -408,7 +379,16 @@ class DatasetStore(object):
         self.n_tokens = 0
         self.chunk_files = []
 
-    def save_config(self):
+    def validate(self, validation=True):
+        if validation:
+            file_checks = make_chunk_filelist(self.store_path, self.chunk_files)
+            if file_checks:
+                self.config['files'] = file_checks
+        config_file = safe_join_path(self.store_path, f'{self.prefix}config.json')
+        with open(config_file, "w") as w:
+            json.dump(self.config, w)
+
+    def save_config(self, validation=False):
         self.config.update(dict(
             n_items=self.n_items,
             n_tokens = self.n_tokens,
@@ -417,14 +397,8 @@ class DatasetStore(object):
             file_ext=self.file_ext,
             shuffle=self.shuffle,
         ))
-        file_checks = make_chunk_filelist(self.store_path, self.chunk_files)
-        if file_checks:
-            self.config['files'] = file_checks
-        
-        config_file = safe_join_path(self.store_path, f'{self.prefix}config.json')
-        with open(config_file, "w") as w:
-            json.dump(self.config, w)
-    
+        self.validate(validation=False)
+
     def save(self, save_config=True):
         if len(self.bufs) > 0:
             chunk_file = chunkseq_to_filename(self.chunkseq, self.prefix, self.file_ext)
@@ -435,7 +409,7 @@ class DatasetStore(object):
                 self.chunkseq += 1
                 self.bufs = []
         if save_config:
-            self.save_config()
+            self.save_config(validation=False)
             verbose_print(f'トークン数: {self.n_tokens:,} 件数: {self.n_items:,}')
 
     def append(self, block: List[int]):
@@ -449,16 +423,31 @@ class DatasetStore(object):
             self.append(block)
         return []   
 
+def append_valid_file(val_files: List[str], filename: str):
+    if '_train' in filename:
+        filename2 = filename.replace('_train', '_valid')
+        if os.path.isfile(filename2):
+            val_files.append(filename2)
+            return
+        filename2 = filename.replace('_train', '_dev')
+        if os.path.isfile(filename2):
+            val_files.append(filename2)
+            return
+        filename2 = filename.replace('_train', '_val')
+        if os.path.isfile(filename2):
+            val_files.append(filename2)
+            return
 
-def split_to_store(filename, N=-1,
+def split_to_store(filenames, N=-1,
                    desc=None,
                    tokenizer_path=DEFAULT_TOKENIZER, 
                    training_type='',
                    format='simple', 
                    split='train',
                    block_size=None, # DEFAULT_BLOCKSIZE 
+                   shuffle=True, random_seed=42,
                    store_path=None, 
-                   verbose=True, histogram=False,
+                   verbose=True, histogram=False, validation=False,
                    split_args={}):
     
     if isinstance(tokenizer_path, str):
@@ -466,32 +455,60 @@ def split_to_store(filename, N=-1,
     else:
         tokenizer = tokenizer_path
 
-    filebase = get_filebase(filename)
     if store_path is None:
+        filebase = get_filebase(filenames[0])
         _, _, tokenizer_name = tokenizer_path.rpartition('/')
         store_path=f'{tokenizer_name}/{filebase}'
         verbose_print(f'Saving To.. {store_path}')
+    else:
+        filebase = store_path.replace('/', '_')
 
     splitter = new_TextSplitter(tokenizer, training_type,
                                 format=format, block_size=block_size, 
                                 **split_args)
     
     prefix = f'{(splitter.prefix+split)}_'
+
     store = DatasetStore(store_path, prefix, block_size, **split_args)
 
     if desc:
         store.config['desc'] = desc
+    store.config['source'] = filenames
     store.config['tokenizer_path'] = str(tokenizer.name_or_path)
     store.config['tokenizer'] = record_tokenizer(tokenizer)
     store.config['splitter'] = splitter.about()
 
-    iterator = file_iterator(filename, N=N)
-    splitter.split_iter(iterator=iterator, update_fn=store.extend)
+    val_files = []
+    for filename in filenames:
+        iterator = file_iterator(filename, N=N)
+        splitter.split_iter(iterator=iterator, update_fn=store.extend)
+        append_valid_file(val_files, filename)
+
+    if shuffle:
+        verbose_print('シャッフルします')
+        shuffle_chunk_files(store.chunk_files, random_seed=random_seed)
+
     splitter.report(store.config, verbose=verbose)
     store.save()
     print(store.config)
+    if validation:
+        store.validate()
     if histogram:
         make_histogram(tokenizer, store_path, store.chunk_files, verbose=verbose)
+
+    if len(val_files) > 0:
+        verbose_print('split="valid"も作成します')
+        split_to_store(val_files, 
+                       desc=desc,
+                       tokenizer_path=tokenizer, 
+                       training_type=training_type,
+                       format=format, 
+                       split='valid',
+                       block_size=block_size,   
+                       shuffle=shuffle, random_seed=random_seed,
+                       store_path=store_path, 
+                       verbose=verbose, histogram=False, validation=validation,
+                       split_args=split_args)
 
 
 def make_histogram(tokenizer, store_path, chunk_files, verbose=True):

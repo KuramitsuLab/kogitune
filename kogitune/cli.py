@@ -45,16 +45,19 @@ def setup_store():
     parser.add_argument("--sep", type=str, default=None)
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--N", "-N", type=int, default=-1)
+    parser.add_argument("--shuffle", type=_tobool, default=True)
+    parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--verbose", type=_tobool, default=True)
     parser.add_argument("--histogram", type=_tobool, default=False)
     parser.add_argument("--num_works", type=int, default=0)
+    
     hparams = parser.parse_args()  # hparams になる
     return hparams
 
 def main_store():
     hparams = setup_store()
     split_to_store(
-        hparams.files[0],
+        hparams.files,
         N=hparams.N,
         desc=hparams.desc,
         tokenizer_path=hparams.tokenizer_path,
@@ -63,13 +66,16 @@ def main_store():
         split=hparams.split,
         split_args=hparams.split_args or {},
         block_size=hparams.block_size, 
-        store_path=None, 
-        verbose=True, 
+        shuffle=hparams.shuffle,
+        random_seed=hparams.random_seed,
+        store_path=hparams.store_path,
+        validation=True,
+        verbose=hparams.verbose, 
         histogram=hparams.histogram
     )
 
 
 def main_update():
     import os
-    os.system('pip3 uninstall -y papertown')
-    os.system('pip3 install -U git+https://github.com/kuramitsulab/papertown.git')
+    os.system('pip3 uninstall -y kogitune')
+    os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')

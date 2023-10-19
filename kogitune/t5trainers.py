@@ -2,7 +2,7 @@ import numpy as np
 import torch 
 
 from .tokenizers import find_extra_ids, find_newline_token_id, load_tokenizer
-from .composers import DataComposer
+from .composers import DataComposer, CHUNK_MAGIC
 from transformers import DataCollatorForSeq2Seq
 
 
@@ -53,13 +53,19 @@ class T5PretrainComposer(DataComposer):
 class Seq2seq(object):
 
     def __call__(self, data, max_length):
-        index = data[-1]
-        inputs = data[:index]
-        labels = data[index:-1]
-        if len(inputs)+len(labels) > max_length:
-            # 前半分と後ろ半分を連結する
-            inputs = inputs[:(max_length -len(labels))]
-        inputs[-1] = labels[-1] # eos
+        version = data[0] % CHUNK_MAGIC
+        if version == 0:
+            # Prefix Language Model
+            inputs = data[1:max_length//2].copy()
+            labels = data[1:max_length]
+        else:
+            index = (data[0] // CHUNK_MAGIC) + 1
+            inputs = data[1:index]
+            labels = data[index:]
+            if len(inputs)+len(labels) > max_length:
+                # 前半分と後ろ半分を連結する
+                inputs = inputs[:(max_length -len(labels))]
+        inputs[-1] = data[-1] # eos
         return {
             "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
             "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),
@@ -78,8 +84,6 @@ class T5FinetuneComposer(DataComposer):
         tokenizer = load_tokenizer(self.tokenizer_path)
         return DataCollatorForSeq2Seq(tokenizer)
 
-    def get_eval_dataset(self):
-        raise NotImplementedError()
 
 
 
