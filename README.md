@@ -1,2 +1,2 @@
 # kogitune
-The kogiItune 🦊 LLM Foundation
+The kogitune 🦊 LLM Foundation

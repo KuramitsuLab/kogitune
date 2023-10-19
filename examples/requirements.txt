@@ -1,0 +1,9 @@
+accelerate 
+deepspeed
+einops
+datasets
+protobuf
+torch
+transformers 
+mpi4py==3.1.4
+kogitune @ git+https://github.com/kuramitsulab/kogitune.git
