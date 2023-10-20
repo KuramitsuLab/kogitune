@@ -54,7 +54,7 @@ class Seq2seq(object):
 
     def __call__(self, data, max_length):
         version = data[0] % CHUNK_MAGIC
-        if version == 0:
+        if version == 1:
             # Prefix Language Model
             inputs = data[1:max_length//2].copy()
             labels = data[1:max_length]
@@ -65,7 +65,12 @@ class Seq2seq(object):
             if len(inputs)+len(labels) > max_length:
                 # 前半分と後ろ半分を連結する
                 inputs = inputs[:(max_length -len(labels))]
-        inputs[-1] = data[-1] # eos
+        if len(inputs) > 0:
+            inputs[-1] = data[-1] # eos
+        else:
+            print('@@@ぱんちゃん!!@@', len(inputs), len(labels))
+            data[0] = data[-1]
+            inputs = data[:1]
         return {
             "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
             "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),

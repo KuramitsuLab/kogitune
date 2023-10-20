@@ -250,7 +250,7 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
 
 def shuffle_chunk_files(files:List[str], random_seed=42):
     random.seed(random_seed)
-    for _ in range(4):
+    for _ in range(8):
         random.shuffle(files)
         for i in range(len(files)-1, 2):
             chunks = load_chunk_file('', files[i])

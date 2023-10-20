@@ -487,6 +487,8 @@ def split_to_store(filenames, N=-1,
     if shuffle:
         verbose_print('シャッフルします')
         shuffle_chunk_files(store.chunk_files, random_seed=random_seed)
+        store.config['shuffle'] = shuffle
+        store.config['random_seed'] = random_seed
 
     splitter.report(store.config, verbose=verbose)
     store.save()
