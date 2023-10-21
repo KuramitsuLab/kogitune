@@ -6,8 +6,6 @@ name : "testjob"
 group : "testgroup"
 
 # Model Configuration
-
-model : Llama2 # T5, GPT2, GPTNeoX, Llama2
 n_dims : 64
 n_heads : 16
 n_layers : 27
