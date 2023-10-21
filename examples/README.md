@@ -1,7 +1,7 @@
 # kogitune-examples
 
 ### scripts/train.py
-メインの学習スクリプト。分散の有無に関わらず使えます。
+メインの学習スクリプト。
 
 ### scripts/train.sh
 シングルノード・シングルGPUの学習に使用できます。
