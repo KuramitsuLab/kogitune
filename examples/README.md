@@ -16,7 +16,7 @@
 sample_sizeを指定するとURLごとに指定した数の少量データのテストできて、指定しないと全データで学習となる点に注意してください。
 
 #### wandbの設定について
-- entity：　Teams
+- entity: Teams
 - project: Project
 - name: Run
 
