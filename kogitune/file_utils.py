@@ -248,16 +248,17 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
         d[chunk_file] = checks
     return d
 
-def shuffle_chunk_files(files:List[str], random_seed=42):
+def shuffle_chunk_files(store_path: str, files:List[str], random_seed=42):
     random.seed(random_seed)
+    
     for _ in range(8):
         random.shuffle(files)
         for i in range(0, len(files)-1, 2):
-            chunks = load_chunk_file('', files[i])
-            chunks2 = load_chunk_file('', files[i+1])
+            chunks = load_chunk_file(store_path, files[i])
+            chunks2 = load_chunk_file(store_path, files[i+1])
             length = len(chunks)
             merged_chunks = chunks+chunks2
             random.shuffle(merged_chunks)
-            save_chunk_file('', files[i], merged_chunks[:length])
-            save_chunk_file('', files[i+1], merged_chunks[length:])
+            save_chunk_file(store_path, files[i], merged_chunks[:length])
+            save_chunk_file(store_path, files[i+1], merged_chunks[length:])
 
