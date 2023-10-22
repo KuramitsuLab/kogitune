@@ -353,13 +353,13 @@ class DataComposer(MixingDataset):
                 verbose_print(f'** {url} は、seq2seqに対応していません。無視して学習を続けます。')
                 continue
             if len(dataset) == 0:
-                verbose_print(f'** {url} は、スキップして学習を続けます。')
+                if '_valid' not in url:
+                    verbose_print(f'** {url} は、スキップして学習を続けます。')
                 continue
+            verbose_print(f'{url} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
             dataset = DistributedIndexer(dataset, url_args)
             datasets.append(dataset)
             self.n_items += len(dataset)
-            # n_tokens = ds.get_num_of_tokens()
-            # verbose_print(f'{url} トークン数: {format_unit(n_tokens)} {n_tokens:,} 件数: {len(ds):,}')
         if self.n_items > 0:
             self.blend_data(datasets)
 
