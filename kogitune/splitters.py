@@ -68,10 +68,14 @@ class DefaultSplitter(object):
         blocks = update_fn(blocks)
         return blocks
 
-    def encode_and_count(self, text):
+    def encode_and_count(self, text, eos=True):
         self.text_length_count += len(text)
-        tokens = self.tokenizer.encode(text)
-        self.token_counts.append(len(tokens)-1)
+        if eos:
+            tokens = self.tokenizer.encode(text)
+            self.token_counts.append(len(tokens)-1)
+        else:
+            tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(text))
+            self.token_counts.append(len(tokens)-1)
         return tokens
 
     def resize_token_counts(self, size):
@@ -117,6 +121,38 @@ class SimpleTextBlockSplitter(DefaultSplitter):
             self.extra_tokens = empty_tokens
         else:
             self.extra_tokens = tokens[-extra_size:]
+
+    def report(self, logs: dict = None, verbose=True):
+        super().report(logs, verbose=verbose)
+        if logs:
+            logs['block_size'] = self.block_size
+
+import re
+
+def add_section(code):
+    return re.sub(r'\n(def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ', r'\n<sectioN>\1 ', code)
+
+class OverlapTextBlockSplitter(DefaultSplitter):
+    def __init__(self, tokenizer, block_size, **kwargs):
+        super().__init__(tokenizer, block_size, **kwargs)
+        self.prefix='pre'
+
+    def split(self, text:str, blocks: List[List[int]]):
+        text = add_section(text)
+        text_blocks = text.split('<sectioN>')
+        chunks = [self.encode_and_count(sec, eos=False) for sec in text_blocks]
+        work_size = self.block_size
+        chunk_size = len(chunks)
+        for i in range(chunk_size):
+            tokens = chunks[i]
+            j = i + 1
+            while len(tokens) < work_size and j < chunk_size:
+                tokens += chunks[j]
+                j+=1
+            if len(tokens) >= work_size:
+                blocks.append(tokens[:work_size])
+            else:
+                self.drop_count += len(tokens)
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
@@ -337,6 +373,8 @@ def new_TextSplitter(tokenizer, training_type, format='simple', block_size=None,
             block_size = DEFAULT_BLOCK_SIZE
         if format=='multi':
             splitter = MultiTextBlockSplitter(tokenizer, block_size, **kwargs)
+        elif format=='overlap':
+            splitter = OverlapTextBlockSplitter(tokenizer, block_size, **kwargs)
         if splitter is None:
             if format != 'simple':
                 verbose_print(f"format={format}は、サポートされていません。")
