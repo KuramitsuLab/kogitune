@@ -372,12 +372,12 @@ def new_TextSplitter(tokenizer, training_type, format='simple', block_size=None,
             block_size = DEFAULT_BLOCK_SIZE
         if format=='multi':
             splitter = MultiTextBlockSplitter(tokenizer, block_size, **kwargs)
-        elif format=='overlap':
+        if format=='overlap':
             splitter = OverlapTextBlockSplitter(tokenizer, block_size, **kwargs)
         if splitter is None:
             if format != 'simple':
                 verbose_print(f"format={format}は、サポートされていません。")
-        splitter = SimpleTextBlockSplitter(tokenizer, block_size, **kwargs)
+            splitter = SimpleTextBlockSplitter(tokenizer, block_size, **kwargs)
     else: # ファインチューニング用
         # if splitter is None:
         #     if format != 'simple':
