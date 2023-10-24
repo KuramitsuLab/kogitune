@@ -130,7 +130,7 @@ class SimpleTextBlockSplitter(DefaultSplitter):
 import re
 
 def add_section(code):
-    return re.sub(r'\n(def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ', r'\n<sectioN>\1 ', code)
+    return re.sub(r'\n(def|    def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ', r'\n<sectioN>\1 ', code)
 
 class OverlapTextBlockSplitter(DefaultSplitter):
     def __init__(self, tokenizer, block_size, **kwargs):
@@ -149,15 +149,14 @@ class OverlapTextBlockSplitter(DefaultSplitter):
             while len(tokens) < work_size and j < chunk_size:
                 tokens += chunks[j]
                 j+=1
-            if len(tokens) >= work_size:
-                blocks.append(tokens[:work_size])
-            else:
-                self.drop_count += len(tokens)
+            for j in range(0, len(tokens) - work_size + 1, work_size):  
+                blocks.append(tokens[j : j + work_size])
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
         if logs:
             logs['block_size'] = self.block_size
+            logs['overlap'] = 'python'
 
 
 class MultiTextBlockSplitter(DefaultSplitter):
