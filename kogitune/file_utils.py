@@ -251,9 +251,9 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
 def shuffle_chunk_files(store_path: str, files:List[str], random_seed=42):
     random.seed(random_seed)
     
-    for _ in range(8):
+    for k in range(4):
         random.shuffle(files)
-        for i in range(0, len(files)-1, 2):
+        for i in tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
             chunks = load_chunk_file(store_path, files[i])
             chunks2 = load_chunk_file(store_path, files[i+1])
             length = len(chunks)
