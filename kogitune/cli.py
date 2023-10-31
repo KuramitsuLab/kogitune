@@ -76,6 +76,7 @@ def main_store(hparams=None):
 
 def main_dump(hparams):
     with DataComposer(hparams.urls, 
+                      training_type=hparams.training_type,
                       max_length=hparams.max_length, 
                       test_run=hparams.test_run) as dc:
         tokenizer = dc.prepare_tokenizer()
@@ -124,6 +125,7 @@ def main():
     dump_parser = subparsers.add_parser('dump', help='dump help')
     dump_parser.add_argument("urls", type=str, nargs="+", help="urls")
     dump_parser.add_argument("--max_length", type=int, default=512)
+    dump_parser.add_argument("--training_type", type=str, default='')
     dump_parser.add_argument("--test_run", type=int, default=10)
     dump_parser.set_defaults(func=main_dump)
 
