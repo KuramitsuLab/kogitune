@@ -343,7 +343,7 @@ class DataComposer(MixingDataset):
         datasets = []
         for url in urls:
             url, url_args = self.parse_url_args(url)
-            if url.endswith('.gz') or url.endswith('.jsonl') or url.endswith('.txt'):
+            if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
                 tokenizer = self.prepare_tokenizer(tokenizer)
                 url = make_local_store(url, tokenizer, block_size, url_args)
             dataset = ChunkedDataset(url, url_args, split=self.split, block_size=block_size)
@@ -450,7 +450,7 @@ class FinetuneComposer(DataComposer):
             kwargs['max_length'] = kwargs['block_size']
             del kwargs['block_size']
         DataComposer.__init__(self, url_list, split=split, **kwargs)
-        if kwargs.get('use_attention_mask', False):
+        if kwargs.get('use_attention_mask', True):
             self.build_fn = kwargs.get('build_fn', build_inputs_attn_for_instruct)
         else:
             self.build_fn = kwargs.get('build_fn', build_inputs_for_instruct)

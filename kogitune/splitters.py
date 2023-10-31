@@ -141,14 +141,15 @@ class OverlapTextBlockSplitter(DefaultSplitter):
         text = add_section(text)
         text_blocks = text.split('<sectioN>')
         chunks = [self.encode_and_count(sec, eos=False) for sec in text_blocks]
-        work_size = self.block_size
         chunk_size = len(chunks)
-        for i in range(chunk_size):
+        work_size = self.block_size
+        i = 0
+        while i < chunk_size:
             tokens = chunks[i]
-            j = i + 1
-            while len(tokens) < work_size and j < chunk_size:
-                tokens += chunks[j]
-                j+=1
+            i += 1
+            while len(tokens) < work_size and i < chunk_size:
+                tokens += chunks[i]
+                i += 1
             for j in range(0, len(tokens) - work_size + 1, work_size):  
                 blocks.append(tokens[j : j + work_size])
 
