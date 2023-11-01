@@ -320,7 +320,7 @@ class DataComposer(MixingDataset):
             self.cache_dir = safe_dir(cache_dir)
             self.cleanup = False if get_rank() > 0 else cleanup
         if os.path.isdir(self.cache_dir):
-            verbose_print('既に存在する {self.cache_dir} を使います。')
+            verbose_print(f'既に存在するキャッシュディレクトリ {self.cache_dir} を使います。')
             self.cleanup = False
         os.makedirs(self.cache_dir, exist_ok=True)
         self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
@@ -330,9 +330,9 @@ class DataComposer(MixingDataset):
         self.prefetch = prefetch
         self.build_fn = build_fn
         # テスト実行
-        test_run = getint_environ('KG_TEST_RUN', None, param_specified=test_run)
+        test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
-            verbose_print('反復を減らして、テスト実行します', test_run)
+            verbose_print(f'反復を {test_run} 回に減らして、テスト実行します')
             self.n_items = min(test_run, self.n_items)
 
     def parse_url_args(self, url):
