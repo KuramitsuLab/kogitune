@@ -83,8 +83,8 @@ class ChunkedDataset(Dataset):
         self.queue = deque(maxlen=64)
         self.cache = {}
         self.prefetch=1
-        if self.prefetch > 0 and self.n_items > 0:
-            self.try_prefetch(0)
+        # if self.prefetch > 0 and self.n_items > 0:
+        #     self.try_prefetch(0)
 
     def get_valid_dataset(self, split='valid'):
         dataset = ChunkedDataset(self.url, self.url_args, split=split, block_size=self.block_size)
@@ -121,9 +121,14 @@ class ChunkedDataset(Dataset):
     def __len__(self):
         return self.n_items * self.n_subblocks
 
-    def try_prefetch(self, chunkseq):
-        chunk_file = chunkseq_to_filename(chunkseq % self.max_chunkseq, self.split_prefix, self.file_ext)
+    def try_prefetch(self, index):
+        chunkseq = (index // self.n_chunks) % self.max_chunkseq
+        chunk_file = chunkseq_to_filename(chunkseq, self.split_prefix, self.file_ext)
         resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
+
+    # def try_prefetch(self, chunkseq):
+    #     chunk_file = chunkseq_to_filename(chunkseq % self.max_chunkseq, self.split_prefix, self.file_ext)
+    #     resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
 
     def get_chunks(self, chunk_file):
         if chunk_file in self.cache:
@@ -161,7 +166,8 @@ class ChunkedDataset(Dataset):
         chunk_file = chunkseq_to_filename(chunkseq, self.split_prefix, self.file_ext)
         chunks = self.get_chunks(chunk_file)
         if self.prefetch > 0 and index % self.n_chunks == 0:
-            self.try_prefetch(chunkseq+self.prefetch)
+            # self.try_prefetch(chunkseq+self.prefetch)
+            self.try_prefetch(index+(self.prefetch*self.n_chunks))
         return chunks[i % self.n_chunks]
     
 
@@ -191,6 +197,7 @@ class DistributedIndexer(Dataset):
         if get_world_size() > 1:
             verbose_print('ランクごとに再配置します')
             self.offset = self.offset + (get_rank() * self.sublength)
+        dataset.try_prefetch(self.offset)
 
     def __len__(self):
         return self.length
@@ -430,7 +437,9 @@ class PretrainComposer(DataComposer):
 
     def get_collator(self):
         tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForLanguageModeling(tokenizer, mlm=False)
+        return DataCollatorForLanguageModeling(tokenizer, 
+                                               pad_to_multiple_of=8, 
+                                               mlm=False)
 
 def build_inputs_for_instruct(data, max_length):
     # version = data[0] % CHUNK_MAGIC
@@ -460,7 +469,9 @@ class FinetuneComposer(DataComposer):
 
     def get_collator(self):
         tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForLanguageModeling(tokenizer, mlm=False)
+        return DataCollatorForLanguageModeling(tokenizer, 
+                                               pad_to_multiple_of=8,
+                                               mlm=False)
 
 
 class DP(object):

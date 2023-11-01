@@ -154,7 +154,7 @@ def wait_for_file(file_path, timeout=60):
         time.sleep(1)  # 1秒待つ
     return False  # タイムアウト
 
-def resolve_file(url_base, file_path, cache_dir, sync=True):
+def resolve_file(url_base, file_path, cache_dir, sync=True, verbose=True):
     remote_file = safe_join_path(url_base, file_path)
     if remote_file.startswith('/'):
         # ローカルなファイルパスの場合
@@ -183,7 +183,8 @@ def resolve_file(url_base, file_path, cache_dir, sync=True):
         subprocess.call(cmd, shell=True)
         cache_file_size = get_filesize(cache_file)
         if cache_file_size == 0:
-            verbose_print(f'ダウンロード失敗 file={cache_file} {cache_file_size} bytes', cmd)
+            if verbose:
+                verbose_print(f'ダウンロード失敗 file={cache_file} {cache_file_size} bytes', cmd)
             os.remove(cache_file)
         else:
             verbose_print(f'Downloaded {get_filesize(cache_file):,} bytes:', cmd)
