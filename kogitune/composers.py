@@ -310,6 +310,7 @@ class DataComposer(MixingDataset):
         os.makedirs(self.cache_dir, exist_ok=True)
         self.lock_file = f'{self.cache_dir}/lock.me' if use_filelock else None
         self.random_seed=getint_from_environ('KG_RANDOM_SEED', random_seed, 42)
+        self.tokenizer_path = None
         self.prepare_data(parse_url_list(url_list), block_size, tokenizer)
         self.cleanup = False if get_rank() > 0 else cleanup
         self.prefetch = prefetch
