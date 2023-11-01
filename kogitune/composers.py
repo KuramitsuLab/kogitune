@@ -310,7 +310,6 @@ class DataComposer(MixingDataset):
         os.makedirs(self.cache_dir, exist_ok=True)
         self.lock_file = f'{self.cache_dir}/lock.me' if use_filelock else None
         self.random_seed=getint_from_environ('KG_RANDOM_SEED', random_seed, 42)
-        self.tokenizer_path = None
         self.prepare_data(parse_url_list(url_list), block_size, tokenizer)
         self.cleanup = False if get_rank() > 0 else cleanup
         self.prefetch = prefetch
@@ -383,6 +382,9 @@ class DataComposer(MixingDataset):
             verbose_print(f'トークンナイザーの指定がないので DEFAULT_TOKENIZER={DEFAULT_TOKENIZER}を使います')
             self.tokenizer_path = DEFAULT_TOKENIZER
         return load_tokenizer(self.tokenizer_path)
+
+    def get_tokenizer(self):
+        return self.prepare_tokenizer(None)
 
     def check_tokenizer(self, url, dataset):
         if self.tokenizer_path is None:

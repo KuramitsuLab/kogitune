@@ -37,42 +37,41 @@ class MSP(object):
             "labels": torch.tensor(outputs[:max_length//2], dtype=torch.long),
         }
 
-
 class T5PretrainComposer(DataComposer):
     def __init__(self, url_list, block_size, **kwargs):
         kwargs['training_type'] = 'pre'
         kwargs['split'] = 'train'
         DataComposer.__init__(self, url_list, block_size=block_size, **kwargs)
-        tokenizer = load_tokenizer(self.tokenizer_path)
+        tokenizer = self.get_tokenizer()
         self.build_fn = MSP(tokenizer=tokenizer)
 
-    def get_collator(self):
-        tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForSeq2Seq(tokenizer)
+    def get_collator(self, model):
+        tokenizer = self.get_tokenizer()
+        return DataCollatorForSeq2Seq(tokenizer, model=model,
+                                      pad_to_multiple_of=8)
 
 class Seq2seq(object):
-
     def __call__(self, data, max_length):
         version = data[0] % CHUNK_MAGIC
+        assert version == 1
         if version == 1:
-            # Prefix Language Model
-            inputs = data[1:max_length//2].copy()
-            labels = data[1:max_length]
-        else:
             index = (data[0] // CHUNK_MAGIC) + 1
             inputs = data[1:index]
             labels = data[index:]
             if len(inputs)+len(labels) > max_length:
-                # 前半分と後ろ半分を連結する
                 inputs = inputs[:(max_length -len(labels))]
+        else:
+            # Prefix Language Model
+            inputs = data[1:max_length//2].copy()
+            labels = data[1:max_length]
         if len(inputs) > 0:
             inputs[-1] = data[-1] # eos
         else:
-            print('@@@ぱんちゃん!!@@', len(inputs), len(labels))
             data[0] = data[-1]
             inputs = data[:1]
         return {
             "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
+            "attention_mask": torch.ones(len(inputs), dtype=torch.long),
             "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),
         }
 
@@ -85,9 +84,10 @@ class T5FinetuneComposer(DataComposer):
         DataComposer.__init__(self, url_list, **kwargs)
         self.build_fn = Seq2seq()
 
-    def get_collator(self):
-        tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForSeq2Seq(tokenizer)
+    def get_collator(self, model):
+        tokenizer = self.get_tokenizer()
+        return DataCollatorForSeq2Seq(tokenizer, model=model,
+                                      pad_to_multiple_of=8)
 
 
 
