@@ -312,7 +312,7 @@ class DataComposer(MixingDataset):
         self.split = split
         self.block_size=block_size
         self.max_length = max_length
-        cache_dir = get_environ('KG_CACHE_DIR|CACHE_DIR', default=None, param_specified=cache_dir)
+        cache_dir = get_environ('KG_CACHE_DIR|CACHE_DIR', None, param_specified=cache_dir)
         if cache_dir is None:
             self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
             self.cleanup = False if get_rank() > 0 else True

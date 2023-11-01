@@ -23,16 +23,16 @@ def get_dict_multi_keys(d: dict, key:str, default=None, format_fn=lambda x: x):
             pass
     return default
 
-def get_environ(key:str, default_value=None, param_specified=None)->str:
+def get_environ(key:str, default=None, param_specified=None)->str:
     if isinstance(param_specified, str):
         return param_specified
-    return get_dict_multi_keys(os.environ, key, default_value)
+    return get_dict_multi_keys(os.environ, key, default)
 
 
-def getint_environ(key:str, default_value=0, param_specified=None)->int:
+def getint_environ(key:str, default=0, param_specified=None)->int:
     if isinstance(param_specified, int):
         return param_specified
-    return get_dict_multi_keys(os.environ, key, default_value, format_fn=int)
+    return get_dict_multi_keys(os.environ, key, default, format_fn=int)
 
 DEFAULT_TOKENIZER = get_environ('KG_TOKENIZER_PATH|TOKENIZER_PATH', 'kkuramitsu/kawagoe')
 DEFAULT_BLOCK_SIZE = getint_environ('KG_BLOCK_SIZE', 2048)

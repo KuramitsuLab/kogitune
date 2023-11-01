@@ -23,12 +23,12 @@ from torch.utils.data import Dataset
 
 from .commons import *
 
-_ID = 0
+# _ID = 0
 
-def random_name():
-    global _ID
-    _ID+= 1
-    return f'Cache{_ID-1}'
+# def random_name():
+#     global _ID
+#     _ID+= 1
+#     return f'Cache{_ID-1}'
 
 # ファイルシステム
 
@@ -53,7 +53,7 @@ def get_filebase(filename):
     filebase, _, _ = filebase.partition('.')
     return filebase
 
-def get_pidname(prefix='cache'):
+def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'
 
 ## file 
