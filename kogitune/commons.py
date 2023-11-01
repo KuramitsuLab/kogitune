@@ -1,23 +1,48 @@
 from typing import Optional
 import os
 
-def safe_dir(dir):
-    if dir.endswith('/'):
-        dir = dir[:-1]
-    return dir
+# def safe_dir(dir):
+#     if dir.endswith('/'):
+#         dir = dir[:-1]
+#     return dir
 
-def safe_join(dir, file):
-    if dir.endswith('/'):
-        dir = dir[:-1]
-    if file.startswith('/'):
-        file = file[1:]
-    return f'{dir}/{file}'
+# def safe_join(dir, file):
+#     if dir.endswith('/'):
+#         dir = dir[:-1]
+#     if file.startswith('/'):
+#         file = file[1:]
+#     return f'{dir}/{file}'
 
+def get_dict_multi_keys(d: dict, key:str, default=None, format_fn=lambda x: x):
+    keys = key.split('|')
+    for key in keys:
+        try:
+            if key in d:
+                return format_fn(d[key])
+        except:
+            pass
+    return default
+
+def get_environ(key:str, default_value=None, param_specified=None)->str:
+    if isinstance(param_specified, str):
+        return param_specified
+    return get_dict_multi_keys(os.environ, key, default_value)
+
+
+def getint_environ(key:str, default_value=0, param_specified=None)->int:
+    if isinstance(param_specified, int):
+        return param_specified
+    return get_dict_multi_keys(os.environ, key, default_value, format_fn=int)
+
+DEFAULT_TOKENIZER = get_environ('KG_TOKENIZER_PATH|TOKENIZER_PATH', 'kkuramitsu/kawagoe')
+DEFAULT_BLOCK_SIZE = getint_environ('KG_BLOCK_SIZE', 2048)
+
+'''
 def getint(kwargs:dict, 
            key:str, default_value=0, 
-           specified:Optional[int]=None) -> int:
-    if isinstance(specified, int):
-        return specified
+           param_specified:Optional[int]=None) -> int:
+    if isinstance(param_specified, int):
+        return param_specified
     try:
         return int(kwargs.get(key, default_value))
     except:
@@ -25,23 +50,22 @@ def getint(kwargs:dict,
 
 def getfloat(kwargs:dict, 
              key:str, default_value=0.0,
-             specified:Optional[float]=None) -> float:
-    if specified:
-        return float(specified)
+             param_specified:Optional[float]=None) -> float:
+    if param_specified:
+        return float(param_specified)
     try:
         return float(kwargs.get(key, default_value))
     except:
         return default_value
 
-def getint_from_environ(key, given=None, default=None):
+def getint_from_environ(key:str, 
+                        default_value:Optional[int]=None, 
+                        param_specified:Optional[int]=None)->int:
     return getint(os.environ, key, 
-                  default_value=default, 
-                  specified=given)
+                  default_value=default_value, 
+                  param_specified=param_specified)
+'''
 
-DEFAULT_TOKENIZER = os.environ.get('KG_TOKENIZER_PATH', 'kkuramitsu/kawagoe')
-DEFAULT_CACHE_DIR = safe_dir(os.environ.get('KG_CACHE_DIR', '.'))
-
-DEFAULT_BLOCK_SIZE = getint_from_environ('KG_BLOCK_SIZE', 2048)
 DEFAULT_MAX_LENGTH = 4096
 N_CHUNKS = 4096
 CHUNK_MAGIC = 8

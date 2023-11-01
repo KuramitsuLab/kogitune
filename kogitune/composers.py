@@ -304,26 +304,33 @@ class DataComposer(MixingDataset):
                  url_list, training_type="pre", split = 'train', 
                  block_size=None, max_length = DEFAULT_MAX_LENGTH,
                  build_fn=build_inputs_for_clm, 
-                 cache_dir = DEFAULT_CACHE_DIR, 
+                 cache_dir = None, cleanup=False, use_filelock=True, 
                  random_seed=None, shuffle=True,
                  tokenizer=None, 
-                 use_filelock=True, cleanup=True,
-                 prefetch=1, test_run=None):
+                 prefetch=1, test_run=None, **kwargs):
         self.training_type = training_type
         self.split = split
         self.block_size=block_size
         self.max_length = max_length
-        self.cache_dir = f'{safe_dir(cache_dir)}/{random_name()}'
+        cache_dir = get_environ('KG_CACHE_DIR|CACHE_DIR', default=None, param_specified=cache_dir)
+        if cache_dir is None:
+            self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
+            self.cleanup = False if get_rank() > 0 else True
+        else:
+            self.cache_dir = safe_dir(cache_dir)
+            self.cleanup = False if get_rank() > 0 else cleanup
+        if os.path.isdir(self.cache_dir):
+            verbose_print('既に存在する {self.cache_dir} を使います。')
+            self.cleanup = False
         os.makedirs(self.cache_dir, exist_ok=True)
-        self.lock_file = f'{self.cache_dir}/lock.me' if use_filelock else None
-        self.random_seed=getint_from_environ('KG_RANDOM_SEED', random_seed, 42)
+        self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
+        self.random_seed=getint_environ('KG_RANDOM_SEED|RANDOM_SEED', 42, param_specified=random_seed)
         self.tokenizer_path = None
         self.prepare_data(parse_url_list(url_list), block_size, tokenizer)
-        self.cleanup = False if get_rank() > 0 else cleanup
         self.prefetch = prefetch
         self.build_fn = build_fn
         # テスト実行
-        test_run = getint_from_environ('KG_TEST_RUN', test_run, None)
+        test_run = getint_environ('KG_TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
             verbose_print('反復を減らして、テスト実行します', test_run)
             self.n_items = min(test_run, self.n_items)
@@ -453,7 +460,6 @@ def build_inputs_attn_for_instruct(data, max_length):
         'input_ids': input_ids,
         'attention_mask': attention_mask, 
     }
-
 
 class FinetuneComposer(DataComposer):
     def __init__(self, url_list, split="train", **kwargs):

@@ -8,10 +8,10 @@ import torch
 from transformers import AutoTokenizer, T5Tokenizer
 from .commons import *
 
-DEFAULT_NL = os.environ.get('PT_NK', '<nL>')
-DEFAULT_SEP = os.environ.get('PT_SEP', '<seP>')
-DEFAULT_OUTPUT_SEP = os.environ.get('PT_OUTPUT_SEP', '<outpuT>')
-DEFAULT_ELLIPSIS = os.environ.get('PT_ELLIPSIS', '<ellipsiS>')
+DEFAULT_NL = get_environ('KG_NL', '<nL>')
+DEFAULT_SEP = get_environ('KG_SEP', '<seP>')
+DEFAULT_OUTPUT_SEP = get_environ('KG_OUTPUT_SEP', '<outpuT>')
+DEFAULT_ELLIPSIS = get_environ('KG_ELLIPSIS', '<ellipsiS>')
 
 def find_token_id(tokenizer: AutoTokenizer, *token: str)->int:
     ids = tokenizer.convert_tokens_to_ids(token)

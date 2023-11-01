@@ -53,6 +53,9 @@ def get_filebase(filename):
     filebase, _, _ = filebase.partition('.')
     return filebase
 
+def get_pidname(prefix='cache'):
+    return f'{prefix}{os.getpid()}'
+
 ## file 
 
 def zopen(filepath):
