@@ -22,11 +22,11 @@ from .file_utils import *
 from .tokenizers import *
 from .splitters import *
 
-_ID = 0
-def random_name():
-    global _ID
-    _ID+= 1
-    return f'Cache{_ID-1}'
+# _ID = 0
+# def random_name():
+#     global _ID
+#     _ID+= 1
+#     return f'Cache{_ID-1}'
 
 # 設定ファイル
 
@@ -47,28 +47,93 @@ def _FileLock(lockfile: str):
     # lockがNoneなら何もしない
     return _DummyFileLock() if lockfile is None else FileLock(lockfile)
 
-
-def get_rank():
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        return torch.distributed.get_rank()
-    else:
-        return 0
-
-def get_world_size():
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        return torch.distributed.get_world_size()
-    else:
-        return 1
-
 def url_to_hash(url):
     return hashlib.md5(url.encode()).hexdigest()
 
+class TensorArrayDataset(Dataset):
+    def __init__(self, url:str, prefix: str, args: dict):
+        self.url = safe_dir(url)
+        self.prefix = prefix if prefix.endswith('_') else f'{prefix}_'
+        self.args = args
+        # block_size=Noneのときは、再分割しない (ファインチューニングは再分割しない)
+        self.block_size = args.get('block_size', None)
+        self.cache_dir = safe_join_path(args['cache_dir'], url_to_hash(url))
+        self.lock_file = args['lock_file']
+        self.load_config()
+        self.queue = deque(maxlen=64)
+        self.cache = {}
+        self.prefetch=args.get('prefetch', 1)
 
+    def load_config(self):
+        config_file = resolve_file(self.url, f'{self.prefix}config.json', self.cache_dir)
+        try:
+            with open(config_file) as f:
+                config = json.load(f)
+        except BaseException as e:
+            verbose_print(f'見つかりません {self.url} ({config_file})')
+            config = dict(n_items=0, n_tokens=0)
+        # 設定
+        self.n_tokens = config.get('n_tokens', 0)
+        self.n_items = config.get("n_items", 0)
+        self.n_chunks = config.get("n_chunks", N_CHUNKS)
+        self.tokenizer_path = config.get("tokenizer_path", DEFAULT_TOKENIZER)
+        if 'files' in config:
+            self.chunk_files = list(config['files'].keys())
+        self.n_subblocks = 1
+        if self.block_size is not None and 'block_size' in config and self.block_size < config['block_size']:
+            self.n_subblocks = config['block_size'] // self.block_size
+            if self.n_subblocks > 1:
+                self.n_chunks = self.n_chunks * self.n_subblocks
+                verbose_print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
+        self.is_seq2seq = 'output_sep_token_id' in config
+        self.config = config
+        return config
+
+    def __len__(self):
+        return self.n_items * self.n_subblocks
+
+    def get_valid_dataset(self, split='valid'):
+        index_file = resolve_file(self.url, 'index.json', self.cache_dir)
+        metadata = read_metadata(index_file)
+        valid_prefix = find_valid_prefix(metadata, self.prefix)
+        if valid_prefix:
+            dataset = TensorArrayDataset(self.url, valid_prefix, self.args)
+            return dataset
+        return None
+
+    def get_chunks(self, chunk_file):
+        if chunk_file in self.cache:
+            return self.cache[chunk_file]
+        with _FileLock(self.lock_file):
+            chunk_file2 = resolve_file(self.url, chunk_file, self.cache_dir)
+            chunks = load_chunk_file(chunk_file2, subblocks=self.n_subblocks)
+        if chunks is None:
+            # エラーで落ちるくらいなら、キャッシュのデータで学習を続ける
+            chunks = self.cache[self.queue[0]]
+        if len(self.queue) == 64:
+            older = self.queue.popleft()
+            if older in self.cache:
+                del self.cache[older]
+        self.queue.append(chunk_file)
+        self.cache[chunk_file] = chunks
+        return chunks
+
+    def __getitem__(self, index):
+        chunk_index = index // self.n_chunks
+        chunk_file = self.chunk_files[chunk_index]
+        chunks = self.get_chunks(chunk_file)
+        if self.prefetch > 0 and index % self.n_chunks == 0:
+            self.try_prefetch(index+(self.prefetch*self.n_chunks))
+        return chunks[index % self.n_chunks]
+
+    def try_prefetch(self, index):
+        chunk_index = index // self.n_chunks
+        chunk_file = self.chunk_files[chunk_index % len(self.chunk_files)]
+        resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
+
+"""
 class ChunkedDataset(Dataset):
     def __init__(self, url:str, url_args: dict, split='train', block_size=None, prefetch=1):
-        """
-        block_size=Noneのときは、再分割しない (ファインチューニングは再分割しない)
-        """
         self.url = safe_dir(url)
         self.url_args = url_args
         self.split = split
@@ -169,29 +234,43 @@ class ChunkedDataset(Dataset):
             # self.try_prefetch(chunkseq+self.prefetch)
             self.try_prefetch(index+(self.prefetch*self.n_chunks))
         return chunks[i % self.n_chunks]
-    
+"""
+
+def get_rank():
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_rank()
+    else:
+        return 0
+
+def get_world_size():
+    if torch.distributed.is_available() and torch.distributed.is_initialized():
+        return torch.distributed.get_world_size()
+    else:
+        return 1
 
 class DistributedIndexer(Dataset):
-    def __init__(self, dataset, url_args:dict):
+    def __init__(self, dataset: TensorArrayDataset, args: dict):
         self.dataset = dataset
-        self.url_args = url_args
+        self.args = args
         self.count = 0
         self.dataset_size = len(dataset)
         self.valid_dataset = None
 
         # offset をパラメータから調整する
-        self.offset = url_args.get('start', 0)
+        self.offset = args.get('start', 0)
         if isinstance(self.offset, float) and self.offset < 1.0:
             self.offset = int(self.offset * self.dataset_size)
         self.offset = self.offset % self.dataset_size
         
         # length をパラメータから調整する
-        self.length = url_args.get('length', self.dataset_size)
+        self.length = args.get('length', self.dataset_size)
         if isinstance(self.length, float) and self.length < 1.0:
             self.length = int(self.length * self.dataset_size)
         if self.length > self.dataset_size:
             self.length = self.length % self.dataset_size
+        
         self.epoch = 1
+        
         # DistributedSamplerと同様に均等に分割して各プロセスが同じデータを読まないようにする
         self.sublength = self.length // get_world_size()
         if get_world_size() > 1:
@@ -227,41 +306,9 @@ class DistributedIndexer(Dataset):
         self.valid_dataset = valid_dataset
         return self.valid_dataset
 
-    # def get_num_of_tokens(self):
-    #     if len(self.dataset) == self.length:
-    #         return self.n_tokens
-    #     return self.n_tokens * self.length // len(self.dataset)
-
-
 def build_inputs_for_clm(data, max_length):
     return torch.tensor(data[:max_length].astype(np.int64), dtype=torch.long)
 
-def parse_url_list(url_list=[]):
-    if isinstance(url_list, str):
-        if os.path.exists(url_list):
-            with open(url_list) as f:
-                return [url.strip() for url in f.readlines() if url.strip() != '' and not url.startswith('#')]
-        return url_list.split('|')
-    return url_list
-
-
-def convert_to_number(value):
-    """
-    文字列を可能ならば整数または浮動小数点数に変換する。
-    変換できない場合はそのままの文字列を返す。
-    """
-    lower_string = str(value).lower()
-    if lower_string == 'true':
-        return True
-    if lower_string == 'false':
-        return False
-    try:
-        return int(value)
-    except ValueError:
-        try:
-            return float(value)
-        except ValueError:
-            return str(value)
 
 def _recalculate_length(mixed):
     dd={}
@@ -300,18 +347,16 @@ class MixingDataset(Dataset):
 
 
 class DataComposer(MixingDataset):
-    def __init__(self, 
-                 url_list, training_type="pre", split = 'train', 
-                 block_size=None, max_length = DEFAULT_MAX_LENGTH,
-                 build_fn=build_inputs_for_clm, 
+    def __init__(self, url_list, max_length, 
                  cache_dir = None, cleanup=False, use_filelock=True, 
                  random_seed=None, shuffle=True,
-                 tokenizer=None, 
-                 prefetch=1, test_run=None, **kwargs):
-        self.training_type = training_type
-        self.split = split
-        self.block_size=block_size
+                 build_fn=build_inputs_for_clm, 
+                 tokenizer=None, test_run=None, **args):
         self.max_length = max_length
+        self.data_type = get_dict_multi_keys(args, 'data_type', 'text')
+        self.split = get_dict_multi_keys(args, 'split', 'train')
+ 
+        # キャッシュ
         cache_dir = get_environ('KG_CACHE_DIR|CACHE_DIR', None, param_specified=cache_dir)
         if cache_dir is None:
             self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
@@ -320,58 +365,56 @@ class DataComposer(MixingDataset):
             self.cache_dir = safe_dir(cache_dir)
             self.cleanup = False if get_rank() > 0 else cleanup
         if os.path.isdir(self.cache_dir):
-            verbose_print(f'既に存在するキャッシュディレクトリ {self.cache_dir} を使います。')
+            verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
             self.cleanup = False
         os.makedirs(self.cache_dir, exist_ok=True)
         self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
+
         self.random_seed=getint_environ('KG_RANDOM_SEED|RANDOM_SEED', 42, param_specified=random_seed)
         self.tokenizer_path = None
-        self.prepare_data(parse_url_list(url_list), block_size, tokenizer)
-        self.prefetch = prefetch
+        self.prepare_data(parse_url_list(url_list), tokenizer)
         self.build_fn = build_fn
+
         # テスト実行
         test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
             verbose_print(f'反復を {test_run} 回に減らして、テスト実行します')
             self.n_items = min(test_run, self.n_items)
 
-    def parse_url_args(self, url):
-        parsed_url = urlparse(url)
-        if len(parsed_url.scheme):
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-        else:
-            base_url = f"{parsed_url.path}"
-        params = parse_qs(parsed_url.query)
-        url_args = {k: convert_to_number(v[0]) for k, v in params.items()}
-        url_args['training_type'] = self.training_type
-        if 'split' not in url_args:  # 個別のsplitの指定がなければ... 
-            url_args['split'] = self.split
-        url_args['prefix'] = f'{self.training_type}{url_args["split"]}_'
-        url_args['cache_dir'] = self.cache_dir
-        url_args['lock_file'] = self.lock_file
-        return base_url, url_args
-
-    def prepare_data(self, urls, block_size, tokenizer=None):
+    def prepare_data(self, urls, tokenizer=None):
+        global_args = {
+            'cache_dir': self.cache_dir,
+            'lock_file': self.lock_file,
+            'data_type': self.data_type,
+            'split': self.split,
+            'max_length': self.max_length,
+        }
         self.n_items = 0
         self.n_tokens = 0
         datasets = []
         for url in urls:
-            url, url_args = self.parse_url_args(url)
+            url, args = parse_url_args(url, global_args)
             if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
                 tokenizer = self.prepare_tokenizer(tokenizer)
-                url = make_local_store(url, tokenizer, block_size, url_args)
-            dataset = ChunkedDataset(url, url_args, split=self.split, block_size=block_size)
+                url = make_local_store(url, tokenizer, args)
+            metadata = read_metadata(url, self.cache_dir)
+            print(args)
+            prefix = find_better_prefix(metadata, args)
+            if prefix is None:
+                verbose_print(f'データセット {url} には、適切なデータがありません')
+                print(args)
+                continue
+            dataset = TensorArrayDataset(url, prefix, args)
+            if len(dataset) == 0:
+                verbose_print(f'データセット {url} は、スキップして学習を続けます。')
+                continue
             if self.check_tokenizer(url, dataset) == False:
                 continue
-            if self.training_type.startswith('seq2') and not dataset.is_seq2seq:
-                verbose_print(f'** {url} は、seq2seqに対応していません。無視して学習を続けます。')
-                continue
-            if len(dataset) == 0:
-                if '_valid' not in url:
-                    verbose_print(f'** {url} は、スキップして学習を続けます。')
-                continue
+            # if self.training_type.startswith('seq2') and not dataset.is_seq2seq:
+            #     verbose_print(f'** {url} は、seq2seqに対応していません。無視して学習を続けます。')
+            #     continue
             verbose_print(f'{url} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
-            dataset = DistributedIndexer(dataset, url_args)
+            dataset = DistributedIndexer(dataset, args)
             datasets.append(dataset)
             self.n_items += len(dataset)
         if self.n_items > 0:
@@ -424,79 +467,4 @@ class DataComposer(MixingDataset):
             except:
                 pass
 
-    # def __len__(self):
-    #     return self.n_items
-
-    # def __getitem__(self, idx):
-    #     mix = len(self.mixer)
-    #     item = self.mixer[idx % mix][idx]
-    #     return self.build_fn(item, self.max_length)
-
-
-
-
-class PretrainComposer(DataComposer):
-    def __init__(self, url_list, block_size, **kwargs):
-        kwargs['training_type'] = 'pre'
-        kwargs['split'] = 'train'
-        kwargs['max_length'] = block_size
-        DataComposer.__init__(self, url_list, block_size=block_size, **kwargs)
-
-    def get_collator(self):
-        tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForLanguageModeling(tokenizer, 
-                                               pad_to_multiple_of=8, 
-                                               mlm=False)
-
-def build_inputs_for_instruct(data, max_length):
-    # version = data[0] % CHUNK_MAGIC
-    return torch.tensor(data[1:max_length+1].astype(np.int64), dtype=torch.long)
-
-def build_inputs_attn_for_instruct(data, max_length):
-    # version = data[0] % CHUNK_MAGIC
-    input_ids = torch.tensor(data[1:max_length+1].astype(np.int64), dtype=torch.long)
-    attention_mask=torch.ones(len(data), dtype=torch.long)
-    return {
-        'input_ids': input_ids,
-        'attention_mask': attention_mask, 
-    }
-
-class FinetuneComposer(DataComposer):
-    def __init__(self, url_list, split="train", **kwargs):
-        kwargs['training_type'] = ''
-        if 'block_size' in kwargs: # ブロックサイズは、事前学習用のパラメータ
-            kwargs['max_length'] = kwargs['block_size']
-            del kwargs['block_size']
-        DataComposer.__init__(self, url_list, split=split, **kwargs)
-        if kwargs.get('use_attention_mask', True):
-            self.build_fn = kwargs.get('build_fn', build_inputs_attn_for_instruct)
-        else:
-            self.build_fn = kwargs.get('build_fn', build_inputs_for_instruct)
-
-    def get_collator(self):
-        tokenizer = load_tokenizer(self.tokenizer_path)
-        return DataCollatorForLanguageModeling(tokenizer, 
-                                               pad_to_multiple_of=8,
-                                               mlm=False)
-
-
-class DP(object):
-    def __init__(self, tokenizer, lambda_=20):
-        self.lambda_ = lambda_
-        self.eos_token_id = tokenizer.eos_token_id
-        self.extra_ids = find_extra_ids(tokenizer)
-        self.newline_id = find_newline_token_id(tokenizer)
-
-    def __call__(self, data, max_length):
-        index = 0
-        start = 0
-        size = min(max_length, len(data))
-        for i, length in enumerate(np.random.poisson(self.lambda_, 1000), start=1):
-            start = start + max(1, length) * i
-            if start >= size:
-                break
-            if data[start] != self.eos_token_id or data[start] != self.newline_id:
-                data[start] = self.extra_ids[index]
-                index+=1
-        return torch.tensor(data[:max_length].astype(np.int64), dtype=torch.long)
 

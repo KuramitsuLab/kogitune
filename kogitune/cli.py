@@ -53,26 +53,6 @@ def setup_store():
     hparams = parser.parse_args()  # hparams になる
     return hparams
 
-def main_store(hparams=None):
-    if hparams is None:
-        hparams = setup_store()
-    split_to_store(
-        hparams.files,
-        N=hparams.N,
-        desc=hparams.desc,
-        tokenizer_path=hparams.tokenizer_path,
-        training_type=hparams.type,
-        format=hparams.format,
-        split=hparams.split,
-        split_args=hparams.split_args or {},
-        block_size=hparams.block_size, 
-        shuffle=hparams.shuffle,
-        random_seed=hparams.random_seed,
-        store_path=hparams.store_path,
-        validation=True,
-        verbose=hparams.verbose, 
-        histogram=hparams.histogram
-    )
 
 def main_dump(hparams):
     with DataComposer(hparams.urls, 
@@ -90,6 +70,35 @@ def main_update(args):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
+def main_store(hparams=None):
+    if hparams is None:
+        hparams = setup_store()
+    args = {k:v for k,v in vars(hparams).items() if v is not None}
+    print(args)
+    split_to_store(hparams.files, validation=True, args=args)
+
+def setup_store(parser):
+    parser.add_argument("files", type=str, nargs="+", help="files")
+    parser.add_argument("--desc", type=str, default=None)
+    parser.add_argument("--tokenizer_path", default=DEFAULT_TOKENIZER)
+    parser.add_argument("--store_path", default=None)
+    parser.add_argument("--max_length", type=int, required=True)
+    parser.add_argument("--min_length", type=int, default=None)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--format", default="simple")
+    parser.add_argument("--split", default="train")
+    parser.add_argument("--section", type=str, default=None)
+    parser.add_argument("--overlap", type=int, default=None)
+    parser.add_argument("--padding", type=int, default=None)
+    # parser.add_argument("--split_args", type=_parse_args, default=None)
+    parser.add_argument("--N", "-N", type=int, default=-1)
+    parser.add_argument("--shuffle", type=int, default=0)
+    parser.add_argument("--random_seed", type=int, default=42)
+    parser.add_argument("--verbose", type=_tobool, default=True)
+    parser.add_argument("--histogram", type=_tobool, default=False)
+    parser.add_argument("--num_works", type=int, default=0)
+    parser.set_defaults(func=main_store)
+
 
 def main():
     # メインのパーサーを作成
@@ -99,28 +108,10 @@ def main():
     subparsers = parser.add_subparsers(title='subcommands', 
                                        description='valid subcommands', 
                                        help='additional help')
-    # 'foo' サブコマンド
-    store_parser = subparsers.add_parser('store', help='foo help')
-    store_parser = argparse.ArgumentParser(description="papertown_store")
-    store_parser.add_argument("files", type=str, nargs="+", help="files")
-    store_parser.add_argument("--desc", type=str, default=None)
-    store_parser.add_argument("--tokenizer_path", default=DEFAULT_TOKENIZER)
-    store_parser.add_argument("--store_path", default=None)
-    store_parser.add_argument("--block_size", type=int, default=None)
-    store_parser.add_argument("--type", type=str, default='')
-    store_parser.add_argument("--format", default="simple")
-    store_parser.add_argument("--split", default="train")
-    store_parser.add_argument("--split_args", type=_parse_args, default=None)
-    store_parser.add_argument("--sep", type=str, default=None)
-    store_parser.add_argument("--output", type=str, default=None)
-    store_parser.add_argument("--N", "-N", type=int, default=-1)
-    store_parser.add_argument("--shuffle", type=_tobool, default=True)
-    store_parser.add_argument("--random_seed", type=int, default=42)
-    store_parser.add_argument("--verbose", type=_tobool, default=True)
-    store_parser.add_argument("--histogram", type=_tobool, default=False)
-    store_parser.add_argument("--num_works", type=int, default=0)
-    store_parser.set_defaults(func=main_store)
 
+    # 'store' サブコマンド
+    setup_store(subparsers.add_parser('store', help='store'))
+    
     # 'dump' サブコマンド
     dump_parser = subparsers.add_parser('dump', help='dump help')
     dump_parser.add_argument("urls", type=str, nargs="+", help="urls")

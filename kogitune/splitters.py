@@ -1,13 +1,14 @@
 from typing import List, Union, Tuple
 import random
 import json
+import re
 import numpy as np
 import pandas as pd
 
 import hashlib
 from transformers import AutoTokenizer
 
-from .tokenizers import load_tokenizer, find_ellipsis_token_id, find_newline_token_id, find_token_id
+from .tokenizers import *
 from .commons import *
 from .file_utils import *
 
@@ -28,27 +29,167 @@ def _record_tokens(counts):
         'min': int(np.min(data)),
     }
 
-def _update_fn(blocks: List[List[int]]):
-    return blocks
+
+N_CHUNKS = 4096
+
+class DatasetStore(object):
+    def __init__(self, store_path, prefix, args):
+        self.store_path = safe_dir(store_path)
+        self.block_size = args.get('block_size', None)
+        self.prefix = prefix
+        self.config_file = safe_join_path(self.store_path, f'{self.prefix}_config.json')
+        self.file_ext = args.get("file_ext", "npz")
+        self.n_chunks = args.get("n_chunks", N_CHUNKS)
+        self.config = {}
+        self.chunk_files = []
+        self.chunkseq = 0
+        self.chunks = []
+        self.shuffle_n = args.get("shuffle", 0)
+        self.n_items = 0
+        self.n_tokens = 0
+        self.max_length = 0
+        self.mix_length = DEFAULT_MAX_LENGTH*10
+        self.clear_files()
+
+    def clear_files(self):
+        if not os.path.exists(self.config_file):
+            return
+        with open(self.config_file, "r") as f:
+            config = json.load(f)
+            if 'files' not in config:
+                return
+            for file in config['files'].keys():
+                filepath = safe_join_path(self.store_path, file)
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                if os.path.exists(f'{filepath}.zst'):
+                    os.remove(f'{filepath}.zst')
+
+    def shuffle_chunk(self, N=4):
+        if len(self.chunk_files) > N:
+            files = random.sample(self.chunk_files, N)
+            buffers=[]
+            filedata=[]
+            for file in files:
+                chunks = load_chunk_file(self.store_path, file)
+                if chunks is None:
+                    return False
+                buffers.extend(chunks)
+                filedata.append((file, len(buffers), len(buffers)+len(chunks)))
+            reminder = len(buffers)
+            buffers.extend(self.chunks)
+            random.shuffle(buffers)
+            for file, start, end in filedata:
+                save_chunk_file(self.store_path, file, buffers[start:end])
+            self.chunks = buffers[reminder:]
+        return True
+
+    def save_chunk(self):
+        if len(self.chunks) > 0:
+            if self.shuffle_n > 0:
+                self.shuffle_chunk(N=self.shuffle_n)
+            chunk_file = chunkseq_to_filename(len(self.chunk_files), self.prefix, self.file_ext)
+            save_chunk_file(self.store_path, chunk_file, self.chunks)
+            self.chunk_files.append(chunk_file)
+            self.n_items += len(self.chunks)
+            self.chunks = []
+
+    def append(self, block: List[int]):
+        self.chunks.append(np.array(block, dtype=np.int32))
+        self.n_tokens += len(block)
+        self.max_length = max(len(block), self.max_length)
+        self.min_length = min(len(block), self.mix_length)
+        if len(self.chunks) == self.n_chunks:
+            self.save_chunk()
+
+    def extend(self, blocks: List[List[int]]):
+        for block in blocks:
+            self.append(block)
+        return []   
+
+    def check_files(self, validation=True):
+        d = {}
+        for chunk_file in tqdm(self.chunk_files, desc='File validation'):
+            filepath = safe_join_path(self.store_path, chunk_file)
+            checks = {
+                'filesize': get_filesize(filepath), 
+                'sha1': get_file_sha1(filepath)
+            }
+            d[chunk_file] = checks
+            if validation:
+                if not load_chunk_file('', filepath):
+                    verbose_print(f'unloaded and broken chunk file {chunk_file}')
+                    return None
+                if not check_chunk_file(self.store_path, chunk_file, checks):
+                    verbose_print(f'invalidate chunk file {chunk_file}')
+                    return None
+        self.config['files'] = d
+
+    def compress(self, compressed_ext='zst'):
+        if 'compressed' not in self.config:
+            zfiles=[]
+            for file in tqdm(self.chunk_files, desc='File compression'):
+                filepath = safe_join_path(self.store_path, file)
+                filepath = zstd_file(filepath, rm=True)
+                zfiles.append(f'{file}.{compressed_ext}')
+            self.config['compressed'] = compressed_ext
+            self.chunk_files=zfiles
+
+    def save(self, validation=True, compression='zst'):
+        if len(self.chunks) > 0:
+            self.save_chunk()
+        self.config.update(dict(
+            n_items = self.n_items,
+            n_chunks=self.n_chunks,
+            n_tokens = self.n_tokens,
+            max_length = self.max_length,
+            min_length = self.min_length,
+            chunkseq=len(self.chunk_files),
+            file_ext=self.file_ext,
+        ))
+        self.check_files(validation=validation)
+        if compression:
+            self.compress()
+        with open(self.config_file, "w") as w:
+            json.dump(self.config, w)
+        self.update_metadata()
+        verbose_print(f'トークン数: {self.n_tokens:,} 件数: {self.n_items:,}')
+
+    def update_metadata(self):
+        index_file = safe_join_path(self.store_path, f'index.json')
+        metadata = read_metadata(index_file)
+        split = metadata.get('prefixes', {})
+        summary = {k:v for k,v in self.config.items() if isinstance(v, (int, float, bool, str))}
+        split[self.prefix] = summary
+        metadata['prefixes'] = split
+        write_metadata(index_file, metadata)
+
+def getint(args, keys, default):
+    return get_dict_multi_keys(args, keys, default, format_fn=int)
 
 empty_tokens = []
 
 class DefaultSplitter(object):
 
-    def __init__(self, tokenizer, block_size, **kwargs):
+    def __init__(self, tokenizer, args):
         self.tokenizer = tokenizer
-        self.block_size = block_size
-        self.split_args = kwargs
-        self.pad_token_id = getint(kwargs, 'pad_token_id', tokenizer.pad_token_id)
-        self.eos_token_id = getint(kwargs, 'eos_token_id', tokenizer.eos_token_id)
+        self.split_args = args
+        self.max_length = getint(args, 'max_length|block_size', DEFAULT_MAX_LENGTH)
+        self.min_length = getint(args, 'min_length', self.max_length//4)
         self.ellipsis_token_id = find_ellipsis_token_id(tokenizer)
-        self.trancate_size=getint(kwargs, 'trancate_size', 0)
-        self.sep = kwargs.get('sep', None)
-        self.token_counts = []
+        # self.pad_token_id = getint(args, 'pad_token_id', tokenizer.pad_token_id)
+        # self.eos_token_id = getint(args, 'eos_token_id', tokenizer.eos_token_id)
+        # self.trancate_size=getint(args, 'trancate_size', 0)
+        # self.sep = args.get('sep', None)
+        self.stat_token_counts = []
+        self.text_token_count = 0
         self.text_length_count = 0
+        self.total_count = 0
         self.drop_count = 0
-        self.trimmed_size = 0
-        self.padded_size = 0
+        self.token_count = 0
+        self.trancate_count = 0
+        self.overlap_count = 0
+        self.padding_count = 0
     
     def about(self):
         return dict(name=self.__class__.__name__)
@@ -59,65 +200,78 @@ class DefaultSplitter(object):
     def flush(self, blocks: List[List[int]]):
         pass
 
-    def split_iter(self, iterator, update_fn=_update_fn):
+    def split_iter(self, iterator, update_fn=lambda x: None):
         blocks = []
         for text in iterator:
+            self.total_count += 1
             self.split(text, blocks)
-            blocks = update_fn(blocks)
+            update_fn(blocks)
+            blocks = []
         self.flush(blocks)
-        blocks = update_fn(blocks)
-        return blocks
+        update_fn(blocks)
 
     def encode_and_count(self, text, eos=True):
         self.text_length_count += len(text)
         if eos:
             tokens = self.tokenizer.encode(text)
-            self.token_counts.append(len(tokens)-1)
+            self.text_token_count += len(tokens)-1 
         else:
             tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(text))
-            self.token_counts.append(len(tokens)-1)
+            self.text_token_count += len(tokens)
+        if len(self.stat_token_counts) < 10000:
+            self.stat_token_counts.append(len(tokens))
         return tokens
 
-    def resize_token_counts(self, size):
-        self.token_counts[-1] += size
+    # def resize_token_counts(self, size):
+    #     self.token_counts[-1] += size
 
-    def report(self, logs: dict = None, verbose=True):
-        token_count = sum(self.token_counts)
-        if logs:
-            logs['n_tokens'] = token_count
-            if self.text_length_count > 0:
-                logs['n_chars'] = self.text_length_count
-                logs['tokens_per_char'] = token_count / self.text_length_count
-            logs['tokens'] = _record_tokens(self.token_counts)
+    def report(self, logs: dict, verbose=True):
+        logs['source_tokens'] = self.text_token_count
+        logs['source_chars'] = self.text_length_count
+        logs['tokens_per_char'] = self.text_token_count / self.text_length_count
         if verbose:
-            print(pd.DataFrame({'tokens': self.token_counts}).describe())
-        if self.padded_size > 0:
-            if verbose:
-                print(f'padding: {self.padded_size:,} {self.padded_size*100/token_count:.2f}%')
-            if logs:
-                logs['padding_rate'] = self.padded_size / token_count
-        if self.drop_count > 0:
-            if verbose:
-                print(f'drops: {self.drop_count:,}')
-            if logs:
-                logs['drops'] = self.drop_count
+            verbose_print(f'文字数 {format_unit(self.text_length_count, scale=1000)} {self.text_length_count} 圧縮率（トークン/文字数） {self.text_token_count*100 / self.text_length_count:.2f}%')
+            verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.total_count}')
+            print(pd.DataFrame({'tokens': self.stat_token_counts}).describe())
+        logs['token_stats'] = _record_tokens(self.stat_token_counts)
+
+        drop = self.drop_count / self.total_count
+        logs['dropped'] = self.drop_count
+        logs['n_tokens'] = self.token_count
+        trancated = self.trancate_count / self.token_count
+        logs['trancated'] = trancated
+        padding = self.padding_count / (self.total_count*self.max_length)
+        logs['padding'] = padding
+        overlap = self.overlap_count / self.token_count
+        logs['overlap'] = overlap
+        if verbose:
+            verbose_print(f'トークン数: {format_unit(self.token_count, scale=1000)} {self.token_count:,} ブロック長: 最大(max_length){self.max_length} 最小(min_length){self.min_length}')
+            verbose_print(f'未使用(ドロップ): {drop*100:.2f}% {self.drop_count:,}/{self.total_count:,}')
+            if not hasattr(self, 'trancate_size'):
+                self.trancate_size = -1
+            verbose_print(f'切り詰め(trancate={self.trancate_size}): {trancated*100:.2f}% ({self.trancate_count:,}/{self.token_count:,})')
+            if hasattr(self, 'overlap_size'):
+                verbose_print(f'オーバーラップ(overlap={self.overlap_size}): {overlap*100:.2f}% ({self.overlap_count:,}/{self.token_count:,})')
+            verbose_print(f'想定パディング: {padding*100:.2f}% ({self.padding_count:,}/{self.total_count*self.max_length:,})')
 
 
 class SimpleTextBlockSplitter(DefaultSplitter):
-    def __init__(self, tokenizer, block_size, **kwargs):
-        super().__init__(tokenizer, block_size, **kwargs)
+    def __init__(self, tokenizer, args):
+        super().__init__(tokenizer, args)
         self.extra_tokens=empty_tokens
-        self.prefix='pre'
+        self.trancate_size = getint(args, 'trancate_size', self.max_length // 8)
 
     def split(self, text:str, blocks: List[List[int]]):
         tokens = self.encode_and_count(text)
-        work_size = self.block_size
+        work_size = self.max_length
         tokens = self.extra_tokens + tokens
         for i in range(0, len(tokens) - work_size + 1, work_size):  
             segmented = tokens[i : i + work_size]
             blocks.append(segmented)
+            self.token_count += work_size
         extra_size = len(tokens) % work_size
-        if extra_size == 0:
+        if extra_size < self.trancate_size :
+            self.trancate_count += extra_size            
             self.extra_tokens = empty_tokens
         else:
             self.extra_tokens = tokens[-extra_size:]
@@ -125,47 +279,88 @@ class SimpleTextBlockSplitter(DefaultSplitter):
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
         if logs:
-            logs['block_size'] = self.block_size
+            logs['block_size'] = self.max_length
 
-import re
+LINE_PATTERN = re.compile(r'\n([^\n])')
 
-def add_section(code):
-    return re.sub(r'\n(def|    def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ', r'\n<sectioN>\1 ', code)
+def add_section_for_line(text):
+    return LINE_PATTERN.sub(r'\n<sectioN>\1', text)
+
+DOC_PATTERN = re.compile(r'\n\n([^\n])')
+
+def add_section_for_doc(text):
+    return DOC_PATTERN.sub(r'\n\n<sectioN>\1', text)
+
+PYTHON_PATTERN = re.compile(r'\n(def|    def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ')
+
+def add_section_for_python(code):
+    return PYTHON_PATTERN.sub(r'\n<sectioN>\1 ', code)
+
+MARKDOWN_PATTERN = re.compile(r'\n(#|[^\n])')
+
+def add_section_for_markdown(text):
+    return MARKDOWN_PATTERN.sub(r'\n<sectioN>\1', text)
+
+def find_add_section(section):
+    if section == 'python' or section == 'py':
+        return add_section_for_python
+    if section == 'markdown' or section == 'md':
+        return add_section_for_markdown
+    if section == 'line':
+        return add_section_for_line
+    return add_section_for_doc
 
 class OverlapTextBlockSplitter(DefaultSplitter):
-    def __init__(self, tokenizer, block_size, **kwargs):
-        super().__init__(tokenizer, block_size, **kwargs)
-        self.prefix='pre'
+    def __init__(self, tokenizer, args):
+        super().__init__(tokenizer, args)
+        self.section = args.get('section', 'doc').lower()
+        self.add_section = find_add_section(self.section)
+        self.overlap_size = getint(args, 'overlap_size|overlap', self.max_length // 4)
+        self.pad_id = find_token_id(tokenizer, '\n', '<nL>')
+        self.padding_size = getint(args, 'padding_size|padding', self.max_length // 8)
+
 
     def split(self, text:str, blocks: List[List[int]]):
-        text = add_section(text)
+        text = self.add_section(text)
         text_blocks = text.split('<sectioN>')
         chunks = [self.encode_and_count(sec, eos=False) for sec in text_blocks]
         chunk_size = len(chunks)
-        work_size = self.block_size
+        work_size = self.max_length
         i = 0
         while i < chunk_size:
             tokens = chunks[i]
+            overlapped = 0
             i += 1
             while len(tokens) < work_size and i < chunk_size:
                 tokens += chunks[i]
+                overlapped = len(chunks[i])
                 i += 1
             for j in range(0, len(tokens) - work_size + 1, work_size):  
                 blocks.append(tokens[j : j + work_size])
+                self.token_count += work_size
+            # -----------------> overlapped
+            # -----> ==========> reminder は引く必要がある
+            reminder = len(tokens) % work_size  # 残り
+            if 0 < (overlapped - reminder) < self.overlap_size:
+                self.overlap_count += (overlapped - reminder)
+                i -= 1
+                continue
+            # 切り捨てる
+            self.trancate_count += reminder
+            
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
         if logs:
-            logs['block_size'] = self.block_size
-            logs['overlap'] = 'python'
+            logs['block_size'] = self.max_length
+            logs['section'] = self.section
 
 
 class MultiTextBlockSplitter(DefaultSplitter):
-    def __init__(self, tokenizer, block_size, **kwargs):
-        super().__init__(tokenizer, block_size, **kwargs)
-        self.prefix='pre'
-        self.work_size = getint(kwargs, 'work_size', 512)
-        self.pad_size = getint(kwargs, 'pad_size', 64)
+    def __init__(self, tokenizer, args):
+        super().__init__(tokenizer, args)
+        self.work_size = getint(args, 'work_size', 512)
+        self.pad_size = getint(args, 'pad_size', 64)
         # 警告が出る場合があるので、padding を変更する
         self.pad_token_id = find_newline_token_id(tokenizer)
         self.extra_tokens = empty_tokens
@@ -302,13 +497,14 @@ class MultiTextBlockSplitter(DefaultSplitter):
             logs['work_size'] = self.work_size
 
 class SimpleTextSplitter(DefaultSplitter):
-    def __init__(self, tokenizer, block_size, **kwargs):
-        super().__init__(tokenizer, block_size, **kwargs)
-        self.prefix=''
+
+    def __init__(self, tokenizer, args):
+        super().__init__(tokenizer, args)
         self.output_sep_token_id = find_token_id(tokenizer, 
-                                                 kwargs.get('output_sep', '<outpuT>'), 
-                                                 kwargs.get('sep', '<seP>'), 
-                                                 '<sep>', '<nL>', '\n')
+                                                 args.get('output_sep', '<outpuT>'), 
+                                                 args.get('sep', '<seP>'), 
+                                                 '<sep>', '<nL>', '\n', ' ')
+        self.trancate_size = getint(args, 'trancate|trancate_size', max(self.min_length, self.max_length//4))
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
@@ -316,41 +512,44 @@ class SimpleTextSplitter(DefaultSplitter):
             logs['output_sep_token_id'] = self.output_sep_token_id            
 
     def trancate_text(self, inputs: List[int], blocks: List[List[int]]):
-        if self.block_size is not None:
-            inputs_size = len(inputs)
-            if inputs_size > self.block_size:
-                if inputs_size - self.block_size > self.trancate_size:
-                    # 切り詰めが大きすぎる
-                    self.drop_count +=1
-                    return
-                half_size = self.block_size // 2
-                prefix = inputs[:half_size]
-                suffix = inputs[-half_size:]
-                if self.ellipsis_token_id:
-                    prefix[-1] = self.ellipsis_token_id
-                inputs = prefix + suffix
-                self.trimmed_size += (inputs_size - len(inputs))
-            else:
-                self.padded_size += self.block_size - inputs_size
+        inputs_size = len(inputs)
+        if inputs_size > self.max_length:
+            if inputs_size - self.max_length > self.trancate_size:
+                # 切り詰めが大きすぎる
+                self.drop_count +=1
+                return
+            half_size = self.max_length // 2
+            prefix = inputs[:half_size]
+            suffix = inputs[-half_size:]
+            if self.ellipsis_token_id:
+                prefix[-1] = self.ellipsis_token_id
+            inputs = prefix + suffix
+            self.trancate_count += (inputs_size - len(inputs))
+        else:
+            self.padding_count += self.block_size - inputs_size
+        self.token_count += len(inputs)
         blocks.append([0] + inputs)
 
     def trancate_pair(self, inputs: List[int], labels: List[int], blocks: List[List[int]]):
-        if self.block_size is not None:
-            if len(labels) > self.block_size:
-                # ラベルの方が大きい場合は諦める
+        inputs_len = len(inputs)
+        labels_len = len(labels)
+        total_len = inputs_len + labels_len
+        if total_len < self.min_length and labels_len >= self.max_length:
+            # ラベルの方が大きい場合は諦める
+            self.drop_count +=1
+            return
+        if total_len > self.max_length:
+            trimming_size = self.max_length - total_len
+            if inputs_len - trimming_size < (self.max_length // 4):
+                # 諦める
                 self.drop_count +=1
                 return
-            if len(inputs)+len(labels) > self.block_size:
-                trimmed_size = self.block_size - len(labels)
-                if len(inputs) - trimmed_size > self.trancate_size:
-                    # 諦める                
-                    self.drop_count +=1
-                    return
-                self.trimmed_size += len(inputs) - trimmed_size
-                inputs = inputs[:trimmed_size]
-            else:
-                self.padded_size += self.block_size - (len(inputs)+len(labels))
+            inputs = inputs[:-trimming_size]
+            self.trancate_count += trimming_size
+            assert len(inputs) + labels_len == self.max_length
         index = len(inputs)
+        self.padding_count += self.max_length - (len(inputs)+len(labels))
+        self.token_count += self.max_length
         inputs[-1] = self.output_sep_token_id
         blocks.append([(index * CHUNK_MAGIC) + 1] + inputs + labels)
 
@@ -365,25 +564,22 @@ class SimpleTextSplitter(DefaultSplitter):
             self.output_sep_token_id = None
 
 
-def new_TextSplitter(tokenizer, training_type, format='simple', block_size=None, **kwargs):
+def select_splitter(tokenizer, args: dict):
     splitter = None
-    if training_type.startswith('pre'):
-        if block_size is None:
-            verbose_print(f"block_sizeの指定がないため、block_size={DEFAULT_BLOCK_SIZE}にします。")
-            block_size = DEFAULT_BLOCK_SIZE
-        if format=='multi':
-            splitter = MultiTextBlockSplitter(tokenizer, block_size, **kwargs)
-        if format=='overlap':
-            splitter = OverlapTextBlockSplitter(tokenizer, block_size, **kwargs)
+    data_type = get_dict_multi_keys(args, 'data_type|training_type', 'text')
+    if data_type == 'text':
+        format = args.get('format', 'simple')
+        # if format=='multi':
+        #     splitter = MultiTextBlockSplitter(tokenizer, args)
+        if format=='overlap' or 'section' in args or 'overlap' in args:
+            args['format'] = 'overlap'
+            splitter = OverlapTextBlockSplitter(tokenizer, args)
         if splitter is None:
             if format != 'simple':
                 verbose_print(f"format={format}は、サポートされていません。")
-            splitter = SimpleTextBlockSplitter(tokenizer, block_size, **kwargs)
+            splitter = SimpleTextBlockSplitter(tokenizer, args)
     else: # ファインチューニング用
-        # if splitter is None:
-        #     if format != 'simple':
-        #         verbose_print(f"format={format}は、サポートされていません。")
-        splitter = SimpleTextSplitter(tokenizer, block_size, **kwargs)
+        splitter = SimpleTextSplitter(tokenizer, args)
     return splitter
 
 
@@ -398,68 +594,6 @@ def record_tokenizer(tokenizer: AutoTokenizer):
         eos_token_id = tokenizer.eos_token_id,
         hash=sha256, 
         vocab_size=tokenizer.vocab_size)
-
-
-N_CHUNKS = 4096
-
-class DatasetStore(object):
-    def __init__(self, store_path, prefix, block_size, **kwargs):
-        self.store_path = safe_dir(store_path)
-        self.prefix = prefix
-        self.block_size = block_size
-        self.config = {}
-        self.file_ext = kwargs.get("file_ext", "npz")
-        self.n_chunks = kwargs.get("n_chunks", N_CHUNKS)
-        self.shuffle = kwargs.get("shuffle", False)
-        self.chunkseq = 0
-        self.bufs = []
-        self.n_items = 0
-        self.n_tokens = 0
-        self.chunk_files = []
-
-    def validate(self, validation=True):
-        if validation:
-            file_checks = make_chunk_filelist(self.store_path, self.chunk_files)
-            if file_checks:
-                self.config['files'] = file_checks
-        config_file = safe_join_path(self.store_path, f'{self.prefix}config.json')
-        with open(config_file, "w") as w:
-            json.dump(self.config, w)
-
-    def save_config(self, validation=False):
-        self.config.update(dict(
-            n_items=self.n_items,
-            n_tokens = self.n_tokens,
-            chunkseq=len(self.chunk_files),
-            n_chunks=self.n_chunks,
-            file_ext=self.file_ext,
-            shuffle=self.shuffle,
-        ))
-        self.validate(validation=False)
-
-    def save(self, save_config=True):
-        if len(self.bufs) > 0:
-            chunk_file = chunkseq_to_filename(self.chunkseq, self.prefix, self.file_ext)
-            save_chunk_file(self.store_path, chunk_file, self.bufs)
-            self.chunk_files.append(chunk_file)
-            self.n_items += len(self.bufs)
-            if len(self.bufs) == self.n_chunks:
-                self.chunkseq += 1
-                self.bufs = []
-        if save_config:
-            self.save_config(validation=False)
-            verbose_print(f'トークン数: {self.n_tokens:,} 件数: {self.n_items:,}')
-
-    def append(self, block: List[int]):
-        self.bufs.append(np.array(block, dtype=np.int32))
-        self.n_tokens += len(block)
-        if len(self.bufs) == self.n_chunks:
-            self.save(save_config=False)
-
-    def extend(self, blocks: List[List[int]]):
-        for block in blocks:
-            self.append(block)
-        return []   
 
 def append_valid_file(val_files: List[str], filename: str):
     if '_train' in filename:
@@ -476,80 +610,65 @@ def append_valid_file(val_files: List[str], filename: str):
             val_files.append(filename2)
             return
 
-def split_to_store(filenames, N=-1,
-                   desc=None,
-                   tokenizer_path=DEFAULT_TOKENIZER, 
-                   training_type='',
-                   format='simple', 
-                   split='train',
-                   block_size=None, # DEFAULT_BLOCKSIZE 
-                   shuffle=True, random_seed=42,
-                   store_path=None, 
-                   verbose=True, histogram=False, validation=False,
-                   split_args={}):
-    
-    if isinstance(tokenizer_path, str):
-        tokenizer = load_tokenizer(tokenizer_path)
-    else:
-        tokenizer = tokenizer_path
+def split_to_store(filenames: List[str], validation=True, args={}):
+    if isinstance(filenames, str):
+        filenames = filenames.split('|')
 
+    tokenizer = get_dict_multi_keys(args, 'tokenizer|tokenizer_path', DEFAULT_TOKENIZER)
+    if isinstance(tokenizer, str):
+        tokenizer = load_tokenizer(tokenizer)
+    
+    store_path = get_dict_multi_keys(args, 'store_path|store_dir', None)
     if store_path is None:
         filebase = get_filebase(filenames[0])
-        _, _, tokenizer_name = tokenizer_path.rpartition('/')
+        _, _, tokenizer_name = tokenizer.name_or_path.rpartition('/')
         store_path=f'{tokenizer_name}/{filebase}'
+        args['store_path'] = store_path
         verbose_print(f'Saving To.. {store_path}')
     else:
         filebase = store_path.replace('/', '_')
 
-    splitter = new_TextSplitter(tokenizer, training_type,
-                                format=format, block_size=block_size, 
-                                **split_args)
-    
-    prefix = f'{(splitter.prefix+split)}_'
-
-    store = DatasetStore(store_path, prefix, block_size, **split_args)
-
-    if desc:
-        store.config['desc'] = desc
-    store.config['source'] = filenames
-    store.config['tokenizer_path'] = str(tokenizer.name_or_path)
-    store.config['tokenizer'] = record_tokenizer(tokenizer)
-    store.config['splitter'] = splitter.about()
-
+    splitter = select_splitter(tokenizer, args)
+    data_type = get_dict_multi_keys(args, 'data_type|training_type', 'text')
+    split = get_dict_multi_keys(args, 'split', 'train')
+    data_size = getint(args, 'max_length|block_size', -1)
+    prefix = f"{data_type}{data_size}{split}"
+    random.seed(getint(args, 'random_seed', 42))
+    store = DatasetStore(store_path, prefix, args)
+    store.config.update(dict(
+        source = filenames,
+        data_type = data_type, split=split,
+        tokenizer_path = str(tokenizer.name_or_path),
+        tokenizer = record_tokenizer(tokenizer),
+        splitter = splitter.about(),
+    ))
+    print(store.config)
     val_files = []
     for filename in filenames:
-        iterator = file_iterator(filename, N=N)
+        filename, file_args = parse_url_args(filename)
+        iterator = iterate_line(filename, N=getint(file_args, 'N|n', -1), args=file_args)
         splitter.split_iter(iterator=iterator, update_fn=store.extend)
         append_valid_file(val_files, filename)
 
-    if shuffle:
-        verbose_print('シャッフルします')
-        shuffle_chunk_files(store_path, store.chunk_files, random_seed=random_seed)
-        store.config['shuffle'] = shuffle
-        store.config['random_seed'] = random_seed
+    splitter.report(store.config, verbose=args.get('verbose', False))
+    store.save(validation=validation)
+    verbose_print(store.config)
 
-    splitter.report(store.config, verbose=verbose)
-    store.save()
-    print(store.config)
-    if validation:
-        store.validate()
-    if histogram:
-        make_histogram(tokenizer, store_path, store.chunk_files, verbose=verbose)
+    if args.get('histogram', False):
+        make_histogram(tokenizer, store_path, store.chunk_files, verbose=args.get('verbose', False))
 
     if len(val_files) > 0:
         verbose_print('split="valid"も作成します')
-        split_to_store(val_files, 
-                       desc=desc,
-                       tokenizer_path=tokenizer, 
-                       training_type=training_type,
-                       format=format, 
-                       split='valid',
-                       block_size=block_size,   
-                       shuffle=shuffle, random_seed=random_seed,
-                       store_path=store_path, 
-                       verbose=verbose, histogram=False, validation=validation,
-                       split_args=split_args)
+        args['histogram'] = False
+        split_to_store(val_files, validation=validation, args=args)
 
+def make_local_store(filename:str, tokenizer, args:dict):
+    if 'cache_dir' in args and 'store_path' not in args:
+        filebase = get_filebase(filename)
+        args['store_path'] = safe_join_path(args['cache_dir'], filebase)
+    args['tokenizer'] = tokenizer
+    split_to_store(filename, validation=args.get('validation', False), args=args)
+    return str(os.path.abspath(args['store_path']))
 
 def make_histogram(tokenizer, store_path, chunk_files, verbose=True):
     token_ids = list(range(0, tokenizer.vocab_size))
@@ -568,16 +687,4 @@ def make_histogram(tokenizer, store_path, chunk_files, verbose=True):
     df.to_csv(csv_file)
     verbose_print(f"字句の出現頻度を'{csv_file}'に保存しました。")
 
-def make_local_store(filename, tokenizer, block_size, args):
-    filebase = get_filebase(filename)
-    store_path = safe_join_path(args['cache_dir'],filebase)
-    split_to_store(filename, 
-                   tokenizer_path=tokenizer, 
-                   for_pretraining=args.get('training_type', ''),
-                   format='simple', 
-                   split='train',
-                   block_size=block_size, 
-                   store_path=store_path,
-                   verbose=False, histogram=False,
-                   kwargs={})
-    return str(os.path.abspath(store_path))
+
