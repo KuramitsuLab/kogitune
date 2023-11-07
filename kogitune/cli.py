@@ -91,7 +91,8 @@ def main_freeze(hparams):
     with DataComposer(hparams.urls, 
                       data_type=hparams.data_type,
                       max_length=hparams.max_length) as dc:
-        for example in tqdm(dc):
+        for i in tqdm(range(len(dc))):
+            example=dc[i]
             input_ids.append(example['input_ids'])
             if 'attention_mask' in example:
                 attention_mask.append(example['attention_mask'])
