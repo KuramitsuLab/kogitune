@@ -101,15 +101,61 @@ def file_iterator(filename, N=None, args={}):
     if N:
         pbar.close()
 
+def parse_strip_nl(line):
+    return line.strip().replace('<nL>', '\n')
+
+def parse_static_text(line):
+    d = json.loads(line)
+    return d['text']
+
+class parse_text:
+    def __init__(self, key='text'):
+        self.key = key
+    def __call__(self, line):
+        d = json.loads(line)
+        return d[self.key]
+
+class parse_seq2seq:
+    def __init__(self, keyin, keyout):
+        self.keyin = keyin
+        self.keyout = keyout
+    def __call__(self, line):
+        d = json.loads(line)
+        return d[self.keyin], d[self.keyout]
+
+
+def detect_datatype(filename:str, args: dict):
+    if '.json' in filename:
+        with zopen(filename) as f:
+            line = f.readline()
+            d = json.loads(line)
+            key = get_dict_multi_keys(args, 'column|columns|content', None)
+            if key:
+                keys = key.split(',')
+                if len(keys) == 2 and keys[0] in d and keys[1] in d:
+                    args['parse_fn'] = parse_seq2seq(keys[0], keys[1])
+                    return 'seq2seq'
+                if keys[0] in d:
+                    args['parse_fn'] = parse_text(key[0])
+                    return 'text'
+            if 'in' in d and 'out' in d:
+                args['parse_fn'] = parse_seq2seq('in', 'out')
+                return 'seq2seq'
+            if 'text' in d:
+                args['parse_fn'] = parse_static_text
+                return 'text'
+            raise ValueError('🦊 どのデータ列を使うつもりなのかな？', d)
+    args['data_type'] = 'text'
+    args['parse_fn'] = parse_strip_nl
+    return args['data_type']
+
 def iterate_line(filename, N=None, args={}):
     if N == -1:
         N = get_filelines(filename)
     if N:
         from tqdm import tqdm
         pbar = tqdm(total=N, desc=filename)
-    parse_fn = parse_strip
-    if '.json' in filename:
-        parse_fn = parse_jsonl
+    parse_fn = args['parse_fn']
     c=0
     with zopen(filename) as f:
         line = f.readline()
@@ -122,7 +168,6 @@ def iterate_line(filename, N=None, args={}):
             line = f.readline()
     if N:
         pbar.close()
-
 
 def _makedirs(path):
     dir, _,  file = path.rpartition("/")
@@ -199,25 +244,29 @@ def unzstd_file(filename, rm=False, sync=True):
             return unzstd_file(f'{filename}.zst', rm=rm, sync=sync)
     return filename
 
-def resolve_file(url_base, file_path, cache_dir, sync=True, verbose=True):
+def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, verbose=True):
     remote_file = safe_join_path(url_base, file_path)
-    if remote_file.startswith('/'):
-        # ローカルなファイルパスの場合
-        return remote_file
+    # if remote_file.startswith('/'):
+    #     # ローカルなファイルパスの場合
+    #     return remote_file
     cached_file = safe_join_path(cache_dir, file_path)
     # ディレクトリを作っておく
     os.makedirs(cached_file.rpartition("/")[0], exist_ok=True)
     cached_file_size = get_filesize(cached_file)
-    #print('@', cached_file_size, cached_file)
     if cached_file_size > 0:
         return cached_file
-
+    
+    if compressed:
+        remote_file = f'{remote_file}.{compressed}'
+        cached_file = f'{cached_file}.{compressed}'
+        if os.path.exists(cached_file):
+            return unzstd_file(cached_file)
+    
     # コマンド
-    if remote_file.startswith('file:'):
-        remote_file = os.path.abspath(remote_file[5:]) # file: をとる
-        cmd = f'cp {remote_file} {cached_file}'
-    else:
+    if remote_file.startswith('https://') or remote_file.startswith('http://'):
         cmd = f"wget -qO {cached_file}.tmp {remote_file} && mv {cached_file}.tmp {cached_file}"
+    else:
+        cmd = f'cp {remote_file} {cached_file}'
 
     if sync:
         if cached_file_size == 0:
@@ -229,18 +278,21 @@ def resolve_file(url_base, file_path, cache_dir, sync=True, verbose=True):
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
             if verbose:
-                verbose_print(f'ダウンロード失敗 file={cached_file} {cached_file_size} bytes', cmd)
+                verbose_print(f'ダウンロード失敗 file={cached_file} {format_unit(cached_file_size, scale=1024)}B', cmd)
             os.remove(cached_file)
         else:
-            verbose_print(f'Downloaded {get_filesize(cached_file):,} bytes:', cmd)
+            if compressed:
+                cached_file = unzstd_file(cached_file, rm=True)
+            verbose_print(f'Downloaded {format_unit(cached_file_size, scale=1024)}B by', cmd)
         return cached_file
 
     if get_filesize(cached_file) == -1:
         touch(cached_file)
         verbose_print('プレフェッチ', remote_file)
-        subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
-        if remote_file.endswith('.zst'):
-            unzstd_file(cached_file, sync=False)
+        if compressed:
+            subprocess.call(f"{cmd} && zstd -dq --rm {cached_file} &", shell=True, stderr=subprocess.DEVNULL)
+        else:
+            subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
     return None
 
 

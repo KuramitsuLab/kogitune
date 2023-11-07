@@ -54,9 +54,9 @@ def setup_store():
     return hparams
 
 
-def main_dump(hparams):
+def main_head(hparams):
     with DataComposer(hparams.urls, 
-                      training_type=hparams.training_type,
+                      data_type=hparams.data_type,
                       max_length=hparams.max_length, 
                       test_run=hparams.test_run) as dc:
         tokenizer = dc.prepare_tokenizer()
@@ -66,6 +66,14 @@ def main_dump(hparams):
             text = tokenizer.decode(data)
             print(text)
 
+def setup_head(parser):
+    parser.add_argument("urls", type=str, nargs="+", help="urls")
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--max_length", type=int, default=256)
+    parser.add_argument("--test_run", type=int, default=10)
+    parser.set_defaults(func=main_head)
+
+
 def main_update(args):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
@@ -74,7 +82,6 @@ def main_store(hparams=None):
     if hparams is None:
         hparams = setup_store()
     args = {k:v for k,v in vars(hparams).items() if v is not None}
-    print(args)
     split_to_store(hparams.files, validation=True, args=args)
 
 def setup_store(parser):
@@ -84,7 +91,7 @@ def setup_store(parser):
     parser.add_argument("--store_path", default=None)
     parser.add_argument("--max_length", type=int, required=True)
     parser.add_argument("--min_length", type=int, default=None)
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
     parser.add_argument("--format", default="simple")
     parser.add_argument("--split", default="train")
     parser.add_argument("--section", type=str, default=None)
@@ -99,7 +106,6 @@ def setup_store(parser):
     parser.add_argument("--num_works", type=int, default=0)
     parser.set_defaults(func=main_store)
 
-
 def main():
     # メインのパーサーを作成
     parser = argparse.ArgumentParser(description='kogitune 🦊')
@@ -113,16 +119,10 @@ def main():
     setup_store(subparsers.add_parser('store', help='store'))
     
     # 'dump' サブコマンド
-    dump_parser = subparsers.add_parser('dump', help='dump help')
-    dump_parser.add_argument("urls", type=str, nargs="+", help="urls")
-    dump_parser.add_argument("--max_length", type=int, default=512)
-    dump_parser.add_argument("--training_type", type=str, default='')
-    dump_parser.add_argument("--test_run", type=int, default=10)
-    dump_parser.set_defaults(func=main_dump)
-
+    setup_head(subparsers.add_parser('head', help='dump'))
 
     # 'update' サブコマンド
-    update_parser = subparsers.add_parser('update', help='bar help')
+    update_parser = subparsers.add_parser('update', help='update')
     update_parser.set_defaults(func=main_update)
 
     # 引数をパースして対応する関数を実行

@@ -569,8 +569,7 @@ def select_splitter(tokenizer, args: dict):
     data_type = get_dict_multi_keys(args, 'data_type|training_type', 'text')
     if data_type == 'text':
         format = args.get('format', 'simple')
-        # if format=='multi':
-        #     splitter = MultiTextBlockSplitter(tokenizer, args)
+        args['min_length'] = args['max_length']
         if format=='overlap' or 'section' in args or 'overlap' in args:
             args['format'] = 'overlap'
             splitter = OverlapTextBlockSplitter(tokenizer, args)
@@ -628,13 +627,17 @@ def split_to_store(filenames: List[str], validation=True, args={}):
     else:
         filebase = store_path.replace('/', '_')
 
-    splitter = select_splitter(tokenizer, args)
-    data_type = get_dict_multi_keys(args, 'data_type|training_type', 'text')
+    specified_data_type = get_dict_multi_keys(args, 'data_type|type', None)
+    data_type = detect_datatype(filenames[0], args)
+    if specified_data_type is not None and specified_data_type != data_type:
+        verbose_print('警告: データ形式が違うようです')
     split = get_dict_multi_keys(args, 'split', 'train')
     data_size = getint(args, 'max_length|block_size', -1)
     prefix = f"{data_type}{data_size}{split}"
     random.seed(getint(args, 'random_seed', 42))
+
     store = DatasetStore(store_path, prefix, args)
+    splitter = select_splitter(tokenizer, args)
     store.config.update(dict(
         source = filenames,
         data_type = data_type, split=split,
@@ -646,13 +649,14 @@ def split_to_store(filenames: List[str], validation=True, args={}):
     val_files = []
     for filename in filenames:
         filename, file_args = parse_url_args(filename)
+        data_type = detect_datatype(filename, file_args)
         iterator = iterate_line(filename, N=getint(file_args, 'N|n', -1), args=file_args)
         splitter.split_iter(iterator=iterator, update_fn=store.extend)
         append_valid_file(val_files, filename)
 
     splitter.report(store.config, verbose=args.get('verbose', False))
     store.save(validation=validation)
-    verbose_print(store.config)
+    verbose_print({k: v for k, v in store.config.items() if not isinstance(v, dict)})
 
     if args.get('histogram', False):
         make_histogram(tokenizer, store_path, store.chunk_files, verbose=args.get('verbose', False))

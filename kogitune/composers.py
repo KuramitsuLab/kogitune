@@ -5,7 +5,7 @@ import random
 
 import json
 import shutil
-from urllib.parse import urlparse, parse_qs
+#from urllib.parse import urlparse, parse_qs
 import hashlib
 
 from collections import deque
@@ -15,18 +15,12 @@ import numpy as np
 
 import torch
 from torch.utils.data import Dataset
-from transformers import DataCollatorForLanguageModeling
+#from transformers import DataCollatorForLanguageModeling
 
 from .commons import *
 from .file_utils import *
 from .tokenizers import *
 from .splitters import *
-
-# _ID = 0
-# def random_name():
-#     global _ID
-#     _ID+= 1
-#     return f'Cache{_ID-1}'
 
 # 設定ファイル
 
@@ -85,6 +79,7 @@ class TensorArrayDataset(Dataset):
             if self.n_subblocks > 1:
                 self.n_chunks = self.n_chunks * self.n_subblocks
                 verbose_print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
+        self.compressed = config.get("compressed", None)
         self.is_seq2seq = 'output_sep_token_id' in config
         self.config = config
         return config
@@ -105,7 +100,7 @@ class TensorArrayDataset(Dataset):
         if chunk_file in self.cache:
             return self.cache[chunk_file]
         with _FileLock(self.lock_file):
-            chunk_file2 = resolve_file(self.url, chunk_file, self.cache_dir)
+            chunk_file2 = resolve_file(self.url, chunk_file, self.cache_dir, self.compressed)
             chunks = load_chunk_file(chunk_file2, subblocks=self.n_subblocks)
         if chunks is None:
             # エラーで落ちるくらいなら、キャッシュのデータで学習を続ける
@@ -129,7 +124,7 @@ class TensorArrayDataset(Dataset):
     def try_prefetch(self, index):
         chunk_index = index // self.n_chunks
         chunk_file = self.chunk_files[chunk_index % len(self.chunk_files)]
-        resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
+        resolve_file(self.url, chunk_file, self.cache_dir, self.compressed, sync=False)
 
 """
 class ChunkedDataset(Dataset):
@@ -466,5 +461,4 @@ class DataComposer(MixingDataset):
                 verbose_print('Cleaned up', self.cache_dir)
             except:
                 pass
-
 
