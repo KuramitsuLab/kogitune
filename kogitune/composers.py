@@ -126,111 +126,6 @@ class TensorArrayDataset(Dataset):
         chunk_file = self.chunk_files[chunk_index % len(self.chunk_files)]
         resolve_file(self.url, chunk_file, self.cache_dir, self.compressed, sync=False)
 
-"""
-class ChunkedDataset(Dataset):
-    def __init__(self, url:str, url_args: dict, split='train', block_size=None, prefetch=1):
-        self.url = safe_dir(url)
-        self.url_args = url_args
-        self.split = split
-        self.block_size = block_size
-        self.cache_dir = safe_join_path(url_args['cache_dir'], url_to_hash(url))
-        self.lock_file = url_args['lock_file']
-        if url_args['training_type'].startswith('pre'):
-            self.split_prefix = f"pretrain_"
-        else:
-            self.split_prefix = f"{split}_"
-        self.load_config()
-        self.queue = deque(maxlen=64)
-        self.cache = {}
-        self.prefetch=1
-        # if self.prefetch > 0 and self.n_items > 0:
-        #     self.try_prefetch(0)
-
-    def get_valid_dataset(self, split='valid'):
-        dataset = ChunkedDataset(self.url, self.url_args, split=split, block_size=self.block_size)
-        if len(dataset) > 0:
-            return dataset
-        return None
-
-    def load_config(self):
-        with _FileLock(self.lock_file):
-            config_file = resolve_file(self.url, f'{self.split_prefix}config.json', self.cache_dir)
-        try:
-            with open(config_file) as f:
-                config = json.load(f)
-        except BaseException as e:
-            verbose_print(f'見つかりません {self.url} ({config_file})')
-            config = dict(n_items=0, n_tokens=0)
-        # 設定
-        self.file_ext = config.get("file_ext", "npz")
-        self.n_tokens = config.get('n_tokens', 0)
-        self.n_items = config.get("n_items", 0)
-        self.n_chunks = config.get("n_chunks", N_CHUNKS)
-        self.tokenizer_path = config.get("tokenizer_path", DEFAULT_TOKENIZER)
-        self.max_chunkseq = max(config.get("chunkseq", 1), 1)  # 古いデータ用
-        self.n_subblocks = 1
-        if self.block_size is not None and 'block_size' in config and self.block_size < config['block_size']:
-            self.n_subblocks = config['block_size'] // self.block_size
-            if self.n_subblocks > 1:
-                self.n_chunks = self.n_chunks * self.n_subblocks
-                verbose_print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
-        self.is_seq2seq = 'output_sep_token_id' in config
-        self.config = config
-        return config
-
-    def __len__(self):
-        return self.n_items * self.n_subblocks
-
-    def try_prefetch(self, index):
-        chunkseq = (index // self.n_chunks) % self.max_chunkseq
-        chunk_file = chunkseq_to_filename(chunkseq, self.split_prefix, self.file_ext)
-        resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
-
-    # def try_prefetch(self, chunkseq):
-    #     chunk_file = chunkseq_to_filename(chunkseq % self.max_chunkseq, self.split_prefix, self.file_ext)
-    #     resolve_file(self.url, chunk_file, self.cache_dir, sync=False)
-
-    def get_chunks(self, chunk_file):
-        if chunk_file in self.cache:
-            return self.cache[chunk_file]
-        with _FileLock(self.lock_file):
-            chunk_file2 = resolve_file(self.url, chunk_file, self.cache_dir)
-            chunks = load_chunk_file(chunk_file2)
-            chunks = self.resize_chunks(chunks)
-        if chunks is None:
-            # エラーで落ちるくらいなら、キャッシュのデータで学習を続ける
-            chunks = self.cache[self.queue[0]]
-        # if self.shuffle:
-        #     random.shuffle(chunks)
-        if len(self.queue) == 64:
-            older = self.queue.popleft()
-            if older in self.cache:
-                del self.cache[older]
-        self.queue.append(chunk_file)
-        self.cache[chunk_file] = chunks
-        return chunks
-
-    def resize_chunks(self, chunks):
-        if chunks and self.n_subblocks > 1:
-            newchunks=[]
-            for chunk in chunks:
-                splits = np.array_split(chunk, self.n_subblocks)
-                newchunks.extend(splits)
-            # assert len(newchunks) == len(chunks) * self.n_subbloks
-            return newchunks
-        return chunks
-
-    def __getitem__(self, index):
-        i = index
-        chunkseq = i // self.n_chunks
-        chunk_file = chunkseq_to_filename(chunkseq, self.split_prefix, self.file_ext)
-        chunks = self.get_chunks(chunk_file)
-        if self.prefetch > 0 and index % self.n_chunks == 0:
-            # self.try_prefetch(chunkseq+self.prefetch)
-            self.try_prefetch(index+(self.prefetch*self.n_chunks))
-        return chunks[i % self.n_chunks]
-"""
-
 def get_rank():
     if torch.distributed.is_available() and torch.distributed.is_initialized():
         return torch.distributed.get_rank()
@@ -301,10 +196,6 @@ class DistributedIndexer(Dataset):
         self.valid_dataset = valid_dataset
         return self.valid_dataset
 
-def build_inputs_for_clm(data, max_length):
-    return torch.tensor(data[:max_length].astype(np.int64), dtype=torch.long)
-
-
 def _recalculate_length(mixed):
     dd={}
     n_items = 0
@@ -340,12 +231,34 @@ class MixingDataset(Dataset):
         self.n_items = min(train_size, self.n_items)
         return MixingDataset(mixed, min(valid_size, self.n_items // 4), self.build_fn, self.max_length)
 
+class DefaultCollator(object):
+    def __init__(self, args):
+        self.is_seq2seq = args.get('data_type', 'text') == 'seq2seq'
+
+    def __call__(self, data, max_length):
+        if self.is_seq2seq:
+            version = data[0] % CHUNK_MAGIC
+            if version == 1:
+                index = (data[0] // CHUNK_MAGIC) + 1
+                inputs = data[1:index]
+                labels = data[index:]
+                return {
+                    "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
+                    "attention_mask": torch.ones(len(inputs), dtype=torch.long),
+                    "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),
+                }
+            else:
+                data = data[1:]
+        return {
+            "input_ids": torch.tensor(data.astype(np.int64), dtype=torch.long),
+            "attention_mask": torch.ones(len(data), dtype=torch.long),
+        }
 
 class DataComposer(MixingDataset):
     def __init__(self, url_list, max_length, 
                  cache_dir = None, cleanup=False, use_filelock=True, 
                  random_seed=None, shuffle=True,
-                 build_fn=build_inputs_for_clm, 
+#                 build_fn=build_inputs_for_clm, 
                  tokenizer=None, test_run=None, **args):
         self.max_length = max_length
         self.data_type = get_dict_multi_keys(args, 'data_type', 'text')
@@ -368,7 +281,7 @@ class DataComposer(MixingDataset):
         self.random_seed=getint_environ('KG_RANDOM_SEED|RANDOM_SEED', 42, param_specified=random_seed)
         self.tokenizer_path = None
         self.prepare_data(parse_url_list(url_list), tokenizer)
-        self.build_fn = build_fn
+        self.build_fn = DefaultCollator(args)
 
         # テスト実行
         test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
@@ -414,6 +327,8 @@ class DataComposer(MixingDataset):
             self.n_items += len(dataset)
         if self.n_items > 0:
             self.blend_data(datasets)
+        else:
+            raise ValueError('🦊 データセットが空っぽです。')
 
     def blend_data(self, datasets: List[DistributedIndexer]):
         lens = [len(ds) for ds in datasets]

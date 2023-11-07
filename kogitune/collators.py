@@ -6,10 +6,14 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorForSeq2Seq
 from .tokenizers import find_extra_ids, find_newline_token_id
 from .composers import DataComposer, CHUNK_MAGIC
 
+def build_inputs_for_clm(data, max_length):
+    return torch.tensor(data[:max_length].astype(np.int64), dtype=torch.long)
+
 class PretrainComposer(DataComposer):
     def __init__(self, url_list: Union[str, List[str]], max_length:int, **kwargs):
         kwargs['data_type'] = 'text'
         DataComposer.__init__(self, url_list, max_length=max_length, **kwargs)
+        self.build_fn = build_inputs_for_clm
 
     def get_collator(self, model):
         tokenizer = self.get_tokenizer()

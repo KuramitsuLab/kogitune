@@ -61,10 +61,12 @@ def main_head(hparams):
                       test_run=hparams.test_run) as dc:
         tokenizer = dc.prepare_tokenizer()
         for i in range(len(dc)):
-            data = dc[i]
-            print(f'--({i})--')
-            text = tokenizer.decode(data)
-            print(text)
+            example = dc[i]
+            if 'input_ids' in example:
+                print(f'inputs[{i}]:', tokenizer.decode(example['input_ids']))
+            if 'labels' in example:
+                print(f'labels[{i}]:', tokenizer.decode(example['labels']))
+            print('---')
 
 def setup_head(parser):
     parser.add_argument("urls", type=str, nargs="+", help="urls")
@@ -72,6 +74,47 @@ def setup_head(parser):
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--test_run", type=int, default=10)
     parser.set_defaults(func=main_head)
+
+
+FREEZE='''
+from datasets import load_from_disk
+ds = load_from_disk("{}")
+'''
+
+
+def main_freeze(hparams):
+    from tqdm import tqdm
+    from datasets import Dataset
+    input_ids = []
+    attention_mask = []
+    labels=[]
+    with DataComposer(hparams.urls, 
+                      data_type=hparams.data_type,
+                      max_length=hparams.max_length) as dc:
+        for example in tqdm(dc):
+            input_ids.append(example['input_ids'])
+            if 'attention_mask' in example:
+                attention_mask.append(example['attention_mask'])
+            if 'labels' in example:
+                labels.append(example['labels'])
+    if len(labels) > 0:
+        ds_dict = { "input_ids": input_ids, "attention_mask": attention_mask, "labels": labels }
+    elif len(attention_mask) > 0:
+        ds_dict = { "input_ids": input_ids, "attention_mask": attention_mask}
+    else:
+        ds_dict = { "input_ids": input_ids}
+    ds = Dataset.from_dict(ds_dict).with_format("torch")
+    print(ds)
+    ds.save_to_disk(hparams.output_path)
+    print(FREEZE.format(hparams.output_path))
+
+def setup_freeze(parser):
+    parser.add_argument("urls", type=str, nargs="+", help="urls")
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--max_length", type=int, default=256)
+    parser.add_argument("--output_path", type=str, default='local_dataset')
+    parser.set_defaults(func=main_freeze)
+
 
 
 def main_update(args):
@@ -117,7 +160,10 @@ def main():
 
     # 'store' サブコマンド
     setup_store(subparsers.add_parser('store', help='store'))
-    
+
+    # 'freeze' サブコマンド
+    setup_freeze(subparsers.add_parser('freeze', help='freeze'))
+
     # 'dump' サブコマンド
     setup_head(subparsers.add_parser('head', help='dump'))
 
