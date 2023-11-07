@@ -631,6 +631,7 @@ def split_to_store(filenames: List[str], validation=True, args={}):
     data_type = detect_datatype(filenames[0], args)
     if specified_data_type is not None and specified_data_type != data_type:
         verbose_print('警告: データ形式が違うようです')
+    args['data_type']=data_type
     split = get_dict_multi_keys(args, 'split', 'train')
     data_size = getint(args, 'max_length|block_size', -1)
     prefix = f"{data_type}{data_size}{split}"
@@ -663,6 +664,7 @@ def split_to_store(filenames: List[str], validation=True, args={}):
 
     if len(val_files) > 0:
         verbose_print('split="valid"も作成します')
+        args['split'] = 'valid'
         args['histogram'] = False
         split_to_store(val_files, validation=validation, args=args)
 
