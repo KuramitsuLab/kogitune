@@ -2,8 +2,9 @@ import os
 import argparse
 
 from kogitune.commons import *
-from kogitune.splitters import split_to_store
-from kogitune.composers import DataComposer
+from .splitters import split_to_store
+from .composers import DataComposer
+from .file_utils import parse_url_args, safe_new_file
 
 def _tobool(s):
     return s.lower() == 'true' or s == '1'
@@ -58,7 +59,7 @@ def main_head(hparams):
     with DataComposer(hparams.urls, 
                       data_type=hparams.data_type,
                       max_length=hparams.max_length, 
-                      test_run=hparams.test_run) as dc:
+                      test_run=hparams.test_run, prefetch=0) as dc:
         tokenizer = dc.prepare_tokenizer()
         for i in range(len(dc)):
             example = dc[i]
@@ -81,7 +82,6 @@ from datasets import load_from_disk
 ds = load_from_disk("{}")
 '''
 
-
 def main_freeze(hparams):
     from tqdm import tqdm
     from datasets import Dataset
@@ -90,7 +90,8 @@ def main_freeze(hparams):
     labels=[]
     with DataComposer(hparams.urls, 
                       data_type=hparams.data_type,
-                      max_length=hparams.max_length) as dc:
+                      max_length=hparams.max_length,
+                      prefetch=0) as dc:
         for i in tqdm(range(len(dc))):
             example=dc[i]
             input_ids.append(example['input_ids'])
@@ -115,6 +116,42 @@ def setup_freeze(parser):
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--output_path", type=str, default='local_dataset')
     parser.set_defaults(func=main_freeze)
+
+def main_histogram(hparams):
+    import pandas as pd
+    from tqdm import tqdm
+    with DataComposer(hparams.urls, 
+                      data_type=hparams.data_type,
+                      max_length=hparams.max_length,
+                      prefetch=0) as dc:
+        tokenizer = dc.get_tokenizer()
+        token_ids = list(range(0, tokenizer.vocab_size))
+        vocabs = tokenizer.convert_ids_to_tokens(token_ids)
+        counts = [0] * tokenizer.vocab_size
+        # csv_file = f'{store_path.replace("/", "_")}.csv'
+
+        for i in tqdm(range(len(dc)), desc='counting tokens'):
+            example=dc[i]
+            for token_id in example['input_ids']:
+                counts[token_id] += 1
+            if 'labels' in example:
+                for token_id in example['labels']:
+                    counts[token_id] += 1
+        df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
+        print(df['counts'].describe())
+        if hparams.output_file is None:
+            _, args = parse_url_args(hparams.urls[0], {})
+            _, _, path = args['url_path'].rpartition('/')
+            hparams.output_file = safe_new_file(f'histogram_{path}', 'csv')
+            verbose_print(f"字句の出現頻度を'{hparams.output_file}'に保存しました。")
+        df.to_csv(hparams.output_file)
+
+def setup_histogram(parser):
+    parser.add_argument("urls", type=str, nargs="+", help="urls")
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--output_file", type=str, default=None)
+    parser.set_defaults(func=main_histogram)
 
 
 

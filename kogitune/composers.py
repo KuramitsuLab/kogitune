@@ -5,7 +5,6 @@ import random
 
 import json
 import shutil
-#from urllib.parse import urlparse, parse_qs
 import hashlib
 
 from collections import deque
@@ -15,7 +14,6 @@ import numpy as np
 
 import torch
 from torch.utils.data import Dataset
-#from transformers import DataCollatorForLanguageModeling
 
 from .commons import *
 from .file_utils import *
@@ -44,14 +42,20 @@ def _FileLock(lockfile: str):
 def url_to_hash(url):
     return hashlib.md5(url.encode()).hexdigest()
 
+def local_cache_dir(cache_dir, url):
+    hash = url_to_hash(url)
+    if hash in cache_dir:
+        return cache_dir
+    return safe_join_path(cache_dir, hash)
+
 class TensorArrayDataset(Dataset):
     def __init__(self, url:str, prefix: str, args: dict):
         self.url = safe_dir(url)
         self.prefix = prefix if prefix.endswith('_') else f'{prefix}_'
         self.args = args
-        # block_size=Noneのときは、再分割しない (ファインチューニングは再分割しない)
+        # Noneのときは、再分割しない (ファインチューニングは再分割しない)
         self.block_size = args.get('block_size', None)
-        self.cache_dir = safe_join_path(args['cache_dir'], url_to_hash(url))
+        self.cache_dir = local_cache_dir(args['cache_dir'], url)
         self.lock_file = args['lock_file']
         self.load_config()
         self.queue = deque(maxlen=64)
@@ -73,13 +77,13 @@ class TensorArrayDataset(Dataset):
         self.tokenizer_path = config.get("tokenizer_path", DEFAULT_TOKENIZER)
         if 'files' in config:
             self.chunk_files = list(config['files'].keys())
+        self.compressed = config.get("compressed", None)
         self.n_subblocks = 1
         if self.block_size is not None and 'block_size' in config and self.block_size < config['block_size']:
             self.n_subblocks = config['block_size'] // self.block_size
             if self.n_subblocks > 1:
                 self.n_chunks = self.n_chunks * self.n_subblocks
                 verbose_print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
-        self.compressed = config.get("compressed", None)
         self.is_seq2seq = 'output_sep_token_id' in config
         self.config = config
         return config
@@ -88,7 +92,7 @@ class TensorArrayDataset(Dataset):
         return self.n_items * self.n_subblocks
 
     def get_valid_dataset(self, split='valid'):
-        index_file = resolve_file(self.url, 'index.json', self.cache_dir)
+        index_file = resolve_file(self.url, 'kogitune.json', self.cache_dir)
         metadata = read_metadata(index_file)
         valid_prefix = find_valid_prefix(metadata, self.prefix)
         if valid_prefix:
@@ -122,9 +126,10 @@ class TensorArrayDataset(Dataset):
         return chunks[index % self.n_chunks]
 
     def try_prefetch(self, index):
-        chunk_index = index // self.n_chunks
-        chunk_file = self.chunk_files[chunk_index % len(self.chunk_files)]
-        resolve_file(self.url, chunk_file, self.cache_dir, self.compressed, sync=False)
+        if self.prefetch > 0:
+            chunk_index = index // self.n_chunks
+            chunk_file = self.chunk_files[chunk_index % len(self.chunk_files)]
+            resolve_file(self.url, chunk_file, self.cache_dir, self.compressed, sync=False)
 
 def get_rank():
     if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -305,12 +310,12 @@ class DataComposer(MixingDataset):
             if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
                 tokenizer = self.prepare_tokenizer(tokenizer)
                 url = make_local_store(url, tokenizer, args)
-            metadata = read_metadata(url, self.cache_dir)
-            print(args)
+            args['cache_dir'] = local_cache_dir(args['cache_dir'], url)
+            metadata = read_metadata(url, args['cache_dir'])
             prefix = find_better_prefix(metadata, args)
             if prefix is None:
                 verbose_print(f'データセット {url} には、適切なデータがありません')
-                print(args)
+                print('CHECKME', args)
                 continue
             dataset = TensorArrayDataset(url, prefix, args)
             if len(dataset) == 0:
@@ -318,10 +323,7 @@ class DataComposer(MixingDataset):
                 continue
             if self.check_tokenizer(url, dataset) == False:
                 continue
-            # if self.training_type.startswith('seq2') and not dataset.is_seq2seq:
-            #     verbose_print(f'** {url} は、seq2seqに対応していません。無視して学習を続けます。')
-            #     continue
-            verbose_print(f'{url} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
+            verbose_print(f'{url} {prefix} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
             dataset = DistributedIndexer(dataset, args)
             datasets.append(dataset)
             self.n_items += len(dataset)

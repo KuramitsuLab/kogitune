@@ -405,18 +405,28 @@ def parse_url_args(url, args={}):
     param_args['url_scheme'] = parsed_url.scheme
     param_args['url_host'] = parsed_url.netloc
     param_args['url_path'] = parsed_url.path
+    if parsed_url.username:
+        param_args['url_userame'] = parsed_url.username
+        param_args['url_password'] = parsed_url.password
     if len(parsed_url.scheme):
-        base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+        if parsed_url.port:
+            param_args['url_port'] = parsed_url.port
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
+        else:
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
     else:
         base_url = f"{parsed_url.path}"
+        base_dir = os.path.abspath(base_url)
+        if os.path.isdir(base_dir):
+            base_url = base_dir
     args = args.copy()
     args.update(param_args)
-    return base_url, args
+    return safe_dir(base_url), args
 
 
 def read_metadata(index_file_or_url, cache_dir=None):
     if cache_dir is not None:
-        index_file = resolve_file(index_file_or_url, 'index.json', cache_dir)
+        index_file = resolve_file(index_file_or_url, 'kogitune.json', cache_dir)
     else:
         index_file = index_file_or_url
     if os.path.exists(index_file):
@@ -427,7 +437,7 @@ def read_metadata(index_file_or_url, cache_dir=None):
 
 def write_metadata(index_file, metadata):
     with open(index_file, "w") as f:
-        json.dump(metadata, f)
+        json.dump(metadata, f, indent=2)
 
 def find_better_prefix(metadata, args: dict):
     if 'prefix' in args:
@@ -435,15 +445,25 @@ def find_better_prefix(metadata, args: dict):
     prefixes = metadata.get('prefixes', None)
     if prefixes is None: # older version
         return 'pretrain' if args.get('data_type', 'text') else 'train'
-    args_max_length = args['max_length']
+    req_max_length = args['max_length']
     selected_prefix = None
     selected_max_length = 0
     for prefix, config in prefixes.items():
         if config['data_type'] == args['data_type']:
-            max_length = config.get('max_length', DEFAULT_MAX_LENGTH)
-            if max_length <= args_max_length and max_length > selected_max_length:
+            max_length = config.get('max_length', -1)
+            if req_max_length <= max_length and max_length > selected_max_length:
                 selected_max_length = max_length
                 selected_prefix = prefix
+    if not selected_prefix:
+        for prefix, config in prefixes.items():
+            if config['data_type'] == args['data_type']:
+                max_length = config.get('max_length', -1)
+                print(req_max_length, max_length, selected_max_length)
+                if max_length >= selected_max_length:
+                    selected_max_length = max_length
+                    selected_prefix = prefix
+        if selected_max_length > 0:
+            verbose_print(f"ブロック長が小さすぎます。max_length={selected_max_length}が適切です。")
     return selected_prefix
             
 def find_valid_prefix(metadata, train_prefix):

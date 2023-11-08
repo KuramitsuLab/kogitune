@@ -11,6 +11,7 @@ from transformers import AutoTokenizer
 from .tokenizers import *
 from .commons import *
 from .file_utils import *
+from .section import select_section_fn
 
 DEFAULT_BLOCK_SIZE=2048
 
@@ -151,12 +152,12 @@ class DatasetStore(object):
         if compression:
             self.compress()
         with open(self.config_file, "w") as w:
-            json.dump(self.config, w)
+            json.dump(self.config, w, indent=2)
         self.update_metadata()
         verbose_print(f'トークン数: {self.n_tokens:,} 件数: {self.n_items:,}')
 
     def update_metadata(self):
-        index_file = safe_join_path(self.store_path, f'index.json')
+        index_file = safe_join_path(self.store_path, f'kogitune.json')
         metadata = read_metadata(index_file)
         split = metadata.get('prefixes', {})
         summary = {k:v for k,v in self.config.items() if isinstance(v, (int, float, bool, str))}
@@ -176,8 +177,10 @@ class DefaultSplitter(object):
         self.split_args = args
         self.max_length = getint(args, 'max_length|block_size', DEFAULT_MAX_LENGTH)
         self.min_length = getint(args, 'min_length', self.max_length//4)
+        self.vocab_size = tokenizer.vocab_size
+        # デフォルトは、eos でパディング
+        self.pad_id = getint(args, 'pad_token_id', tokenizer.eos_token_id) 
         self.ellipsis_token_id = find_ellipsis_token_id(tokenizer)
-        # self.pad_token_id = getint(args, 'pad_token_id', tokenizer.pad_token_id)
         # self.eos_token_id = getint(args, 'eos_token_id', tokenizer.eos_token_id)
         # self.trancate_size=getint(args, 'trancate_size', 0)
         # self.sep = args.get('sep', None)
@@ -186,6 +189,7 @@ class DefaultSplitter(object):
         self.text_length_count = 0
         self.total_count = 0
         self.drop_count = 0
+        self.sec_count = 0
         self.token_count = 0
         self.trancate_count = 0
         self.overlap_count = 0
@@ -222,6 +226,15 @@ class DefaultSplitter(object):
             self.stat_token_counts.append(len(tokens))
         return tokens
 
+    def pad(self, length):
+        if length == 0:
+            return []
+        self.padding_count += length
+        if length == 1:
+            return [self.pad_id]
+        # 予想しやすいpad作る
+        return [self.vocab_size-length] + [self.pad_id]*(length-1)
+
     # def resize_token_counts(self, size):
     #     self.token_counts[-1] += size
 
@@ -235,9 +248,11 @@ class DefaultSplitter(object):
             print(pd.DataFrame({'tokens': self.stat_token_counts}).describe())
         logs['token_stats'] = _record_tokens(self.stat_token_counts)
 
+        logs['n_tokens'] = self.token_count
         drop = self.drop_count / self.total_count
         logs['dropped'] = self.drop_count
-        logs['n_tokens'] = self.token_count
+        sec = self.sec_count / self.total_count
+        logs['sectioned'] = self.sec_count
         trancated = self.trancate_count / self.token_count
         logs['trancated'] = trancated
         padding = self.padding_count / (self.total_count*self.max_length)
@@ -245,32 +260,44 @@ class DefaultSplitter(object):
         overlap = self.overlap_count / self.token_count
         logs['overlap'] = overlap
         if verbose:
-            verbose_print(f'トークン数: {format_unit(self.token_count, scale=1000)} {self.token_count:,} ブロック長: 最大(max_length){self.max_length} 最小(min_length){self.min_length}')
+            verbose_print(f'トークン数: {format_unit(self.token_count, scale=1000)} {self.token_count:,} ブロック長: 最大 max_length={self.max_length} 最小 min_length={self.min_length}')
             verbose_print(f'未使用(ドロップ): {drop*100:.2f}% {self.drop_count:,}/{self.total_count:,}')
+            verbose_print(f'セクション: {sec*100:.2f}% {self.sec_count:,}/{self.total_count:,}')
             if not hasattr(self, 'trancate_size'):
                 self.trancate_size = -1
             verbose_print(f'切り詰め(trancate={self.trancate_size}): {trancated*100:.2f}% ({self.trancate_count:,}/{self.token_count:,})')
             if hasattr(self, 'overlap_size'):
                 verbose_print(f'オーバーラップ(overlap={self.overlap_size}): {overlap*100:.2f}% ({self.overlap_count:,}/{self.token_count:,})')
-            verbose_print(f'想定パディング: {padding*100:.2f}% ({self.padding_count:,}/{self.total_count*self.max_length:,})')
+            if not hasattr(self, 'padding_size'):
+                self.padding_size = -1
+            verbose_print(f'(想定)パディング(padding={self.padding_size}): {padding*100:.2f}% ({self.padding_count:,}/{self.total_count*self.max_length:,})')
 
 
 class SimpleTextBlockSplitter(DefaultSplitter):
     def __init__(self, tokenizer, args):
         super().__init__(tokenizer, args)
         self.extra_tokens=empty_tokens
-        self.trancate_size = getint(args, 'trancate_size', self.max_length // 8)
+        self.trancate_size = getint(args, 'trancate|trancate_size', self.max_length // 8)
+        self.padding_size = getint(args, 'padding|padding_size', self.max_length // 8)
 
     def split(self, text:str, blocks: List[List[int]]):
         tokens = self.encode_and_count(text)
         work_size = self.max_length
+        if len(self.extra_tokens) == 0:
+            self.sec_count += 1
         tokens = self.extra_tokens + tokens
         for i in range(0, len(tokens) - work_size + 1, work_size):  
             segmented = tokens[i : i + work_size]
             blocks.append(segmented)
             self.token_count += work_size
         extra_size = len(tokens) % work_size
-        if extra_size < self.trancate_size :
+        if 0 < work_size - extra_size <= self.padding_size :
+            # パディングして出力してしまう。
+            blocks.append(tokens[-extra_size:]+self.pad(work_size - extra_size))
+            self.token_count += extra_size
+            self.extra_tokens = empty_tokens
+        elif extra_size <= self.trancate_size :
+            # 切り詰めてしまう。
             self.trancate_count += extra_size            
             self.extra_tokens = empty_tokens
         else:
@@ -281,43 +308,15 @@ class SimpleTextBlockSplitter(DefaultSplitter):
         if logs:
             logs['block_size'] = self.max_length
 
-LINE_PATTERN = re.compile(r'\n([^\n])')
-
-def add_section_for_line(text):
-    return LINE_PATTERN.sub(r'\n<sectioN>\1', text)
-
-DOC_PATTERN = re.compile(r'\n\n([^\n])')
-
-def add_section_for_doc(text):
-    return DOC_PATTERN.sub(r'\n\n<sectioN>\1', text)
-
-PYTHON_PATTERN = re.compile(r'\n(def|    def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ')
-
-def add_section_for_python(code):
-    return PYTHON_PATTERN.sub(r'\n<sectioN>\1 ', code)
-
-MARKDOWN_PATTERN = re.compile(r'\n(#|[^\n])')
-
-def add_section_for_markdown(text):
-    return MARKDOWN_PATTERN.sub(r'\n<sectioN>\1', text)
-
-def find_add_section(section):
-    if section == 'python' or section == 'py':
-        return add_section_for_python
-    if section == 'markdown' or section == 'md':
-        return add_section_for_markdown
-    if section == 'line':
-        return add_section_for_line
-    return add_section_for_doc
+## section
 
 class OverlapTextBlockSplitter(DefaultSplitter):
     def __init__(self, tokenizer, args):
         super().__init__(tokenizer, args)
         self.section = args.get('section', 'doc').lower()
-        self.add_section = find_add_section(self.section)
+        self.add_section = select_section_fn(self.section)
         self.overlap_size = getint(args, 'overlap_size|overlap', self.max_length // 4)
-        self.pad_id = find_token_id(tokenizer, '\n', '<nL>')
-        self.padding_size = getint(args, 'padding_size|padding', self.max_length // 8)
+        self.padding_size = getint(args, 'padding_size|padding', self.max_length // 4)
 
 
     def split(self, text:str, blocks: List[List[int]]):
@@ -327,7 +326,11 @@ class OverlapTextBlockSplitter(DefaultSplitter):
         chunk_size = len(chunks)
         work_size = self.max_length
         i = 0
+        reminder = 0
+        self.sec_count += 1
+        before = len(blocks)
         while i < chunk_size:
+            self.trancate_count += reminder
             tokens = chunks[i]
             overlapped = 0
             i += 1
@@ -342,12 +345,19 @@ class OverlapTextBlockSplitter(DefaultSplitter):
             # -----> ==========> reminder は引く必要がある
             reminder = len(tokens) % work_size  # 残り
             if 0 < (overlapped - reminder) < self.overlap_size:
+                # オーバーラップ
                 self.overlap_count += (overlapped - reminder)
+                reminder=0
                 i -= 1
                 continue
-            # 切り捨てる
-            self.trancate_count += reminder
-            
+        if 0 < work_size - reminder <= self.padding_size:
+            blocks.append(tokens[:-reminder]+self.pad(work_size - reminder))
+            self.token_count += reminder
+        else:
+            if len(blocks) > before:
+                self.trancate_count += reminder
+            else:
+                self.drop_count += 1
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
