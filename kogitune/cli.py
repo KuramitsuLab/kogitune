@@ -48,7 +48,7 @@ def setup_store():
     parser.add_argument("--shuffle", type=_tobool, default=True)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--verbose", type=_tobool, default=True)
-    parser.add_argument("--histogram", type=_tobool, default=False)
+    # parser.add_argument("--histogram", type=_tobool, default=False)
     parser.add_argument("--num_works", type=int, default=0)
     
     hparams = parser.parse_args()  # hparams になる
@@ -202,7 +202,10 @@ def main():
     # 'freeze' サブコマンド
     setup_freeze(subparsers.add_parser('freeze', help='freeze'))
 
-    # 'dump' サブコマンド
+    # 'freeze' サブコマンド
+    setup_histogram(subparsers.add_parser('histogram', help='histogram'))
+
+    # 'head' サブコマンド
     setup_head(subparsers.add_parser('head', help='dump'))
 
     # 'update' サブコマンド

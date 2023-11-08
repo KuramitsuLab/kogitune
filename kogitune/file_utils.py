@@ -41,6 +41,16 @@ def safe_join_path(dir, file):
         file = file[1:]
     return f'{dir}/{file}'
 
+def safe_new_file(filebase, ext, max=1000):
+    filename=f'{filebase}.{ext}'
+    if not os.path.exists(filename):
+        return filename
+    for i in range(1, max):
+        filename=f'{filebase}_{i}.{ext}'
+        if not os.path.exists(filename):
+            break
+    return filename
+
 def get_filebase(filename):
     filebase = filename
     if '/' in filebase:
