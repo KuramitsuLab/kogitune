@@ -47,8 +47,9 @@ class Metastore(object):
         if lists is not None:
             for _, config in lists.items():
                 if 'data_type' in config:
-                    verbose_print('指定がなかったので data_type="{config['data_type']}"を採用します。')
-                    return config['data_type']
+                    data_type = config['data_type']
+                    verbose_print(f'指定がなかったので data_type="{data_type}"を採用します。')
+                    return data_type
         return None
 
     def guess_max_length(self, args: dict):
