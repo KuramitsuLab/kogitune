@@ -449,6 +449,7 @@ def write_metadata(index_file, metadata):
     with open(index_file, "w") as f:
         json.dump(metadata, f, indent=2)
 
+
 def find_better_prefix(metadata, args: dict):
     if 'prefix' in args:
         return args['prefix']

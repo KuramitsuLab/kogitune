@@ -18,7 +18,8 @@ from torch.utils.data import Dataset
 from .commons import *
 from .file_utils import *
 from .tokenizers import *
-from .splitters import *
+from .store import Metastore
+from .splitters import make_local_store
 
 # 設定ファイル
 
@@ -92,9 +93,7 @@ class TensorArrayDataset(Dataset):
         return self.n_items * self.n_subblocks
 
     def get_valid_dataset(self, split='valid'):
-        index_file = resolve_file(self.url, 'kogitune.json', self.cache_dir)
-        metadata = read_metadata(index_file)
-        valid_prefix = find_valid_prefix(metadata, self.prefix)
+        valid_prefix=Metastore(self.url, self.cache_dir).find_valid(self.config, split)
         if valid_prefix:
             dataset = TensorArrayDataset(self.url, valid_prefix, self.args)
             return dataset
@@ -169,8 +168,8 @@ class DistributedIndexer(Dataset):
         # DistributedSamplerと同様に均等に分割して各プロセスが同じデータを読まないようにする
         self.sublength = self.length // get_world_size()
         if get_world_size() > 1:
-            verbose_print('ランクごとに再配置します')
             self.offset = self.offset + (get_rank() * self.sublength)
+            verbose_print(f'ノード(rank={get_rank()})ごとに再配置(offset={self.offset}します')
         dataset.try_prefetch(self.offset)
 
     def __len__(self):
@@ -311,8 +310,7 @@ class DataComposer(MixingDataset):
                 tokenizer = self.prepare_tokenizer(tokenizer)
                 url = make_local_store(url, tokenizer, args)
             args['cache_dir'] = local_cache_dir(args['cache_dir'], url)
-            metadata = read_metadata(url, args['cache_dir'])
-            prefix = find_better_prefix(metadata, args)
+            prefix = Metastore(url, args['cache_dir']).find_better_size(args)
             if prefix is None:
                 verbose_print(f'データセット {url} には、適切なデータがありません')
                 print('CHECKME', args)

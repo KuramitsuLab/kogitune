@@ -11,159 +11,8 @@ from transformers import AutoTokenizer
 from .tokenizers import *
 from .commons import *
 from .file_utils import *
+from .store import DatasetStore, Metastore
 from .section import select_section_fn
-
-DEFAULT_BLOCK_SIZE=2048
-
-def _record_tokens(counts):
-    if len(counts) == 0:
-        return {'total': 0}
-    data = np.array(counts)
-    return {
-        'total': int(np.sum(data)),
-        'mean': float(np.mean(data)),
-        'std': float(np.var(data)) ** 0.5,
-        'max': int(np.max(data)),
-        '75%': int(np.percentile(data, 75)),
-        'median': int(np.median(data)),
-        '25%': int(np.percentile(data, 25)),
-        'min': int(np.min(data)),
-    }
-
-
-N_CHUNKS = 4096
-
-class DatasetStore(object):
-    def __init__(self, store_path, prefix, args):
-        self.store_path = safe_dir(store_path)
-        self.block_size = args.get('block_size', None)
-        self.prefix = prefix
-        self.config_file = safe_join_path(self.store_path, f'{self.prefix}_config.json')
-        self.file_ext = args.get("file_ext", "npz")
-        self.n_chunks = args.get("n_chunks", N_CHUNKS)
-        self.config = {}
-        self.chunk_files = []
-        self.chunkseq = 0
-        self.chunks = []
-        self.shuffle_n = args.get("shuffle", 0)
-        self.n_items = 0
-        self.n_tokens = 0
-        self.max_length = 0
-        self.mix_length = DEFAULT_MAX_LENGTH*10
-        self.clear_files()
-
-    def clear_files(self):
-        if not os.path.exists(self.config_file):
-            return
-        with open(self.config_file, "r") as f:
-            config = json.load(f)
-            if 'files' not in config:
-                return
-            for file in config['files'].keys():
-                filepath = safe_join_path(self.store_path, file)
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-                if os.path.exists(f'{filepath}.zst'):
-                    os.remove(f'{filepath}.zst')
-
-    def shuffle_chunk(self, N=4):
-        if len(self.chunk_files) > N:
-            files = random.sample(self.chunk_files, N)
-            buffers=[]
-            filedata=[]
-            for file in files:
-                chunks = load_chunk_file(self.store_path, file)
-                if chunks is None:
-                    return False
-                buffers.extend(chunks)
-                filedata.append((file, len(buffers), len(buffers)+len(chunks)))
-            reminder = len(buffers)
-            buffers.extend(self.chunks)
-            random.shuffle(buffers)
-            for file, start, end in filedata:
-                save_chunk_file(self.store_path, file, buffers[start:end])
-            self.chunks = buffers[reminder:]
-        return True
-
-    def save_chunk(self):
-        if len(self.chunks) > 0:
-            if self.shuffle_n > 0:
-                self.shuffle_chunk(N=self.shuffle_n)
-            chunk_file = chunkseq_to_filename(len(self.chunk_files), self.prefix, self.file_ext)
-            save_chunk_file(self.store_path, chunk_file, self.chunks)
-            self.chunk_files.append(chunk_file)
-            self.n_items += len(self.chunks)
-            self.chunks = []
-
-    def append(self, block: List[int]):
-        self.chunks.append(np.array(block, dtype=np.int32))
-        self.n_tokens += len(block)
-        self.max_length = max(len(block), self.max_length)
-        self.min_length = min(len(block), self.mix_length)
-        if len(self.chunks) == self.n_chunks:
-            self.save_chunk()
-
-    def extend(self, blocks: List[List[int]]):
-        for block in blocks:
-            self.append(block)
-        return []   
-
-    def check_files(self, validation=True):
-        d = {}
-        for chunk_file in tqdm(self.chunk_files, desc='File validation'):
-            filepath = safe_join_path(self.store_path, chunk_file)
-            checks = {
-                'filesize': get_filesize(filepath), 
-                'sha1': get_file_sha1(filepath)
-            }
-            d[chunk_file] = checks
-            if validation:
-                if not load_chunk_file('', filepath):
-                    verbose_print(f'unloaded and broken chunk file {chunk_file}')
-                    return None
-                if not check_chunk_file(self.store_path, chunk_file, checks):
-                    verbose_print(f'invalidate chunk file {chunk_file}')
-                    return None
-        self.config['files'] = d
-
-    def compress(self, compressed_ext='zst'):
-        if 'compressed' not in self.config:
-            zfiles=[]
-            for file in tqdm(self.chunk_files, desc='File compression'):
-                filepath = safe_join_path(self.store_path, file)
-                filepath = zstd_file(filepath, rm=True)
-                zfiles.append(f'{file}.{compressed_ext}')
-            self.config['compressed'] = compressed_ext
-            self.chunk_files=zfiles
-
-    def save(self, validation=True, compression='zst'):
-        if len(self.chunks) > 0:
-            self.save_chunk()
-        self.config.update(dict(
-            n_items = self.n_items,
-            n_chunks=self.n_chunks,
-            n_tokens = self.n_tokens,
-            max_length = self.max_length,
-            min_length = self.min_length,
-            chunkseq=len(self.chunk_files),
-            file_ext=self.file_ext,
-        ))
-        self.check_files(validation=validation)
-        if compression:
-            self.compress()
-        with open(self.config_file, "w") as w:
-            json.dump(self.config, w, indent=2)
-        self.update_metadata()
-        verbose_print(f'トークン数: {self.n_tokens:,} 件数: {self.n_items:,}')
-
-    def update_metadata(self):
-        index_file = safe_join_path(self.store_path, f'kogitune.json')
-        metadata = read_metadata(index_file)
-        split = metadata.get('prefixes', {})
-        summary = {k:v for k,v in self.config.items() if isinstance(v, (int, float, bool, str))}
-        split[self.prefix] = summary
-        metadata['prefixes'] = split
-        write_metadata(index_file, metadata)
 
 def getint(args, keys, default):
     return get_dict_multi_keys(args, keys, default, format_fn=int)
@@ -187,9 +36,10 @@ class DefaultSplitter(object):
         self.stat_token_counts = []
         self.text_token_count = 0
         self.text_length_count = 0
-        self.total_count = 0
-        self.drop_count = 0
-        self.sec_count = 0
+        self.item_count = 0
+        self.item_drop_count = 0
+        self.block_count = 0
+        self.block_sec_count = 0
         self.token_count = 0
         self.trancate_count = 0
         self.overlap_count = 0
@@ -207,12 +57,14 @@ class DefaultSplitter(object):
     def split_iter(self, iterator, update_fn=lambda x: None):
         blocks = []
         for text in iterator:
-            self.total_count += 1
+            self.item_count += 1
             self.split(text, blocks)
             update_fn(blocks)
+            self.block_count += len(blocks)
             blocks = []
         self.flush(blocks)
         update_fn(blocks)
+        self.block_count += len(blocks)
 
     def encode_and_count(self, text, eos=True):
         self.text_length_count += len(text)
@@ -226,6 +78,14 @@ class DefaultSplitter(object):
             self.stat_token_counts.append(len(tokens))
         return tokens
 
+    def append_sliced(self, tokens:List[int], work_size:int, blocks: List[List[int]]):
+        for i in range(0, len(tokens) - work_size + 1, work_size):  
+            segmented = tokens[i : i + work_size]
+            blocks.append(segmented)
+            self.token_count += work_size
+        extra_size = len(tokens) % work_size
+        return tokens[-extra_size:]
+
     def pad(self, length):
         if length == 0:
             return []
@@ -235,34 +95,31 @@ class DefaultSplitter(object):
         # 予想しやすいpad作る
         return [self.vocab_size-length] + [self.pad_id]*(length-1)
 
-    # def resize_token_counts(self, size):
-    #     self.token_counts[-1] += size
-
     def report(self, logs: dict, verbose=True):
         logs['source_tokens'] = self.text_token_count
         logs['source_chars'] = self.text_length_count
         logs['tokens_per_char'] = self.text_token_count / self.text_length_count
         if verbose:
             verbose_print(f'文字数 {format_unit(self.text_length_count, scale=1000)} {self.text_length_count} 圧縮率（トークン/文字数） {self.text_token_count*100 / self.text_length_count:.2f}%')
-            verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.total_count}')
+            verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.item_count}')
             print(pd.DataFrame({'tokens': self.stat_token_counts}).describe())
-        logs['token_stats'] = _record_tokens(self.stat_token_counts)
+        logs['token_stats'] = self.report_stat_token(self.stat_token_counts)
 
         logs['n_tokens'] = self.token_count
-        drop = self.drop_count / self.total_count
-        logs['dropped'] = self.drop_count
-        sec = self.sec_count / self.total_count
-        logs['sectioned'] = self.sec_count
+        drop = self.item_drop_count / self.item_count
+        logs['dropped'] = self.item_drop_count
+        sec = self.block_sec_count / self.block_count
+        logs['sectioned'] = self.block_sec_count
         trancated = self.trancate_count / self.token_count
         logs['trancated'] = trancated
-        padding = self.padding_count / (self.total_count*self.max_length)
+        padding = self.padding_count / (self.item_count*self.max_length)
         logs['padding'] = padding
         overlap = self.overlap_count / self.token_count
         logs['overlap'] = overlap
         if verbose:
             verbose_print(f'トークン数: {format_unit(self.token_count, scale=1000)} {self.token_count:,} ブロック長: 最大 max_length={self.max_length} 最小 min_length={self.min_length}')
-            verbose_print(f'未使用(ドロップ): {drop*100:.2f}% {self.drop_count:,}/{self.total_count:,}')
-            verbose_print(f'セクション: {sec*100:.2f}% {self.sec_count:,}/{self.total_count:,}')
+            verbose_print(f'未使用(ドロップ): {drop*100:.2f}% {self.item_drop_count:,}/{self.item_count:,}')
+            verbose_print(f'セクション: {sec*100:.2f}% {self.block_sec_count:,}/{self.block_count:,}')
             if not hasattr(self, 'trancate_size'):
                 self.trancate_size = -1
             verbose_print(f'切り詰め(trancate={self.trancate_size}): {trancated*100:.2f}% ({self.trancate_count:,}/{self.token_count:,})')
@@ -270,7 +127,22 @@ class DefaultSplitter(object):
                 verbose_print(f'オーバーラップ(overlap={self.overlap_size}): {overlap*100:.2f}% ({self.overlap_count:,}/{self.token_count:,})')
             if not hasattr(self, 'padding_size'):
                 self.padding_size = -1
-            verbose_print(f'(想定)パディング(padding={self.padding_size}): {padding*100:.2f}% ({self.padding_count:,}/{self.total_count*self.max_length:,})')
+            verbose_print(f'(想定)パディング(padding={self.padding_size}): {padding*100:.2f}% ({self.padding_count:,}/{self.item_count*self.max_length:,})')
+
+    def report_stat_token(self, counts):
+        if len(counts) == 0:
+            return {'total': 0}
+        data = np.array(counts)
+        return {
+            'total': int(np.sum(data)),
+            'mean': float(np.mean(data)),
+            'std': float(np.var(data)) ** 0.5,
+            'max': int(np.max(data)),
+            '75%': int(np.percentile(data, 75)),
+            'median': int(np.median(data)),
+            '25%': int(np.percentile(data, 25)),
+            'min': int(np.min(data)),
+        }
 
 
 class SimpleTextBlockSplitter(DefaultSplitter):
@@ -284,24 +156,26 @@ class SimpleTextBlockSplitter(DefaultSplitter):
         tokens = self.encode_and_count(text)
         work_size = self.max_length
         if len(self.extra_tokens) == 0:
-            self.sec_count += 1
+            self.block_sec_count += 1
         tokens = self.extra_tokens + tokens
-        for i in range(0, len(tokens) - work_size + 1, work_size):  
-            segmented = tokens[i : i + work_size]
-            blocks.append(segmented)
-            self.token_count += work_size
-        extra_size = len(tokens) % work_size
-        if 0 < work_size - extra_size <= self.padding_size :
+        # for i in range(0, len(tokens) - work_size + 1, work_size):  
+        #     segmented = tokens[i : i + work_size]
+        #     blocks.append(segmented)
+        #     self.token_count += work_size
+        # extra_size = len(tokens) % work_size
+        extra_tokens = self.append_sliced(tokens, work_size, blocks)
+        missing_size = work_size - len(extra_tokens)
+        if 0 < missing_size <= self.padding_size :
             # パディングして出力してしまう。
-            blocks.append(tokens[-extra_size:]+self.pad(work_size - extra_size))
-            self.token_count += extra_size
+            self.token_count += len(extra_tokens)
+            blocks.append(extra_tokens+self.pad(missing_size))
             self.extra_tokens = empty_tokens
-        elif extra_size <= self.trancate_size :
+        elif len(extra_tokens) <= self.trancate_size :
             # 切り詰めてしまう。
-            self.trancate_count += extra_size            
+            self.trancate_count += len(extra_tokens)           
             self.extra_tokens = empty_tokens
         else:
-            self.extra_tokens = tokens[-extra_size:]
+            self.extra_tokens = extra_tokens
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
@@ -327,8 +201,6 @@ class OverlapTextBlockSplitter(DefaultSplitter):
         work_size = self.max_length
         i = 0
         reminder = 0
-        self.sec_count += 1
-        before = len(blocks)
         while i < chunk_size:
             self.trancate_count += reminder
             tokens = chunks[i]
@@ -338,12 +210,15 @@ class OverlapTextBlockSplitter(DefaultSplitter):
                 tokens += chunks[i]
                 overlapped = len(chunks[i])
                 i += 1
-            for j in range(0, len(tokens) - work_size + 1, work_size):  
-                blocks.append(tokens[j : j + work_size])
-                self.token_count += work_size
+            if len(tokens) > work_size:
+                self.block_sec_count += 1
+            extra_tokens = self.append_sliced(tokens, work_size, blocks)
+            # for j in range(0, len(tokens) - work_size + 1, work_size):  
+            #     blocks.append(tokens[j : j + work_size])
+            #     self.token_count += work_size
             # -----------------> overlapped
-            # -----> ==========> reminder は引く必要がある
-            reminder = len(tokens) % work_size  # 残り
+            # -----> ==========> extra_size は引く必要がある
+            reminder = len(extra_tokens)  # 残り
             if 0 < (overlapped - reminder) < self.overlap_size:
                 # オーバーラップ
                 self.overlap_count += (overlapped - reminder)
@@ -351,13 +226,14 @@ class OverlapTextBlockSplitter(DefaultSplitter):
                 i -= 1
                 continue
         if 0 < work_size - reminder <= self.padding_size:
-            blocks.append(tokens[:-reminder]+self.pad(work_size - reminder))
-            self.token_count += reminder
+            blocks.append(extra_tokens+self.pad(work_size - reminder))
+            self.block_sec_count += 1
+            self.token_count += len(extra_tokens)
         else:
-            if len(blocks) > before:
+            if len(blocks) > 0:
                 self.trancate_count += reminder
             else:
-                self.drop_count += 1
+                self.item_drop_count += 1
 
     def report(self, logs: dict = None, verbose=True):
         super().report(logs, verbose=verbose)
@@ -526,7 +402,7 @@ class SimpleTextSplitter(DefaultSplitter):
         if inputs_size > self.max_length:
             if inputs_size - self.max_length > self.trancate_size:
                 # 切り詰めが大きすぎる
-                self.drop_count +=1
+                self.item_drop_count +=1
                 return
             half_size = self.max_length // 2
             prefix = inputs[:half_size]
@@ -546,13 +422,13 @@ class SimpleTextSplitter(DefaultSplitter):
         total_len = inputs_len + labels_len
         if total_len < self.min_length and labels_len >= self.max_length:
             # ラベルの方が大きい場合は諦める
-            self.drop_count +=1
+            self.item_drop_count +=1
             return
         if total_len > self.max_length:
             trimming_size = self.max_length - total_len
             if inputs_len - trimming_size < (self.max_length // 4):
                 # 諦める
-                self.drop_count +=1
+                self.item_drop_count +=1
                 return
             inputs = inputs[:-trimming_size]
             self.trancate_count += trimming_size
