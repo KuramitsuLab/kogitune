@@ -71,7 +71,7 @@ def main_head(hparams):
 
 def setup_head(parser):
     parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--test_run", type=int, default=10)
     parser.set_defaults(func=main_head)
@@ -112,7 +112,7 @@ def main_freeze(hparams):
 
 def setup_freeze(parser):
     parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
     parser.add_argument("--max_length", type=int, default=256)
     parser.add_argument("--output_path", type=str, default='local_dataset')
     parser.set_defaults(func=main_freeze)
@@ -148,8 +148,8 @@ def main_histogram(hparams):
 
 def setup_histogram(parser):
     parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'], required=True)
-    parser.add_argument("--max_length", type=int, default=512)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
+    parser.add_argument("--max_length", type=int, default=None)
     parser.add_argument("--output_file", type=str, default=None)
     parser.set_defaults(func=main_histogram)
 
