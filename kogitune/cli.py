@@ -31,28 +31,33 @@ def _parse_args(args):
             args_dict[key] = value
     return args_dict
 
-def setup_store():
-    parser = argparse.ArgumentParser(description="papertown_store")
+def main_store(hparams=None):
+    if hparams is None:
+        hparams = setup_store()
+    args = {k:v for k,v in vars(hparams).items() if v is not None}
+    split_to_store(hparams.files, validation=True, args=args)
+
+def setup_store(parser):
     parser.add_argument("files", type=str, nargs="+", help="files")
     parser.add_argument("--desc", type=str, default=None)
     parser.add_argument("--tokenizer_path", default=DEFAULT_TOKENIZER)
     parser.add_argument("--store_path", default=None)
-    parser.add_argument("--block_size", type=int, default=None)
-    parser.add_argument("--type", type=str, default='')
+    parser.add_argument("--max_length", type=int, required=True)
+    parser.add_argument("--min_length", type=int, default=None)
+    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
     parser.add_argument("--format", default="simple")
     parser.add_argument("--split", default="train")
-    parser.add_argument("--split_args", type=_parse_args, default=None)
-    parser.add_argument("--sep", type=str, default=None)
-    parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--section", type=str, default=None)
+    parser.add_argument("--overlap", type=int, default=None)
+    parser.add_argument("--padding", type=int, default=None)
+    # parser.add_argument("--split_args", type=_parse_args, default=None)
     parser.add_argument("--N", "-N", type=int, default=-1)
-    parser.add_argument("--shuffle", type=_tobool, default=True)
+    parser.add_argument("--shuffle", type=int, default=0)
     parser.add_argument("--random_seed", type=int, default=42)
     parser.add_argument("--verbose", type=_tobool, default=True)
-    # parser.add_argument("--histogram", type=_tobool, default=False)
+    parser.add_argument("--histogram", type=_tobool, default=False)
     parser.add_argument("--num_works", type=int, default=0)
-    
-    hparams = parser.parse_args()  # hparams になる
-    return hparams
+    parser.set_defaults(func=main_store)
 
 
 def main_head(hparams):
@@ -177,33 +182,6 @@ def main_update(args):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
-def main_store(hparams=None):
-    if hparams is None:
-        hparams = setup_store()
-    args = {k:v for k,v in vars(hparams).items() if v is not None}
-    split_to_store(hparams.files, validation=True, args=args)
-
-def setup_store(parser):
-    parser.add_argument("files", type=str, nargs="+", help="files")
-    parser.add_argument("--desc", type=str, default=None)
-    parser.add_argument("--tokenizer_path", default=DEFAULT_TOKENIZER)
-    parser.add_argument("--store_path", default=None)
-    parser.add_argument("--max_length", type=int, required=True)
-    parser.add_argument("--min_length", type=int, default=None)
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
-    parser.add_argument("--format", default="simple")
-    parser.add_argument("--split", default="train")
-    parser.add_argument("--section", type=str, default=None)
-    parser.add_argument("--overlap", type=int, default=None)
-    parser.add_argument("--padding", type=int, default=None)
-    # parser.add_argument("--split_args", type=_parse_args, default=None)
-    parser.add_argument("--N", "-N", type=int, default=-1)
-    parser.add_argument("--shuffle", type=int, default=0)
-    parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument("--verbose", type=_tobool, default=True)
-    parser.add_argument("--histogram", type=_tobool, default=False)
-    parser.add_argument("--num_works", type=int, default=0)
-    parser.set_defaults(func=main_store)
 
 def main():
     # メインのパーサーを作成

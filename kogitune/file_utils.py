@@ -90,17 +90,18 @@ def get_filelines(filepath):
             line = f.readline()
     return c
 
-def filelines(filename):
+def filelines(filename, N=-1):
     from tqdm import tqdm
-    N = get_filelines(filename)
-    pbar = tqdm(total=N, desc=filename)
-    with zopen(filename) as f:
-        line = f.readline()
-        while line:
-            pbar.update()
-            yield line.strip()
+    N = get_filelines(filename) if N==-1 else N
+    with tqdm(total=N, desc=filename) as pbar:
+        with zopen(filename) as f:
             line = f.readline()
-    pbar.close()
+            c=1
+            while line and c <= N:
+                pbar.update()
+                yield line.strip()
+                line = f.readline()
+                c += 1
 
 
 def parse_strip(s):

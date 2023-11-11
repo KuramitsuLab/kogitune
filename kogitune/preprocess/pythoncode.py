@@ -29,12 +29,39 @@ def restore_placeholders(text, placeholders):
         text = text.replace(placeholder, block)
     return text
 
+def remove_common_prefix(lines):
+    splitted = False
+    if isinstance(lines, str):
+        lines = lines.split('\n')
+        splitted = True
+
+    if len(lines) > 1:
+        # 共通の接頭辞を見つける
+        prefix = lines[0]
+        for line in lines[1:]:
+            while not line.startswith(prefix):
+                prefix = prefix[:-1]
+                if not prefix:
+                    break
+
+        # 共通の接頭辞を各行から取り除く
+        if prefix:
+            lines = [line[len(prefix):] for line in lines]
+    else:
+        lines[0] = lines[0].lstrip().removeprefix('#')
+    if splitted:
+        return '\n'.join(lines)
+    return lines
+    
 def is_commented_python(text):
     try:
+        # 最初のインデントを揃える
+        text = remove_common_prefix(text)
         ast.parse(text)
         return True
     except BaseException as e:
-        print(e)
+        # print('=', e)
+        # print(text)
         return False
 
 def remove_comment(text:str, docs: List[str]):
@@ -52,6 +79,11 @@ def remove_comment(text:str, docs: List[str]):
             if not is_commented_python(doc):
                 lines.extend(f"{multi_indent}#{c}" for c in multi_comments)
                 docs.append(doc)
+                # print('--doc--')
+                # print(doc)
+            # else:
+            #     print('--dropped--')
+            #     print(doc)
             multi_comments=[]
             multi_indent=None
         if s == '':
@@ -69,23 +101,24 @@ def remove_comment(text:str, docs: List[str]):
             continue
         multi_indent=code
         multi_comments.append(comment)
-    return '\n'.join(lines), docs
+    return '\n'.join(lines)
 
 def score_code(code, min_length=128):
     stared = '<gh_stars>10' in code
     docs=[]
     code, placeholders = replace_doc_string_with_placeholders(code, docs)
     code = remove_comment(code, docs)
-    doc = '\n'.join(docs)
     code = restore_placeholders(code, placeholders)
+    doc = '\n'.join(docs)
     if len(code) < min_length:
         return None
     return {
-        'score_doc': len(doc) / max(1, len(code)),
-        'score_en': score_english(doc),
-        'lang_ja': contains_japanese(doc),
+        'score_doc': round(len(doc) / max(1, len(code)), 4),
+        'score_en': round(score_english(doc), 4),
+        'ja': contains_japanese(doc),
         'stared': stared,
         'text': code,
+        'text_length': len(code),
     }
 
 
