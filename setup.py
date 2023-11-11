@@ -20,7 +20,7 @@ setup(
     author="Kimio Kuramitsu",
     description="The Kogitune 🦊 LLM Project",
     url="https://github.com/kuramitsulab/kogitune",
-    packages=["kogitune", 'kogi.preprocess'],
+    packages=["kogitune", 'kogitune.preprocess'],
     package_dir={"kogitune": "kogitune"},
     package_data={"kogitune": ["*/*"]},
     install_requires=_requires_from_file("requirements.txt"),
