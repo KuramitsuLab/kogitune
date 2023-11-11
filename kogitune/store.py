@@ -68,7 +68,7 @@ class Metastore(object):
         prefixes = self.metadata.get('prefixes', None)
         if prefixes is None: # older version
             return 'pretrain' if args.get('data_type', 'text') else 'train'
-        req_max_length = args['max_length']
+        req_max_length = self.guess_max_length(args)
         data_type = self.guess_data_type(args)
         split = args.get('split', 'train')
         selected_prefix = None

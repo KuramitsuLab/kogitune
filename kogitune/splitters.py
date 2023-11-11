@@ -535,7 +535,7 @@ def split_to_store(filenames: List[str], validation=True, args={}):
     print(store.config)
     val_files = []
     for filename in filenames:
-        filename, file_args = parse_url_args(filename)
+        filename, file_args = parse_url_args(filename, args)
         data_type = detect_datatype(filename, file_args)
         iterator = iterate_line(filename, N=getint(file_args, 'N|n', -1), args=file_args)
         splitter.split_iter(iterator=iterator, update_fn=store.extend)

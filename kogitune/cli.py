@@ -153,6 +153,24 @@ def setup_histogram(parser):
     parser.add_argument("--output_file", type=str, default=None)
     parser.set_defaults(func=main_histogram)
 
+def conv_txt_to_jsonl(file):
+    from .file_utils import zopen, filelines
+    import json
+    newfile = file.replace('.txt', '.jsonl')
+    with zopen(newfile, 'wt') as w:
+        for line in filelines(file):
+            line = line.replace('<nL>', '\n')
+            print(json.dumps({'text': line}, ensure_ascii=False), file=w)
+    verbose_print(f'"{newfile}"へ変換しました。')
+
+def main_quickconv(hparams):
+    for file in hparams.files:
+        if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
+            conv_txt_to_jsonl(file)
+
+def setup_quickconv(parser):
+    parser.add_argument("files", type=str, nargs="+", help="files")
+    parser.set_defaults(func=main_quickconv)
 
 
 def main_update(args):
@@ -207,6 +225,9 @@ def main():
 
     # 'head' サブコマンド
     setup_head(subparsers.add_parser('head', help='dump'))
+
+    # 'conv' サブコマンド
+    setup_quickconv(subparsers.add_parser('quickconv', help='conv'))
 
     # 'update' サブコマンド
     update_parser = subparsers.add_parser('update', help='update')

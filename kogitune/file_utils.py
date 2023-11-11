@@ -63,15 +63,25 @@ def get_filename_by_pid(prefix='cache'):
 
 ## file 
 
-def zopen(filepath):
+def zopen(filepath, mode='rt'):
     if filepath.endswith('.gz'):
-        return gzip.open(filepath, 'rt')
+        return gzip.open(filepath, mode)
     elif filepath.endswith('.zst'):
-        return pyzstd.open(filepath, 'rt')
+        return pyzstd.open(filepath, mode)
     else:
-        return open(filepath, 'r')
+        return open(filepath, mode)
 
 def get_filelines(filepath):
+    if filepath.endswith('.gz'):
+        ret = subprocess.run(f"gzcat {filepath} | wc -l", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
+    elif filepath.endswith('.zst'):
+        ret = subprocess.run(f"zstd -dcf {filepath} | wc -l", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
+    else:
+        ret = subprocess.run(f"wc -l {filepath}", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
+    try:
+        return int(ret.stdout)
+    except:
+        pass
     with zopen(filepath) as f:
         c=0
         line = f.readline()
@@ -79,6 +89,19 @@ def get_filelines(filepath):
             c+=1
             line = f.readline()
     return c
+
+def filelines(filename):
+    from tqdm import tqdm
+    N = get_filelines(filename)
+    pbar = tqdm(total=N, desc=filename)
+    with zopen(filename) as f:
+        line = f.readline()
+        while line:
+            pbar.update()
+            yield line.strip()
+            line = f.readline()
+    pbar.close()
+
 
 def parse_strip(s):
     return s.strip().replace('<nL>', '\n')
