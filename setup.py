@@ -20,15 +20,13 @@ setup(
     author="Kimio Kuramitsu",
     description="The Kogitune 🦊 LLM Project",
     url="https://github.com/kuramitsulab/kogitune",
-    packages=["kogitune"],
+    packages=["kogitune", 'kogi.preprocess'],
     package_dir={"kogitune": "kogitune"},
     package_data={"kogitune": ["*/*"]},
     install_requires=_requires_from_file("requirements.txt"),
     entry_points={
         "console_scripts": [
             "kogitune=kogitune.cli:main",
-            "kogitune_store=kogitune.cli:main_store",
-	        "kogitune_update=kogitune.cli:main_update",
         ]
     },
     classifiers=[
