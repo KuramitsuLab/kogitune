@@ -145,26 +145,3 @@ def is_python_code(text):
     """
     return bool(python_regex.search(text))
 
-# 正規表現のコンパイル
-doc_pattern = re.compile(r'"""(.*?)"""|\'\'\'(.*?)\'\'\'', re.DOTALL | re.MULTILINE)
-comment_pattern = re.compile(r'#(.*?)\n')
-
-def remove_first_comment(text):
-    ss=[]
-    body=False
-    for line in text.split('\n'):
-        if not body and (line.startswith('#') or line.startswith('<')):
-            continue
-        body=True
-        ss.append(line)
-    return '\n'.join(ss)
-
-def extract_docstring(code, include_comment=True):
-    ss=[]
-    for double, single in doc_pattern.findall(code):
-        ss.append(double.strip()+single.strip())
-    if include_comment:
-        ss.extend(comment_pattern.findall(code))
-    return '\n'.join(ss)
-
-

@@ -146,7 +146,6 @@ class DistributedIndexer(Dataset):
     def __init__(self, dataset: TensorArrayDataset, args: dict):
         self.dataset = dataset
         self.args = args
-        self.count = 0
         self.dataset_size = len(dataset)
         self.valid_dataset = None
 
@@ -163,7 +162,8 @@ class DistributedIndexer(Dataset):
         if self.length > self.dataset_size:
             self.length = self.length % self.dataset_size
         
-        self.epoch = 1
+        self.epoch = 0
+        self.count = 0
         
         # DistributedSamplerと同様に均等に分割して各プロセスが同じデータを読まないようにする
         self.sublength = self.length // get_world_size()
@@ -183,11 +183,18 @@ class DistributedIndexer(Dataset):
             self.epoch += 1
         return self.dataset[index]
 
+    def report(self, max_length):
+        iterations = self.sublength * self.epoch + self.count
+        total_tokens = iterations * max_length
+        verbose_print(f'{self.dataset.url}({get_rank()}): 反復数{iterations:,} トークン数{total_tokens:,}')
+        return iterations
+    
     def get_valid_dataset(self, valid_split=0.1):
         if self.valid_dataset:
             return self.valid_dataset
-        self.valid_dataset = self.dataset.get_valid_dataset()
-        if self.valid_dataset:
+        valid_dataset = self.dataset.get_valid_dataset()
+        if valid_dataset:
+            self.valid_dataset = DistributedIndexer(valid_dataset)
             return self.valid_dataset
         # 訓練データを 9:1 に分割して検証データを作る
         valid_dataset = DistributedIndexer(self.dataset, self.url_args)
@@ -284,6 +291,7 @@ class DataComposer(MixingDataset):
 
         self.random_seed=getint_environ('KG_RANDOM_SEED|RANDOM_SEED', 42, param_specified=random_seed)
         self.tokenizer_path = None
+        self.datasets = []
         self.prepare_data(parse_url_list(url_list), tokenizer)
         self.build_fn = DefaultCollator(args)
 
@@ -303,7 +311,6 @@ class DataComposer(MixingDataset):
         }
         self.n_items = 0
         self.n_tokens = 0
-        datasets = []
         for url in urls:
             url, args = parse_url_args(url, global_args)
             if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
@@ -323,19 +330,23 @@ class DataComposer(MixingDataset):
                 continue
             verbose_print(f'{url} {prefix} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
             dataset = DistributedIndexer(dataset, args)
-            datasets.append(dataset)
+            self.datasets.append(dataset)
             self.n_items += len(dataset)
         if self.n_items > 0:
-            self.blend_data(datasets)
+            self.blend_data(self.datasets)
         else:
             raise ValueError('🦊 データセットが空っぽです。')
 
     def blend_data(self, datasets: List[DistributedIndexer]):
-        lens = [len(ds) for ds in datasets]
-        total = sum(lens)
-        mixer_base = (total // min(lens))+1
-        lens = [int((dlen * mixer_base) / total) for dlen in lens]
-        verbose_print('ミキサーパターン:', lens)
+        dataset_lengths = [len(ds) for ds in datasets]
+        if len(dataset_lengths) > 1:
+            #dataset_lengths = [1009, 100, 300, 100, 45, 32, 29]
+            total = sum(dataset_lengths)
+            base = total / min(dataset_lengths) * 7
+            lens = [max(int((dlen * base) / total),1) for dlen in dataset_lengths]
+            verbose_print(f'最大: {max(dataset_lengths):,} 最小: {min(dataset_lengths):,} 混成比率: {lens}')
+        else:
+            lens=[1]
         self.mixed = []
         for dlen, ds in zip(lens, datasets):
             self.mixed.extend([ds]*dlen)
@@ -363,6 +374,13 @@ class DataComposer(MixingDataset):
             verbose_print(f'** {url} は、スキップして学習を続けます。')
             return False
         return True
+    
+    def report(self):
+        iterations = 0
+        for ds in self.datasets:
+            iterations += ds.report(self.max_length)
+        total_tokens = iterations*self.max_length
+        verbose_print(f'合計 反復数 {iterations:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self
@@ -370,6 +388,7 @@ class DataComposer(MixingDataset):
     def __exit__(self, exc_type, exc_value, traceback):
         self.n_items = 0
         self.mixed = None
+        self.report()
         if self.cleanup and os.path.isdir(self.cache_dir):
             try:
                 shutil.rmtree(self.cache_dir)
