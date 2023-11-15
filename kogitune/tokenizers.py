@@ -1,8 +1,9 @@
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
-import os
 import re
 import hashlib
+from collections import Counter
+import math
 
 import torch
 from transformers import AutoTokenizer, T5Tokenizer
@@ -197,3 +198,23 @@ def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
     return tokenizer
 
 
+def calculate_entropy(tokens):
+    """
+    任意のトークンリストのエントロピーを計算でき、それによりトークンの分布がどの程度多様か、
+    またはどの程度予測可能かが分かります。エントロピーが高いほど、トークンの分布は多様で予
+    測が難しいと言えます。逆にエントロピーが低い場合、トークンの分布は比較的均一で予測が容易です。
+
+    :param tokens: List of tokens
+    :return: Entropy value
+    """
+    # Count the frequency of each token
+    token_counts = Counter(tokens)
+    total_tokens = len(tokens)
+
+    # Calculate entropy
+    entropy = 0
+    for count in token_counts.values():
+        probability = count / total_tokens
+        entropy -= probability * math.log(probability, 2)
+
+    return entropy

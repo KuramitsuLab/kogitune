@@ -17,7 +17,7 @@ DOC_PATTERN = re.compile(r'\n\n([^\n])')
 def add_section_for_doc(text):
     return DOC_PATTERN.sub(r'\n\n<sectioN>\1', text)
 
-PYTHON_PATTERN = re.compile(r'\n(def|    def|class|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ')
+PYTHON_PATTERN = re.compile(r'\n(def|    def|class|async|    async|@|    @|\nif|\ntry|\n#|\n[A-Za-z0-9_]+\s=) ')
 
 def add_section_for_python(code):
     return PYTHON_PATTERN.sub(r'\n<sectioN>\1 ', code)

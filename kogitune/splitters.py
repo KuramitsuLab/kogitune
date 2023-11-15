@@ -1,7 +1,5 @@
 from typing import List, Union, Tuple
 import random
-import json
-import re
 import numpy as np
 import pandas as pd
 
@@ -11,7 +9,7 @@ from transformers import AutoTokenizer
 from .tokenizers import *
 from .commons import *
 from .file_utils import *
-from .store import DatasetStore, Metastore
+from .store import DatasetStore
 from .section import select_section_fn
 
 def getint(args, keys, default):
@@ -34,6 +32,7 @@ class DefaultSplitter(object):
         # self.trancate_size=getint(args, 'trancate_size', 0)
         # self.sep = args.get('sep', None)
         self.stat_token_counts = []
+        self.stat_entropy = []
         self.text_token_count = 0
         self.text_length_count = 0
         self.item_count = 0
@@ -76,6 +75,7 @@ class DefaultSplitter(object):
             self.text_token_count += len(tokens)
         if len(self.stat_token_counts) < 10000:
             self.stat_token_counts.append(len(tokens))
+            self.stat_entropy.append(calculate_entropy(tokens))
         return tokens
 
     def append_sliced(self, tokens:List[int], work_size:int, blocks: List[List[int]]):
@@ -102,7 +102,7 @@ class DefaultSplitter(object):
         if verbose:
             verbose_print(f'文字数 {format_unit(self.text_length_count, scale=1000)} {self.text_length_count} 圧縮率（トークン/文字数） {self.text_token_count*100 / self.text_length_count:.2f}%')
             verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.item_count}')
-            print(pd.DataFrame({'tokens': self.stat_token_counts}).describe())
+            print(pd.DataFrame({'tokens': self.stat_token_counts, 'entropy': self.stat_entropy}).describe(percentiles=[.1, .2, .25, .33, .5, .66, .75, .8, .9]))
         logs['token_stats'] = self.report_stat_token(self.stat_token_counts)
 
         logs['n_tokens'] = self.token_count
@@ -191,14 +191,28 @@ class OverlapTextBlockSplitter(DefaultSplitter):
         self.add_section = select_section_fn(self.section)
         self.overlap_size = getint(args, 'overlap_size|overlap', self.max_length // 4)
         self.padding_size = getint(args, 'padding_size|padding', self.max_length // 4)
+        self.section_max = getint(args, 'section_max_length|section_max', self.max_length * 8)
 
 
     def split(self, text:str, blocks: List[List[int]]):
         text = self.add_section(text)
         text_blocks = text.split('<sectioN>')
         chunks = [self.encode_and_count(sec, eos=False) for sec in text_blocks]
-        chunk_size = len(chunks)
+        reduced = []
+        for chunk, text in zip(chunks, text_blocks):
+            if len(chunk) > self.section_max:
+                entropy = calculate_entropy(chunk)
+                if entropy < 3.0 or entropy > 6.9:
+                    self.trancate_count += len(chunk)
+                    # print('--drop--', entropy)
+                    # print(text)
+                    continue
+                print('--drop?--', calculate_entropy(chunk))
+                print(text)
+            reduced.append(chunk)
+        chunks = reduced
         work_size = self.max_length
+        chunk_size = len(chunks)
         i = 0
         reminder = 0
         while i < chunk_size:
