@@ -1,106 +1,194 @@
 import re
-import json
-import pyzstd
-import html
+import pandas as pd
 
+from .words import score_japanese, score_english
+from .replace import RE, replace_pattern, replace_date, replace_url, replace_email, replace_uuid
 
-code_pattern = re.compile(r'```[\s\S]+?```', re.DOTALL | re.MULTILINE)
-inline_code_pattern = re.compile(r'`[^`]+?`')
-math_pattern = re.compile(r'\$\$[\s\S]+?\$\$', re.DOTALL | re.MULTILINE)
-inline_math_pattern = re.compile(r'\$[\s\S]+?\$')
+code_pattern = RE(
+    r'```[\s\S]+?```', 
+    r'\$\$[\s\S]+?\$\$',
+    flags=re.DOTALL | re.MULTILINE
+)
 
-def replace_code_blocks_with_placeholders(text):
+inline_code_pattern = RE(
+    r'`[^`]+?`'
+#    r'\$[\s\S]+?\$',
+)
+
+# base64_pattern = re.compile(r'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$')
+# uuid_pattern = re.compile(r'\b[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\b')
+# hash_pattern = re.compile(r'\b[a-fA-F0-9]{7,}\b')
+
+def alnum_fraction(text):
+    total = len(text)
+    if total == 0:
+        return 0.0, 0.0
+    alnum = 0
+    digit = 0
+    for c in text:
+        if c.isalnum():
+            alnum += 1
+            if c.isdigit():
+                digit +=1
+    return alnum/total, digit/alnum
+
+def replace_code_blocks_with_placeholders(text, max_code_length=4096):
     placeholders = []
     code_blocks = code_pattern.findall(text)
     for i, block in enumerate(code_blocks, start=len(placeholders)):
-        placeholder = f"_p{i:002}H_"
-        placeholders.append((placeholder, block))
-        text = text.replace(block, placeholder)
-
-    code_blocks = math_pattern.findall(text)
-    for i, block in enumerate(code_blocks, start=len(placeholders)):
-        placeholder = f"_p{i:002}H_"
+        placeholder = f"<{i:002}pH>"
+        if len(block) > max_code_length:
+            # b=len(block)
+            block = split_by_line(block, max_code_length // 2)
+            # print('@', b, block)
         placeholders.append((placeholder, block))
         text = text.replace(block, placeholder)
 
     code_blocks = inline_code_pattern.findall(text)
     for i, block in enumerate(code_blocks, start=len(placeholders)):
-        placeholder = f"_p{i:002}H_"
+        placeholder = f"<{i:002}pH>"
         placeholders.append((placeholder, block))
         text = text.replace(block, placeholder)
 
-    code_blocks = inline_math_pattern.findall(text)
-    for i, block in enumerate(code_blocks, start=len(placeholders)):
-        placeholder = f"_p{i:002}H_"
-        placeholders.append((placeholder, block))
-        text = text.replace(block, placeholder)
     return text, placeholders
+
+### ```tsx filename=app/routes/posts/index.tsx lines=[1-2,4-17,20-21]
+### import { json } from "@remix-run/node";
+
+snipet_head_pattern = RE(
+    r'(?P<prefix>```[\S]*)[^\n]*\n',
+)
+
+long_number_pattern = RE(
+    r'(?P<prefix>\.\d{4})\d+',
+)
+
+def split_by_line(text, max_length, dots='...'):
+    lines = text.split('\n')
+    ss=[]
+    length_count = 0
+    for line in lines:
+        length_count += len(line)
+        if length_count > max_length:
+            ss.append(dots)
+            break
+        ss.append(line)
+    ss.extend(lines[-1:])
+    return '\n'.join(ss)
+
+def clean_code_snipet(text, max_length=512):
+    text = replace_pattern(snipet_head_pattern, text, r"\g<prefix>\n")
+    text = replace_url(text)
+    text = replace_email(text)
+    text = replace_uuid(text)
+    text = replace_pattern(long_number_pattern, text, r"\g<prefix>")
+    if len(text) > max_length:
+        # b=len(block)
+        text = split_by_line(text, max_length // 2)
+        # print('@', b, block)
+    return text
 
 def restore_code_blocks(text, placeholders):
     for placeholder, block in placeholders:
-        text = text.replace(placeholder, block)
+        if placeholder in text:
+            block = clean_code_snipet(block)
+            text = text.replace(placeholder, block)
     return text
 
-yaml_pattern = re.compile(r'---\n[\s\S]*?\n---', re.DOTALL | re.MULTILINE)
+## markdown
 
+yaml_pattern = RE(r'---\n[\s\S]*?\n---', flags= re.DOTALL | re.MULTILINE)
 
-base64_pattern = re.compile(r'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$')
-uuid_pattern = re.compile(r'\b[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\b')
-hash_pattern = re.compile(r'\b[a-fA-F0-9]{7,}\b')
-url_pattern = re.compile(r'^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?(\?[^\s]*)?(#[^\s]*)?$')
+html_pattern = RE(
+    r'\<[A-Za-z/][^>]*\>', 
+    r'\<\![^>]*\>',
+    r'\{\%[^%]+\%\}',
+    r'~~[\s\S]+?~~',
+#    r'\[!(?:[^\[\]]|(?R))*\]',  #[!NOTE]
+)
+table_pattern = RE(r'\n\s*\|[\s\S]*?\|\s*\n')
 
-include_pattern = re.compile(r'\[!INCLUDE \[.*?\]\(.*?\)\]')
-image_pattern = re.compile(r'<img src ?= ?".*?" alt ?= ?".*?" width ?= ?".*?"/?>')
-image2_pattern = re.compile(r'!\[.*?\]\(.*?\)')
-link_pattern = re.compile(r'\[([^\]]*?)\]\([^\)]*?\)')
-html_tag = re.compile(r'<.*?>')
-# empty_a_pattern = re.compile(r'<a name="[^"]*?"></a>')
-# empty_a_pattern2 = re.compile(r'<a id="[^"]*?"></a>')
-# html_comment_pattern = re.compile(r'<!--.*?-->')
-google_drive_pattern = re.compile(r'https://drive\.google\.com/file/d/[A-Za-z0-9\-]+')
-back_slpash_pattern = re.compile(r'\\([_])')
+content_pattern = RE(
+    r'\!?\[(?P<content>[^\[\]]*?)\]\([^\(\)]*?\)',  #image,link
+    r'\[(?P<content>[^\[\]]*?)\]\[[^\[\]]*?\]',  #short link
+#    r'[^\!]\[(?P<content>.*?)\]\[.*?\]',  #short link
+    # r'[^\!]\[(?P<content>.*?)\]\(.*?\)',  #link
+    r'\[\!(?P<content>.*?)\]',  #[!NOTE]
+)
 
-bold_pattern = re.compile(r'\*\*(.*?)\*\*')
-bold_pattern2 = re.compile(r'__(.*?)__')
-italic_pattern = re.compile(r'\*(.*?)\*')
-italic_pattern2 = re.compile(r'_(.*?)_')
-strike_pattern = re.compile(r'~~.*?~~')
-extra_newlines_pattern = re.compile(r'\n{3,}')
+emph_pattern = RE(
+    r'\*\*\*(?P<content>.*?)\*\*\*', #emph
+    r'___(?P<content>.*?)___', #emph
+)
 
+bold_pattern = RE(
+    r'\*\*(?P<content>.*?)\*\*', #bold
+    r'__(?P<content>.*?)__', #bold
+)
 
+italic_pattern = RE(
+    r'\*(?P<content>.*?)\*', #italic
+    r'_(?P<content>.*?)_', #italic
+)
 
-def filter_markdown(text):
-    # Remove YAML headder
-    text = re.sub(yaml_pattern, '', text)
-
-    # エンコードされたHTMLエンティティの例
-    # encoded_string = "This is an example of a non-breaking space: &nbsp; and an ampersand: &amp;"
-    # HTMLエンティティをデコード
-    text = html.unescape(text)
-
-    text = re.sub(image_pattern, '(Figure)', text)
-    text = re.sub(image2_pattern, '(Figure)', text)
-    text = re.sub(link_pattern, r'\1', text)
-    text = re.sub(include_pattern, '...', text)
-    text = re.sub(html_tag, '', text)
-    # text = re.sub(empty_a_pattern2, '', text)
-    # text = re.sub(html_comment_pattern, '', text)
-    text = re.sub(uuid_pattern, '(UUID)', text)
-    text = re.sub(hash_pattern, '(hash)', text)
-    text = re.sub(google_drive_pattern, '(google drive)', text)
-
-    text = re.sub(back_slpash_pattern, r'\1', text)  #\_
-    text = re.sub(bold_pattern, '\\1', text)  # Remove bold
-    text = re.sub(italic_pattern, '\\1', text)      # Remove italic
-    text = re.sub(strike_pattern, '', text)      # Remove strikethrough
-    text = re.sub(extra_newlines_pattern, '\n\n', text)
-
-#    text = restore_code_blocks(text, placeholders)
+def replace_emph(text):
+    text = replace_pattern(emph_pattern, text, r'\g<content>')
+    text = replace_pattern(bold_pattern, text, r'\g<content>')
+    text = replace_pattern(italic_pattern, text, r'\g<content>')
     return text
 
-def score_markdown(text, sec="\n#"):
-    text, placeholders = replace_code_blocks_with_placeholders(text)
+def replace_markdown(text, emph=True):
+    text = replace_pattern(yaml_pattern, text, '')
+    text = replace_pattern(html_pattern, text, '')    
+    text = replace_pattern(table_pattern, text, '\n')
+    text = replace_pattern(table_pattern, text, '\n') # 2回必要
+    text = replace_pattern(content_pattern, text, r'\g<content>')
+    if emph:
+        text = replace_emph(text)
+    text = replace_url(text)
+    text = replace_date(text)
+#    text = replace_phone(text)
+    return text
+
+
+def filter_markdown(text, data=None, min_score_ja = 0.0, min_score_en = 0.0, max_section_length=1024, max_code_length=512):
+    text, placeholders = replace_code_blocks_with_placeholders(text, max_code_length)
+    text = replace_markdown(text, emph=False)
+    # text = replace_pattern(yaml_pattern, text, '')
+    # text = replace_pattern(html_pattern, text, '')    
+    # text = replace_url(text)
+    sec='\n#'
     sections = text.split(sec)
+    ss=[]
+    if data is not None:
+        data['score_ja'] = []
+        data['score_en'] = []
     for text in sections:
-        text = filter_markdown(text)
-        score_en = score_en(text)
+        score_ja = score_japanese(text, strict=True)
+        score_en = score_english(text, strict=True)
+        if data is not None and len(data['score_ja']) < 10000:
+            data['score_ja'].append(score_ja)
+            data['score_en'].append(score_en)
+        if len(sec) < max_section_length and min_score_ja <= score_ja and min_score_en <= score_en:
+            text = replace_markdown(text, emph=True)
+            text = restore_code_blocks(text, placeholders)
+            ss.append(text)
+        # else:
+        #     print(f'@drop len={len(sec)}, ja={score_ja}, en={score_en}')
+        #     print(text)
+    return sec.join(ss)    
+
+def describe(data=None):
+    if data is not None:
+        df = pd.DataFrame(data)
+        print(df.describe(percentiles=[0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9]))
+
+text = '''
+*   `NodeJS-Backport-Review` ([V8](https://bugs.chromium.org/p/v8/issues/list?can=1&q=label%3ANodeJS-Backport-Review), [Chromium](https://bugs.chromium.org/p/chromium/issues/list?can=1&q=label%3ANodeJS-Backport-Review)): to be reviewed if this is applicable to abandoned branches in use by Node.js. This list if regularly reviewed by the Node.js team at Google to determine applicability to Node.js.
+*   `NodeJS-Backport-Approved` ([V8](https://bugs.chromium.org/p/v8/issues/list?can=1&q=label%3ANodeJS-Backport-Approved), [Chromium](https://bugs.chromium.org/p/chromium/issues/list?can=1&q=label%3ANodeJS-Backport-Approved)): marks bugs that are deemed relevant to Node.js and should be backported.
+*   `NodeJS-Backport-Done` ([V8](https://bugs.chromium.org/p/v8/issues/list?can=1&q=label%3ANodeJS-Backport-Done), [Chromium](https://bugs.chromium.org/p/chromium/issues/list?can=1&q=label%3ANodeJS-Backport-Done)): Backport for Node.js has been performed already.
+*   `NodeJS-Backport-Rejected🧑‍💻p16H🧑‍update-v8` script<sup>2</sup>. For example, if you want to replace the copy of V8 in Node.js with the branch-head for V8 5.1 branch:
+'''
+
+if __name__ == '__main__':
+    print(replace_markdown(text))
