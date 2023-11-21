@@ -1,5 +1,6 @@
 from typing import List
 import re
+import os
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...
@@ -71,6 +72,23 @@ def score_japanese(text: str, strict=False) -> float:
         count = count_japanese_characters(text)
         return count_commons / count if count > 0 else 0.0
     return  count_commons / len(text) if len(text) > 0 else 0.0
+
+def read_words(filelist: List[str]):
+    ws = []
+    for file in filelist:
+        if not os.path.isfile(file):
+            ws.append(file)
+            continue
+        with open(file) as f:
+            ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
+    return ws
+
+def make_contain_ngwords_fn(words: List[str], max_allowed_num = 3):
+    words = read_words(words)
+    words_pattern = re.compile('|'.join(re.escape(w) for w in words))
+    def has_NGwords(text):
+        return len(words_pattern.findall(text)) > max_allowed_num
+    return has_NGwords
 
 def make_score_fn(words: List[str]):
     words_pattern = re.compile(r'\s(' + '|'.join(words) + r')\s')
