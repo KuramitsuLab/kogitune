@@ -33,6 +33,7 @@ class DefaultSplitter(object):
         # self.sep = args.get('sep', None)
         self.stat_token_counts = []
         self.stat_entropy = []
+        self.stat_compressed = []
         self.text_token_count = 0
         self.text_length_count = 0
         self.item_count = 0
@@ -66,15 +67,19 @@ class DefaultSplitter(object):
         self.block_count += len(blocks)
 
     def encode_and_count(self, text, eos=True):
-        self.text_length_count += len(text)
+        text_length = len(text)
         if eos:
             tokens = self.tokenizer.encode(text)
+            token_length = len(tokens)-1
             self.text_token_count += len(tokens)-1 
         else:
             tokens = self.tokenizer.convert_tokens_to_ids(self.tokenizer.tokenize(text))
-            self.text_token_count += len(tokens)
+            token_length = len(tokens)
+        self.text_length_count += text_length
+        self.text_token_count += token_length
         if len(self.stat_token_counts) < 10000:
-            self.stat_token_counts.append(len(tokens))
+            self.stat_token_counts.append(token_length)
+            self.stat_compressed.append(token_length/text_length if text_length > 0 else 0.0)
             self.stat_entropy.append(calculate_entropy(tokens))
         return tokens
 
@@ -102,7 +107,7 @@ class DefaultSplitter(object):
         if verbose:
             verbose_print(f'文字数 {format_unit(self.text_length_count, scale=1000)} {self.text_length_count} 圧縮率（トークン/文字数） {self.text_token_count*100 / self.text_length_count:.2f}%')
             verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.item_count}')
-            print(pd.DataFrame({'tokens': self.stat_token_counts, 'entropy': self.stat_entropy}).describe(percentiles=[.1, .2, .25, .33, .5, .66, .75, .8, .9]))
+            print(pd.DataFrame({'tokens': self.stat_token_counts, 'entropy': self.stat_entropy, 'compressed': self.stat_compressed}).describe(percentiles=[.1, .2, .25, .33, .5, .66, .75, .8, .9]))
         logs['token_stats'] = self.report_stat_token(self.stat_token_counts)
 
         logs['n_tokens'] = self.token_count
@@ -158,11 +163,6 @@ class SimpleTextBlockSplitter(DefaultSplitter):
         if len(self.extra_tokens) == 0:
             self.block_sec_count += 1
         tokens = self.extra_tokens + tokens
-        # for i in range(0, len(tokens) - work_size + 1, work_size):  
-        #     segmented = tokens[i : i + work_size]
-        #     blocks.append(segmented)
-        #     self.token_count += work_size
-        # extra_size = len(tokens) % work_size
         extra_tokens = self.append_sliced(tokens, work_size, blocks)
         missing_size = work_size - len(extra_tokens)
         if 0 < missing_size <= self.padding_size :
@@ -187,12 +187,12 @@ class SimpleTextBlockSplitter(DefaultSplitter):
 class OverlapTextBlockSplitter(DefaultSplitter):
     def __init__(self, tokenizer, args):
         super().__init__(tokenizer, args)
-        self.section = args.get('section', 'doc').lower()
+        self.section = args.get('section', 'doc')
         self.add_section = select_section_fn(self.section)
+        # self.filter = select_filter(args)
         self.overlap_size = getint(args, 'overlap_size|overlap', self.max_length // 4)
         self.padding_size = getint(args, 'padding_size|padding', self.max_length // 4)
-        self.section_max = getint(args, 'section_max_length|section_max', self.max_length * 8)
-
+        self.section_max = getint(args, 'section_max_length|section_max', self.max_length * 4)
 
     def split(self, text:str, blocks: List[List[int]]):
         text = self.add_section(text)
@@ -201,14 +201,14 @@ class OverlapTextBlockSplitter(DefaultSplitter):
         reduced = []
         for chunk, text in zip(chunks, text_blocks):
             if len(chunk) > self.section_max:
-                entropy = calculate_entropy(chunk)
-                if entropy < 3.0 or entropy > 6.9:
-                    self.trancate_count += len(chunk)
-                    # print('--drop--', entropy)
-                    # print(text)
-                    continue
-                print('--drop?--', calculate_entropy(chunk))
-                print(text)
+                self.trancate_count += len(chunk) - (self.max_length*2)
+                chunk = chunk[:self.max_length*2]
+                # entropy = calculate_entropy(chunk)
+                # if entropy < 3.0 or entropy > 6.9:
+                #     self.trancate_count += len(chunk)
+                #     # print('--drop--', entropy)
+                #     # print(text)
+                #     continue
             reduced.append(chunk)
         chunks = reduced
         work_size = self.max_length

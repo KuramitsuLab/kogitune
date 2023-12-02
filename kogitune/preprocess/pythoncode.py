@@ -1,7 +1,9 @@
 from typing import List
 import re
 import ast
+from kogitune.file_utils import filelines, zopen
 from .words import *
+from .replace import *
 
 single_pattern = re.compile(r'\'\'\'[\s\S]*?\'\'\'', re.DOTALL | re.MULTILINE)
 double_pattern = re.compile(r'"""[\s\S]*?"""', re.DOTALL | re.MULTILINE)
@@ -103,45 +105,63 @@ def remove_comment(text:str, docs: List[str]):
         multi_comments.append(comment)
     return '\n'.join(lines)
 
-def score_code(code, min_length=128):
-    stared = '<gh_stars>10' in code
+
+def clean_code(text):
+    stared = '<gh_stars>10' in text
+    text = replace_url(text, max_allowed_num=0)
+    text = replace_bar(text, code=True)
+    text = replace_uuid(text)
+    text = replace_float(text)
+    text = replace_longstring(text)
+    code = text
+
     docs=[]
     code, placeholders = replace_doc_string_with_placeholders(code, docs)
     code = remove_comment(code, docs)
     code = restore_placeholders(code, placeholders)
     doc = '\n'.join(docs)
-    if len(code) < min_length:
-        return None
+    score_doc = len(doc)/len(code) if len(code) > 0 else 0
+    score_en = score_english(doc, strict=True)
+    score_ja = score_japanese(doc, strict=True)
+
     return {
-        'score_doc': round(len(doc) / max(1, len(code)), 4),
-        'score_en': round(score_english(doc), 4),
-        'ja': contains_japanese(doc),
+        'doc_fraction': round(score_doc, 4),
+        'score_en': round(score_en, 4),
+        'score_ja': round(score_ja, 4),
         'stared': stared,
         'text': code,
         'text_length': len(code),
     }
 
+def describe(filename, N=10000):
+    import pandas as pd
+    stat={
+        'doc_fraction': [],
+        'score_en': [],
+        'score_ja': [],
+        'text_length': [],
+    }
+    for line in filelines(filename, N=10000):
+        data = clean_code(line.replace('<nL>', '\n'))
+        for key, keylist in stat.items():
+            keylist.append(data[key])
+    df = pd.DataFrame(stat)
+    print(df.describe(percentiles=[0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9]))
 
+def between(data, key, kwargs):
+    minval = kwargs.get(f'min_{key}', None)
+    maxval = kwargs.get(f'max_{key}', None)
+    val = data[key]
+    if (minval and val < minval) or (maxval and val > maxval):
+        return False
+    return True
 
-
-
-# Pythonのキーワードや特徴的な構文要素を含む正規表現パターン
-python_pattern = (
-    r'\b(def|class|import|from|as|if|elif|else|while|for|in|try|except|'
-    r'finally|with|return|yield|assert|break|continue|pass|raise|'
-    r'lambda|print|True|False|None)\b|'
-    r'[\[\]{}():,]|'
-    r'==|!=|<=|>=|<|>|=|\+|-|\*|/|%'
-)
-
-# 正規表現のコンパイル
-python_regex = re.compile(python_pattern)
-
-def is_python_code(text):
-    """
-    与えられたテキストがPythonコードの断片を含むかどうかを判定する関数
-    :param text: 判定するテキスト
-    :return: Pythonコードの断片を含む場合はTrue、そうでない場合はFalse
-    """
-    return bool(python_regex.search(text))
-
+def filter_code(filename, output_file, N=10000, **kwargs):
+    import json
+    describe(filename)
+    with zopen(output_file, 'tw') as w:
+        for line in filelines(filename, N=N):
+            data = clean_code(line.replace('<nL>', '\n'))
+            if between(data, 'text_length', kwargs) and between(data, 'doc_fraction', kwargs):
+                if between(data, 'score_en', kwargs) or between(data, 'score_ja', kwargs):
+                    print(json.dumps(data, ensure_ascii=False), file=w)

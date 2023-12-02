@@ -1,6 +1,8 @@
-from typing import List
+from typing import Any, List
 import re
 import os
+from collections import Counter
+
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...
@@ -22,9 +24,35 @@ def contains_english(text: str) -> bool:
     """
     return bool(pattern_english_common_words.search(text))
 
+def count_common_english_words(text: str) -> int:
+    """
+    与えられたテキストに頻出英単語が含まれるか判定する関数
+    :param text: 判定するテキスト
+    :return: 頻出単語の数
+    """
+    return len(pattern_english_common_words.findall(text))
+
+def english_fraction(text: str) -> float:
+    """
+    頻出英単語の比率を算出する
+    """
+    words = len(pattern_english_common_words.findall(text))
+    count = len(text)
+    return words / count if count > 0 else 0.0 
+
+def score_en(text: str) -> float:
+    """
+    与えられたテキストの英語の品質を算出する
+    :param text: 判定するテキスト
+    :return: 文字数あたりの頻出単語率
+    """
+    words = len(pattern_english_common_words.findall(text))
+    count = len([c for c in text if c.isalpha()])
+    return words / count if count > 0 else 0.0 
+
 def score_english(text: str, strict=False) -> float:
     """
-    与えられたテキストが英文を含むかどうかを判定する関数（拡張版）
+    与えられたテキストの英語の品質を算出する
     :param text: 判定するテキスト
     :return: 文字数あたりの頻出単語率
     """
@@ -38,7 +66,7 @@ pattern_japanese = re.compile(r'[ぁ-んァ-ヶー・\u4E00-\u9FFF\u3400-\u4DBF�
 
 def contains_japanese(text: str) -> bool:
     """
-    与えられたテキストが日本語を含むかどうかを判定する
+    テキストに日本語を含むかどうかを判定する
 
     :param text: 判定するテキスト
     :return: 日本語を含む場合はTrue、そうでない場合はFalse
@@ -47,18 +75,43 @@ def contains_japanese(text: str) -> bool:
 
 def count_japanese_characters(text):
     """
-    Count the number of Kanji, Hiragana, and Katakana characters in a text.
+    漢字/カタカナ/ひらがなの数を数える
 
-    Parameters:
-    text (str): The input text.
+    :param text: 判定するテキスト
+    :return: 漢字/カタカナ/ひらがなの数
     """
     return len(pattern_japanese.findall(text))
+
+def japanese_fraction(text: str) -> float:
+    """
+    テキスト中の漢字/カタカナ/ひらがなの比率を算出する
+    """
+    count_commons = count_japanese_characters(text)
+    return  count_commons / len(text) if len(text) > 0 else 0.0
 
 pattern_japanese_common_words = re.compile(
     r'(ある|あり|いた|いて|お|か|く|けど|けれど|こと|これ|この|'
     r'され|して|した|しな|する|すれ|せず|その|それ|そう|たい|たく|ため|'
     r'ついて|った|って|て|と|な|に|の|は|へ|ほど|まで|ます|ません|まし|'
     r'む|も|や|よ|ら|る|れな|わ|んだ|んで|を|が|だ|でき|です|でな|ば)')
+
+def count_common_japanese_words(text: str) -> int:
+    """
+    助詞/助動詞の出現数を数える
+    :param text: 判定するテキスト
+    :return: 助詞/助動詞の出現数
+    """
+    return len(pattern_japanese_common_words.findall(text))
+
+def score_ja(text: str) -> float:
+    """
+    助詞/助動詞の出現頻度から日本語の品質をスコアつけ
+    :return: スコア 0.25以上
+    """
+    count_commons = len(pattern_japanese_common_words.findall(text))
+    count = count_japanese_characters(text)
+    return count_commons / count if count > 0 else 0.0
+
 
 def score_japanese(text: str, strict=False) -> float:
     """
@@ -73,39 +126,34 @@ def score_japanese(text: str, strict=False) -> float:
         return count_commons / count if count > 0 else 0.0
     return  count_commons / len(text) if len(text) > 0 else 0.0
 
-def read_words(filelist: List[str]):
+def compile_words_pattern(words: List[str]):
     ws = []
-    for file in filelist:
-        if not os.path.isfile(file):
-            ws.append(file)
-            continue
-        with open(file) as f:
-            ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
-    return ws
+    for w in words:
+        if '.' in w and os.path.isfile(w):
+            with open(w) as f:
+                ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
+        else:
+            ws.append(w)
+    ws = list(set(ws))
+    ws.sort()
+    return re.compile('|'.join(re.escape(w) for w in ws)), len(ws)
 
-def make_contain_ngwords_fn(words: List[str], max_allowed_num = 3):
-    words = read_words(words)
-    words_pattern = re.compile('|'.join(re.escape(w) for w in words))
-    def has_NGwords(text):
-        return len(words_pattern.findall(text)) > max_allowed_num
-    return has_NGwords
+def count_words_pattern(words: List[str]):
+    pattern, n = compile_words_pattern(words)
+    if n > 100:
+        counters = Counter()
+    else:
+        counters = None
+    def count_ngwords(text: str):
+        nonlocal counters, pattern, n
+        results = set(pattern.findall(text))
+        if counters is not None and len(results) > 1:
+            counters.update(results)
+            if len(counters) >= max(n/8, 100):
+                #print(counters.most_common())
+                ws = [w for w, i in counters.most_common()]
+                pattern = re.compile('|'.join(re.escape(w) for w in ws))
+                counters = None
+        return len(results)
+    return count_ngwords
 
-def make_score_fn(words: List[str]):
-    words_pattern = re.compile(r'\s(' + '|'.join(words) + r')\s')
-    def score_fn(text):
-        return len(words_pattern.findall(text)) / max(len(text),1)
-    return score_fn
-
-import zlib, math
-
-def compression_ratio(text:str, length_factor: float = 0.0)->float:
-    encoded = text.encode("utf-8", errors='ignore')
-    compressed = zlib.compress(encoded, level=9)
-    encoded_length = len(encoded)
-    compressed_length = len(compressed)
-    ratio = compressed_length / encoded_length
-    length_penalty = (
-        length_factor * math.log(encoded_length) if length_factor else 0.0
-    )
-    score = ratio + length_penalty
-    return round(score,3)
