@@ -1,15 +1,9 @@
 
 from .filters import (
-    Filter, ComposeFilter, ChoiceFilter,
+    Filter, 
+    ComposeFilter, ChoiceFilter, ExtractFilter, 
     PercentileFilter, LineByLineFilter,
     DuplicatedLineFilter, UnicodeFilter,
-)
-
-from .replace import (
-    replace_url, replace_email,
-    replace_date, replace_time, replace_datetime,
-    replace_bar, replace_longstring, replace_float,
-    CCFilter,
 )
 
 from .words import (
@@ -19,4 +13,13 @@ from .words import (
     count_words_pattern, 
 )
 
-from .pythoncode import filter_code as filter_pythoncode
+from .scores import (
+    zlib_ratio,
+)
+
+from .replace import (
+    replace_url, replace_email,
+    replace_date, replace_time, replace_datetime,
+    replace_bar, replace_longstring, replace_float,
+    CCFilter,
+)

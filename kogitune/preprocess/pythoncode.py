@@ -105,63 +105,42 @@ def remove_comment(text:str, docs: List[str]):
         multi_comments.append(comment)
     return '\n'.join(lines)
 
-
-def clean_code(text):
-    stared = '<gh_stars>10' in text
-    text = replace_url(text, max_allowed_num=0)
-    text = replace_bar(text, code=True)
-    text = replace_uuid(text)
-    text = replace_float(text)
-    text = replace_longstring(text)
-    code = text
-
+def extract_doc_string(code):
     docs=[]
     code, placeholders = replace_doc_string_with_placeholders(code, docs)
     code = remove_comment(code, docs)
     code = restore_placeholders(code, placeholders)
     doc = '\n'.join(docs)
-    score_doc = len(doc)/len(code) if len(code) > 0 else 0
-    score_en = score_english(doc, strict=True)
-    score_ja = score_japanese(doc, strict=True)
+    return doc, code
 
-    return {
-        'doc_fraction': round(score_doc, 4),
-        'score_en': round(score_en, 4),
-        'score_ja': round(score_ja, 4),
-        'stared': stared,
-        'text': code,
-        'text_length': len(code),
-    }
+def doc_fraction(text):
+    doc, code = extract_doc_string(text)
+    return len(doc)/len(code) if len(code) > 0 else 0
 
-def describe(filename, N=10000):
-    import pandas as pd
-    stat={
-        'doc_fraction': [],
-        'score_en': [],
-        'score_ja': [],
-        'text_length': [],
-    }
-    for line in filelines(filename, N=10000):
-        data = clean_code(line.replace('<nL>', '\n'))
-        for key, keylist in stat.items():
-            keylist.append(data[key])
-    df = pd.DataFrame(stat)
-    print(df.describe(percentiles=[0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9]))
 
-def between(data, key, kwargs):
-    minval = kwargs.get(f'min_{key}', None)
-    maxval = kwargs.get(f'max_{key}', None)
-    val = data[key]
-    if (minval and val < minval) or (maxval and val > maxval):
-        return False
-    return True
+base64_pattern = RE(
+    r'(\b[0-9\+/]+[a-z]+[0-9\+/A-Z]+[a-z]+[0-9\+/A-Z]+[0-9a-zA-Z\+/]*={0,2}\b)',
+    r'(\b[0-9\+/]+[A-Z]+[0-9\+/a-z]+[A-Z]+[0-9\+/a-z]+[0-9a-zA-Z\+/]*={0,2}\b)',
+    r'(\b[0-9a-zA-Z+/]{4,}={1,2}\b)',
+)
 
-def filter_code(filename, output_file, N=10000, **kwargs):
-    import json
-    describe(filename)
-    with zopen(output_file, 'tw') as w:
-        for line in filelines(filename, N=N):
-            data = clean_code(line.replace('<nL>', '\n'))
-            if between(data, 'text_length', kwargs) and between(data, 'doc_fraction', kwargs):
-                if between(data, 'score_en', kwargs) or between(data, 'score_ja', kwargs):
-                    print(json.dumps(data, ensure_ascii=False), file=w)
+uuid_pattern = RE(r'\b[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\b')
+
+hash_pattern = RE(
+    r'(\b[a-f]+[0-9]+[a-f]+[0-9]+[a-f0-9]{3,}\b)',
+    r'(\b[0-9]+[a-f]+[0-9]+[a-f]+[a-f0-9]{3,}\b)',
+    r'(\b[A-F]+[0-9]+[A-F]+[0-9]+[A-F0-9]{3,}\b)',
+    r'(\b[0-9]+[A-F]+[0-9]+[A-F]+[A-F0-9]{3,}\b)',
+)
+
+def replace_uuid(text):
+    return replace_pattern(uuid_pattern, text, '<uuid>')
+
+def clean_starcode(text):
+    text = replace_url(text, max_allowed_num=1)
+    text = replace_uuid(text)
+    text = replace_bar(text)
+    text = replace_float(text)
+    text = replace_longstring(text)
+    return text.replace('<EMAIL>', '<email>').replace('<NAME>', '<name>').replace('<PASSWORD>', '<password>')
+

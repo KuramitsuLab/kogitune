@@ -323,7 +323,6 @@ hash_pattern = RE(
     r'(\b[0-9]+[A-F]+[0-9]+[A-F]+[A-F0-9]{3,}\b)',
 )
 
-
 def replace_id(text, replaced='<name>', max_allowed_num=0):
     """
     text中の名前らしい識別子を<name>に置き換える
@@ -635,23 +634,6 @@ def CCFilter(text):
     text = replace_bar(text)
     return cleanup(text)
 
-
-# def filter_mc4(text, prefix_size=8):
-#     text=replace_menu(text)
-#         if prefix_size < len(line) < 80 and lines[-1].startswith(line[:prefix_size]):
-#             # print('@A', lines[-1])
-#             # print('@B', line)
-#             if len(line) > len(lines):
-#                 lines[-1] = line
-#             continue          
-#         lines.append(line)
-#     text = '\n'.join(lines)
-#     text=replace_date(text)
-#     text=replace_url(text)
-#     text=replace_phone(text)
-#     text=replace_bar(text)
-#     text = cleanup(text)
-#     return text
 
 if __name__ == '__main__':
     import doctest # doctestのための記載

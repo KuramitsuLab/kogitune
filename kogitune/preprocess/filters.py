@@ -39,25 +39,6 @@ class ComposeFilter(Filter):
                 return None
         return text
 
-class LineByLineFilter(ComposeFilter):
-    def __init__(self, *filters):
-        super().__init__(*filters)
-
-    def __call__(self, text):
-        lines = []
-        for line in text.split('\n'):
-            for f in self.filters:
-                line = f(line)
-                if line is None:
-                    break
-            if line:
-                lines.append(line)
-            else:
-                lines.append('')
-        if len(lines) == 0:
-            return None
-        return '\n'.join(lines)
-
 class ChoiceFilter(ComposeFilter):
     def __init__(self, *filters):
         super().__init__(*filters)
@@ -68,6 +49,39 @@ class ChoiceFilter(ComposeFilter):
             if text2 is not None:
                 return text2
         return None
+
+class ExtractFilter(ComposeFilter):
+    def __init__(self, extract_fn, *filters):
+        super().__init__(*filters)
+        self.extract_fn = extract_fn
+
+    def __call__(self, text):
+        doc, text = self.extract_fn(text)
+        for f in self.filters:
+            if f(doc) is None:
+                return None
+        return text
+
+class LineByLineFilter(ComposeFilter):
+    def __init__(self, sep='\n', *filters):
+        super().__init__(*filters)
+        self.sep = sep
+
+    def __call__(self, text):
+        lines = []
+        for line in text.split(self.sep):
+            for f in self.filters:
+                line = f(line)
+                if line is None:
+                    break
+            if line:
+                lines.append(line)
+            else:
+                lines.append('')
+        if len(lines) == 0:
+            return None
+        return self.sep.join(lines)
+
 
 class PercentileFilter(Filter):
     def __init__(self, score_fn, caption=None,
@@ -109,27 +123,23 @@ class PercentileFilter(Filter):
         df = pd.DataFrame({self.caption: self.values})
         print(df.describe(percentiles=[0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95]))
 
+# class ZLibFilter(PercentileFilter):  
+#     def __init__(self, length_factor = 0.0,
+#                   min_value=None, max_value=None, minq=10, maxq=90, verbose=0):
+#         super().__init__(min_value=min_value, max_value=max_value, 
+#                          minq=minq, maxq=maxq, verbose=verbose)
+#         self.length_factor = length_factor
 
-
-
-class ZLibFilter(PercentileFilter):
-    
-    def __init__(self, length_factor = 0.0,
-                  min_value=None, max_value=None, minq=10, maxq=90, verbose=0):
-        super().__init__(min_value=min_value, max_value=max_value, 
-                         minq=minq, maxq=maxq, verbose=verbose)
-        self.length_factor = length_factor
-
-    def filter(self, text:str):
-        encoded = text.encode("utf-8", errors='ignore')
-        compressed = zlib.compress(encoded, level=9)
-        encoded_length = len(encoded)
-        compressed_length = len(compressed)
-        ratio = compressed_length / encoded_length
-        length_penalty = (
-            self.length_factor * math.log(encoded_length) if self.length_factor else 0.0
-        )
-        return ratio + length_penalty
+#     def filter(self, text:str):
+#         encoded = text.encode("utf-8", errors='ignore')
+#         compressed = zlib.compress(encoded, level=9)
+#         encoded_length = len(encoded)
+#         compressed_length = len(compressed)
+#         ratio = compressed_length / encoded_length
+#         length_penalty = (
+#             self.length_factor * math.log(encoded_length) if self.length_factor else 0.0
+#         )
+#         return ratio + length_penalty
 
 import unicodedata
 
