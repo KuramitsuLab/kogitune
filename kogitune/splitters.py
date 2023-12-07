@@ -495,13 +495,11 @@ def select_splitter(tokenizer, args: dict):
 ## Store 用
 
 def record_tokenizer(tokenizer: AutoTokenizer):
-    allvoc = ''.join(tokenizer.get_vocab().keys())
-    sha256 = hashlib.sha256(allvoc.encode()).hexdigest()
     return dict(
         name_or_path=tokenizer.name_or_path,
         pad_token_id = tokenizer.pad_token_id,
         eos_token_id = tokenizer.eos_token_id,
-        hash=sha256, 
+        hash=tokenizer_hash(tokenizer), 
         vocab_size=tokenizer.vocab_size)
 
 def append_valid_file(val_files: List[str], filename: str):
@@ -530,12 +528,19 @@ def split_to_store(filenames: List[str], validation=True, args={}):
     store_path = get_dict_multi_keys(args, 'store_path|store_dir', None)
     if store_path is None:
         filebase = get_filebase(filenames[0])
-        _, _, tokenizer_name = tokenizer.name_or_path.rpartition('/')
+        tokenizer_name = tokenizer_id(tokenizer)
         store_path=f'{tokenizer_name}/{filebase}'
         args['store_path'] = store_path
         verbose_print(f'Saving To.. {store_path}')
     else:
-        filebase = store_path.replace('/', '_')
+        if '/' in store_path:
+            filebase = store_path.replace('/', '_')
+        else:
+            filebase = store_path
+            tokenizer_name = tokenizer_id(tokenizer)
+            store_path=f'{tokenizer_name}/{filebase}'
+            args['store_path'] = store_path
+            verbose_print(f'Saving To.. {store_path}')
 
     specified_data_type = get_dict_multi_keys(args, 'data_type|type', None)
     data_type = detect_datatype(filenames[0], args)

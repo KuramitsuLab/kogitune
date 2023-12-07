@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
 
+import os
 import re
 import hashlib
 from collections import Counter
@@ -177,21 +178,36 @@ def adapt_tokenizer(tokenizer: AutoTokenizer):
         return post_decode(s)
     tokenizer.decode = papertown_decode
 
+def tokenizer_hash(tokenizer: AutoTokenizer):
+    ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
+    ws.sort()
+    allvoc = ''.join(w for _, w in ws)
+    #print(len(allvoc), allvoc[:100], allvoc[:100].encode())
+    return hashlib.md5(allvoc.encode()).hexdigest()
 
-def get_tokenizer_info(tokenizer: AutoTokenizer):
-    allvoc = ''.join(tokenizer.get_vocab().keys())
-    sha256 = hashlib.sha256(allvoc.encode()).hexdigest()
-    return dict(
-        name_or_path=tokenizer.name_or_path,
-        pad_token_id = tokenizer.pad_token_id,
-        eos_token_id = tokenizer.eos_token_id,
-        hash=sha256, 
-        vocab_size=tokenizer.vocab_size)
+# def get_tokenizer_info(tokenizer: AutoTokenizer):
+#     return dict(
+#         name_or_path=tokenizer.name_or_path,
+#         pad_token_id = tokenizer.pad_token_id,
+#         eos_token_id = tokenizer.eos_token_id,
+#         hash= tokenizer_hash(tokenizer), 
+#         vocab_size=tokenizer.vocab_size)
 
+def tokenizer_id(tokenizer: AutoTokenizer):
+    _, _, name_or_path = tokenizer.name_or_path.rpartition('/')
+    name_or_path=name_or_path.lower().replace('_', '-')
+    names = [name for name in name_or_path.split('-') if name.isalpha()]
+    if len(names) == 0:
+        names = name_or_path.split('-')[:1]
+    md5 = tokenizer_hash(tokenizer)
+    names.append(md5[:4])
+    return '-'.join(names)
+
+os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
 def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
-    #tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, legacy=False, trust_remote_code=True, use_fast=False)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, legacy=False, trust_remote_code=True, use_fast=False)
+    #tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     if adapt:
         newline_token_id = find_token_id(tokenizer, "<nL>")
         if newline_token_id != tokenizer.unk_token_id:
