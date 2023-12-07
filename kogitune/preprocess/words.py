@@ -126,7 +126,7 @@ def score_japanese(text: str, strict=False) -> float:
         return count_commons / count if count > 0 else 0.0
     return  count_commons / len(text) if len(text) > 0 else 0.0
 
-def compile_words_pattern(words: List[str]):
+def compile_words_pattern(words: List[str], prefix='', suffix=''):
     ws = []
     for w in words:
         if '.' in w and os.path.isfile(w):
@@ -136,7 +136,8 @@ def compile_words_pattern(words: List[str]):
             ws.append(w)
     ws = list(set(ws))
     ws.sort()
-    return re.compile('|'.join(re.escape(w) for w in ws)), len(ws)
+    pattern = '|'.join(re.escape(w) for w in ws)
+    return re.compile(f'{prefix}{pattern}{suffix}'), len(ws)
 
 def count_words_pattern(words: List[str]):
     pattern, n = compile_words_pattern(words)
@@ -157,3 +158,35 @@ def count_words_pattern(words: List[str]):
         return len(results)
     return count_ngwords
 
+
+def remove_footnote(words: List[str]):
+    pattern, n = compile_words_pattern(words, prefix=r'\n(', suffix=r'\s*\n')
+    def remove(text) -> dict[str, Any]:
+        matched = pattern.search(text)
+        if matched:
+            text = text[: matched.start()]
+        return text
+    return remove
+
+def remove_wikipedia_footnote():
+    footnote_sections: list[str] = [
+        "脚注",
+        "関連項目",
+        "日本国内の関連項目",
+        "出典",
+        "出典・脚注",
+        "参照",
+        "外部リンク",
+        "参考文献",
+        "その他関連事項",
+        "Footnotes",
+        "See also",
+        "Further reading",
+        "Bibliography",
+        "References",
+        "Notes",
+        "Citations",
+        "Sources",
+        "External links",
+    ]
+    return remove_footnote(footnote_sections)

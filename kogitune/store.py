@@ -136,7 +136,7 @@ class DatasetStore(object):
                 if os.path.exists(f'{filepath}.zst'):
                     os.remove(f'{filepath}.zst')
 
-    def shuffle_chunk(self, N=4):
+    def shuffle_chunk(self, N):
         if len(self.chunk_files) > N:
             files = random.sample(self.chunk_files, N)
             buffers=[]

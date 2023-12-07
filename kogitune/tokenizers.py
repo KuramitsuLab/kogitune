@@ -190,7 +190,8 @@ def get_tokenizer_info(tokenizer: AutoTokenizer):
 
 
 def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, legacy=False, trust_remote_code=True, use_fast=False)
+    #tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, legacy=False, trust_remote_code=True, use_fast=False)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
     if adapt:
         newline_token_id = find_token_id(tokenizer, "<nL>")
         if newline_token_id != tokenizer.unk_token_id:

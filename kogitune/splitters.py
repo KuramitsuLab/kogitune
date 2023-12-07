@@ -28,9 +28,6 @@ class DefaultSplitter(object):
         # デフォルトは、eos でパディング
         self.pad_id = getint(args, 'pad_token_id', tokenizer.eos_token_id) 
         self.ellipsis_token_id = find_ellipsis_token_id(tokenizer)
-        # self.eos_token_id = getint(args, 'eos_token_id', tokenizer.eos_token_id)
-        # self.trancate_size=getint(args, 'trancate_size', 0)
-        # self.sep = args.get('sep', None)
         self.stat_token_counts = []
         self.stat_entropy = []
         self.stat_compressed = []
@@ -44,6 +41,10 @@ class DefaultSplitter(object):
         self.trancate_count = 0
         self.overlap_count = 0
         self.padding_count = 0
+        self.maxq_tpc = getint(args, 'maxq_tpc', 99)
+        self.minq_tpc = getint(args, 'minq_tpc', 1)
+        self.max_tpc = None
+        self.min_tpc = None
     
     def about(self):
         return dict(name=self.__class__.__name__)
@@ -77,10 +78,19 @@ class DefaultSplitter(object):
             token_length = len(tokens)
         self.text_length_count += text_length
         self.text_token_count += token_length
+        tpc = token_length/text_length if text_length > 0 else 0.0
         if len(self.stat_token_counts) < 10000:
             self.stat_token_counts.append(token_length)
-            self.stat_compressed.append(token_length/text_length if text_length > 0 else 0.0)
+            self.stat_compressed.append(tpc)
             self.stat_entropy.append(calculate_entropy(tokens))
+            if len(self.stat_token_counts) % 1000 == 999:
+                if self.maxq_tpc is not None:
+                    self.max_tpc = np.percentile(np.array(self.stat_compressed), self.maxq_tpc)
+                if self.min_tpc is not None:
+                    self.min_tpc = np.percentile(np.array(self.stat_compressed), self.minq_tpc)
+        if (self.max_tpc and tpc > self.max_tpc) or (self.min_tpc and tpc < self.min_tpc):
+            self.trancate_count += token_length
+            return []
         return tokens
 
     def append_sliced(self, tokens:List[int], work_size:int, blocks: List[List[int]]):
@@ -103,11 +113,11 @@ class DefaultSplitter(object):
     def report(self, logs: dict, verbose=True):
         logs['source_tokens'] = self.text_token_count
         logs['source_chars'] = self.text_length_count
-        logs['tokens_per_char'] = self.text_token_count / self.text_length_count
+        logs['tokens_per_char'] = round(self.text_token_count / self.text_length_count, 3)
         if verbose:
             verbose_print(f'文字数 {format_unit(self.text_length_count, scale=1000)} {self.text_length_count} 圧縮率（トークン/文字数） {self.text_token_count*100 / self.text_length_count:.2f}%')
             verbose_print(f'１件あたりのトークン長の統計情報 {len((self.stat_token_counts))}/{self.item_count}')
-            print(pd.DataFrame({'tokens': self.stat_token_counts, 'entropy': self.stat_entropy, 'compressed': self.stat_compressed}).describe(percentiles=[.1, .2, .25, .33, .5, .66, .75, .8, .9]))
+            print(pd.DataFrame({'tokens': self.stat_token_counts, 'entropy': self.stat_entropy, 'tokens/chars(tpc)': self.stat_compressed}).describe(percentiles=[.01, .05, .1, .2, .25, .33, .5, .66, .75, .8, .9, .95, .99]))
         logs['token_stats'] = self.report_stat_token(self.stat_token_counts)
 
         logs['n_tokens'] = self.token_count
@@ -115,16 +125,16 @@ class DefaultSplitter(object):
         logs['dropped'] = self.item_drop_count
         sec = self.block_sec_count / self.block_count
         logs['sectioned'] = self.block_sec_count
-        trancated = self.trancate_count / self.token_count
+        trancated = round(self.trancate_count / self.token_count,4)
         logs['trancated'] = trancated
-        padding = self.padding_count / (self.item_count*self.max_length)
+        padding = round(self.padding_count / (self.item_count*self.max_length),4)
         logs['padding'] = padding
-        overlap = self.overlap_count / self.token_count
+        overlap = round(self.overlap_count / self.token_count,4)
         logs['overlap'] = overlap
         if verbose:
             verbose_print(f'トークン数: {format_unit(self.token_count, scale=1000)} {self.token_count:,} ブロック長: 最大 max_length={self.max_length} 最小 min_length={self.min_length}')
             verbose_print(f'未使用(ドロップ): {drop*100:.2f}% {self.item_drop_count:,}/{self.item_count:,}')
-            verbose_print(f'セクション: {sec*100:.2f}% {self.block_sec_count:,}/{self.block_count:,}')
+            verbose_print(f'セクション率: {sec*100:.2f}% {self.block_sec_count:,}/{self.block_count:,}')
             if not hasattr(self, 'trancate_size'):
                 self.trancate_size = -1
             verbose_print(f'切り詰め(trancate={self.trancate_size}): {trancated*100:.2f}% ({self.trancate_count:,}/{self.token_count:,})')
@@ -140,8 +150,8 @@ class DefaultSplitter(object):
         data = np.array(counts)
         return {
             'total': int(np.sum(data)),
-            'mean': float(np.mean(data)),
-            'std': float(np.var(data)) ** 0.5,
+            'mean': round(float(np.mean(data)),3),
+            'std': round(float(np.var(data)) ** 0.5,3),
             'max': int(np.max(data)),
             '75%': int(np.percentile(data, 75)),
             'median': int(np.median(data)),
