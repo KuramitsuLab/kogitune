@@ -40,6 +40,14 @@ def english_fraction(text: str) -> float:
     count = len(text)
     return words / count if count > 0 else 0.0 
 
+def alpha_fraction(text: str) -> float:
+    """
+    頻出英単語の比率を算出する
+    """
+    alphas = len([c for c in text if 'A' <= c <= 'z'])
+    count = len(text)
+    return alphas / count if count > 0 else 0.0 
+
 def score_en(text: str) -> float:
     """
     与えられたテキストの英語の品質を算出する
@@ -47,7 +55,7 @@ def score_en(text: str) -> float:
     :return: 文字数あたりの頻出単語率
     """
     words = len(pattern_english_common_words.findall(text))
-    count = len([c for c in text if c.isalpha()])
+    count = len([c for c in text if 'A' <= c <= 'z'])
     return words / count if count > 0 else 0.0 
 
 def score_english(text: str, strict=False) -> float:
