@@ -272,7 +272,7 @@ def unzstd_file(filename, rm=False, sync=True):
             if not sync:
                 cmd = f'{cmd} &'
             subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-            return unzstd_filename
+        return unzstd_filename
     else:
         if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
             return unzstd_file(f'{filename}.zst', rm=rm, sync=sync)
