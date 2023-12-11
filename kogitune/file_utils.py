@@ -356,7 +356,7 @@ def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
         filepath = safe_join_path(base_dir, chunk_file)
     try:
         filepath = unzstd_file(filepath)
-        npz = np.load(filepath)
+        npz = np.load(filepath, allow_pickle=True)
         chunks = [npz[n] for n in npz.files]
         if subblocks > 1:
             newchunks=[]

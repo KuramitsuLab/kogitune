@@ -3,8 +3,10 @@ from collections import Counter
 
 def zlib_ratio(text:str, length_factor: float = 0.0)->float:
     encoded = text.encode("utf-8", errors='ignore')
-    compressed = zlib.compress(encoded, level=9)
     encoded_length = len(encoded)
+    if encoded_length == 0:
+        return 0.0
+    compressed = zlib.compress(encoded, level=9)    
     compressed_length = len(compressed)
     ratio = compressed_length / encoded_length
     length_penalty = (

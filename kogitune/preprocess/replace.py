@@ -395,6 +395,9 @@ def replace_id(text, replaced='<name>', max_allowed_num=0):
     text = replace_pattern(product_id_pattern, text, '<id>')
     return text
 
+def replace_uuid(text):
+    return replace_pattern(uuid_pattern, text, '<uuid>')
+
 # idlike_pattern = RE(
 #     r'\b[A-Za-z0-9_\,]\b',
 # )

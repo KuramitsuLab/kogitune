@@ -2,7 +2,7 @@ import re
 import pandas as pd
 
 from .words import score_japanese, score_english
-from .replace import RE, replace_pattern, replace_date, replace_url, replace_email, replace_uuid
+from .replace import RE, replace_pattern, replace_datetime, replace_url, replace_email, replace_uuid
 
 code_pattern = RE(
     r'```[\s\S]+?```', 
@@ -137,17 +137,15 @@ def replace_emph(text):
     text = replace_pattern(italic_pattern, text, r'\g<content>')
     return text
 
-def replace_markdown(text, emph=True):
+def replace_markdown(text):
     text = replace_pattern(yaml_pattern, text, '')
     text = replace_pattern(html_pattern, text, '')    
     text = replace_pattern(table_pattern, text, '\n')
     text = replace_pattern(table_pattern, text, '\n') # 2回必要
     text = replace_pattern(content_pattern, text, r'\g<content>')
-    if emph:
-        text = replace_emph(text)
     text = replace_url(text)
-    text = replace_date(text)
-#    text = replace_phone(text)
+    text = replace_email(text)
+    text = replace_datetime(text)
     return text
 
 

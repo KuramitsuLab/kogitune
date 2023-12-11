@@ -122,6 +122,24 @@ class PercentileFilter(Filter):
     def describe(self):
         df = pd.DataFrame({self.caption: self.values})
         print(df.describe(percentiles=[0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95]))
+        plot_hist(self.caption, self.values)
+
+def plot_hist(caption, values):
+    try:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        from matplotlib.ticker import PercentFormatter
+        sns.displot(pd.DataFrame({caption: values}), stat='probability')
+        #plt.hist(values, bins=20)
+#        plt.xlabel(caption)
+#        plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
+        filename = caption.replace(' ', '_')
+        print(f'Saving {filename}.png')
+        plt.savefig(filename)
+        plt.clf()
+    except:
+        pass
+
 
 # class ZLibFilter(PercentileFilter):  
 #     def __init__(self, length_factor = 0.0,
