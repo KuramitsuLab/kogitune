@@ -71,6 +71,11 @@ class Metastore(object):
         req_max_length = self.guess_max_length(args)
         data_type = self.guess_data_type(args)
         split = args.get('split', 'train')
+        for prefix, config in prefixes.items():
+            if config['data_type'] == data_type and config['split'] == split:
+                max_length = config.get('max_length', -1)
+                if req_max_length == max_length:
+                    return prefix
         selected_prefix = None
         selected_max_length = 0
         for prefix, config in prefixes.items():
