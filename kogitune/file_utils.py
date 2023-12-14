@@ -260,11 +260,29 @@ def zstd_file(filename, rm=False, sync=True):
         subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
     return f'{filename}.zst'
 
+def safeunzstd_file(filename, rm=False, sync=True):
+    if filename.endswith('.zst'):
+        unzstd_filename = filename[:-4]
+        if os.path.exists(unzstd_filename):
+            return unzstd_filename
+        if rm:
+            cmd = f"zstd -dq --rm {filename}"
+        else:
+            cmd = f"zstd -dq {filename}"
+        if not sync:
+            cmd = f'{cmd} &'
+        subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
+        return unzstd_filename
+    else:
+        if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
+            return safeunzstd_file(f'{filename}.zst', rm=rm, sync=sync)
+    return filename
+
 
 def unzstd_file(filename, rm=False, sync=True):
     if filename.endswith('.zst'):
         unzstd_filename = filename[:-4]
-        if not not os.path.exists(unzstd_filename):
+        if not os.path.exists(unzstd_filename):
             if rm:
                 cmd = f"zstd -dq --rm {filename}"
             else:
@@ -289,24 +307,23 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
     cached_file_size = get_filesize(cached_file)
     if cached_file_size > 0:
         return cached_file
-    
-    if compressed:
-        remote_file = f'{remote_file}.{compressed}'
-        cached_file = f'{cached_file}.{compressed}'
-        if os.path.exists(cached_file):
-            return unzstd_file(cached_file)
+
+    zext = f'.{compressed}' if compressed else ''
     
     # コマンド
     if remote_file.startswith('https://') or remote_file.startswith('http://'):
-        cmd = f"wget -qO {cached_file}.tmp {remote_file} && mv {cached_file}.tmp {cached_file}"
+        cmd = f"wget -qO {cached_file}.tmp {remote_file}{zext} && mv {cached_file}.tmp {cached_file}{zext}"
     else:
-        cmd = f'cp {remote_file} {cached_file}'
+        cmd = f'cp {remote_file}{zext} {cached_file}{zext}'
+    
+    if compressed:
+        cmd = f'{cmd} && zstd -dq {cached_file}{zext}'
 
     if sync:
         if cached_file_size == 0:
             verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
             if wait_for_file(cached_file, 30):
-                return cached_file
+                return safeunzstd_file(cached_file)
         touch(cached_file)
         subprocess.call(cmd, shell=True)
         cached_file_size = get_filesize(cached_file)
@@ -314,19 +331,12 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             if verbose:
                 verbose_print(f'ダウンロード失敗 file={cached_file} {format_unit(cached_file_size, scale=1024)}B', cmd)
             os.remove(cached_file)
-        else:
-            if compressed:
-                cached_file = unzstd_file(cached_file, rm=True)
-            verbose_print(f'Downloaded {format_unit(cached_file_size, scale=1024)}B by', cmd)
         return cached_file
 
     if get_filesize(cached_file) == -1:
         touch(cached_file)
         verbose_print('プレフェッチ', remote_file)
-        if compressed:
-            subprocess.call(f"{cmd} && zstd -dq --rm {cached_file} &", shell=True, stderr=subprocess.DEVNULL)
-        else:
-            subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
+        subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
     return None
 
 
@@ -341,13 +351,6 @@ def save_chunk_file(base_dir:str, chunk_file:str, chunks:List[np.ndarray]):
     _makedirs(filepath)
     if filepath.endswith('.npz'):
         np.savez(filepath, *chunks)
-    # if filepath.endswith('.npz.zst'):
-    #     filepath = filepath[:-4]
-    #     np.savez(filepath, *chunks)
-    #     zstd_file(filepath, rm=True, sync=False)
-    # else:
-    #     assert filepath.endswith('.npz')
-    #     # np.savez_compressed(filepath, *chunks)
 
 def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
     if base_dir=='':
@@ -355,7 +358,7 @@ def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
     else:
         filepath = safe_join_path(base_dir, chunk_file)
     try:
-        filepath = unzstd_file(filepath)
+        # filepath = unzstd_file(filepath)
         npz = np.load(filepath, allow_pickle=True)
         chunks = [npz[n] for n in npz.files]
         if subblocks > 1:
