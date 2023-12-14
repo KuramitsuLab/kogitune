@@ -249,14 +249,12 @@ def zstd_file(filename, rm=False, sync=True):
 def unzstd_file(filename, rm=False, sync=True):
     if filename.endswith('.zst'):
         unzstd_filename = filename[:-4]
-        print(unzstd_filename, os.path.exists(unzstd_filename))
+        print(unzstd_filename, get_filesize(unzstd_filename))
         if not os.path.exists(unzstd_filename):
             if rm:
                 cmd = f"zstd -dq --rm {filename}"
             else:
                 cmd = f"zstd -dq {filename}"
-            if not sync:
-                cmd = f'{cmd} &'
             result = subprocess.call(cmd, shell=True)
             print('@', cmd, result) #, stderr=subprocess.DEVNULL)
         return unzstd_filename
