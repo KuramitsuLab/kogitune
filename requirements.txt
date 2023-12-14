@@ -6,6 +6,7 @@ datasets>=2.11.0
 accelerate
 bitsandbytes
 deepspeed
+einops
 nvidia-ml-py3
 sacrebleu
 evaluate
