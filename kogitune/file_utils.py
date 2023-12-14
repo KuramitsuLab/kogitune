@@ -242,6 +242,7 @@ def wait_for_file(file_path, timeout=60):
     start_time = time.time()
     end_time = start_time + timeout
     while time.time() < end_time:
+        print(os.path.exists(f'{file_path}.zst'), f'{file_path}.zst')
         if os.path.exists(f'{file_path}.zst'):
             unzstd_file(f'{file_path}.zst')
         if get_filesize(file_path) > 0:
