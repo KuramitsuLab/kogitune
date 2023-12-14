@@ -296,7 +296,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             cmd = f"wget -qO {temp_file2} {remote_file}"
         else:
             cmd = f'cp {remote_file} {temp_file2}'
-        cmd = f"{cmd} && zstd -dfq {temp_file2}"
+        cmd = f"{cmd} && zstd -dfq --rm {temp_file2}"
     else:
         if remote_file.startswith('https://') or remote_file.startswith('http://'):
             cmd = f"wget -qO {temp_file} {remote_file}"
