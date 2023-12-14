@@ -242,6 +242,8 @@ def wait_for_file(file_path, timeout=60):
     start_time = time.time()
     end_time = start_time + timeout
     while time.time() < end_time:
+        if os.path.exists(f'{file_path}.zst'):
+            unzstd_file(f'{file_path}.zst')
         if get_filesize(file_path) > 0:
             verbose_print(f'{time.time()-start_time} 秒, 待ちました')
             return True  # ファイルが見つかった
@@ -259,25 +261,6 @@ def zstd_file(filename, rm=False, sync=True):
             cmd = f'{cmd} &'
         subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
     return f'{filename}.zst'
-
-def safeunzstd_file(filename, rm=False, sync=True):
-    if filename.endswith('.zst'):
-        unzstd_filename = filename[:-4]
-        if os.path.exists(unzstd_filename):
-            return unzstd_filename
-        if rm:
-            cmd = f"zstd -dq --rm {filename}"
-        else:
-            cmd = f"zstd -dq {filename}"
-        if not sync:
-            cmd = f'{cmd} &'
-        subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-        return unzstd_filename
-    else:
-        if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
-            return safeunzstd_file(f'{filename}.zst', rm=rm, sync=sync)
-    return filename
-
 
 def unzstd_file(filename, rm=False, sync=True):
     if filename.endswith('.zst'):
@@ -323,7 +306,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
         if cached_file_size == 0:
             verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
             if wait_for_file(cached_file, 30):
-                return safeunzstd_file(cached_file)
+                return cached_file
         touch(cached_file)
         subprocess.call(cmd, shell=True)
         cached_file_size = get_filesize(cached_file)
@@ -335,7 +318,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
 
     if get_filesize(cached_file) == -1:
         touch(cached_file)
-        verbose_print('プレフェッチ', remote_file)
+        verbose_print('プレフェッチ', remote_file, cmd)
         subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
     return None
 
