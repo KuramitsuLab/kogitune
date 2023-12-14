@@ -238,9 +238,9 @@ def touch(file_path):
 def zstd_file(filename, rm=False, sync=True):
     if not os.path.exists(f'{filename}.zst'):
         if rm:
-            cmd = f"zstd -q --rm {filename}"
+            cmd = f"zstd -fq --rm {filename}"
         else:
-            cmd = f"zstd -q {filename}"
+            cmd = f"zstd -fq {filename}"
         if not sync:
             cmd = f'{cmd} &'
         subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
@@ -249,14 +249,12 @@ def zstd_file(filename, rm=False, sync=True):
 def unzstd_file(filename, rm=False, sync=True):
     if filename.endswith('.zst'):
         unzstd_filename = filename[:-4]
-        print(unzstd_filename, get_filesize(unzstd_filename))
         if not os.path.exists(unzstd_filename):
             if rm:
-                cmd = f"zstd -dq --rm {filename}"
+                cmd = f"zstd -dfq --rm {filename}"
             else:
-                cmd = f"zstd -dq {filename}"
-            result = subprocess.call(cmd, shell=True)
-            print('@', cmd, result) #, stderr=subprocess.DEVNULL)
+                cmd = f"zstd -dfq {filename}"
+            result = subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
         return unzstd_filename
     # else:
     #     if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
@@ -272,10 +270,6 @@ def wait_for_file(file_path, timeout=60):
     start_time = time.time()
     end_time = start_time + timeout
     while time.time() < end_time:
-        print(os.path.exists(f'{file_path}.zst'), f'{file_path}.zst')
-        if os.path.exists(f'{file_path}.zst'):
-            ff = unzstd_file(f'{file_path}.zst')
-            print('@', ff, get_filesize(ff))
         if get_filesize(file_path) > 0:
             verbose_print(f'{time.time()-start_time} 秒, 待ちました')
             return True  # ファイルが見つかった
@@ -294,24 +288,28 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
     if cached_file_size > 0:
         return cached_file
 
-    zext = f'.{compressed}' if compressed else ''
-    
     # コマンド
-    if remote_file.startswith('https://') or remote_file.startswith('http://'):
-        cmd = f"wget -qO {cached_file}.tmp {remote_file}{zext} && mv {cached_file}.tmp {cached_file}{zext}"
-    else:
-        cmd = f'cp {remote_file}{zext} {cached_file}{zext}'
-    
+    temp_file = cached_file.replace('npz', 'tmp')
     if compressed:
-        cmd = f'{cmd} && zstd -dq {cached_file}{zext}'
-
+        temp_file2 = f'{temp_file}.{compressed}'
+        if remote_file.startswith('https://') or remote_file.startswith('http://'):
+            cmd = f"wget -qO {temp_file2} {remote_file}"
+        else:
+            cmd = f'cp {remote_file} {temp_file2}'
+        cmd = f"{cmd} && zstd -dfq {temp_file2}"
+    else:
+        if remote_file.startswith('https://') or remote_file.startswith('http://'):
+            cmd = f"wget -qO {temp_file} {remote_file}"
+        else:
+            cmd = f'cp {remote_file} {temp_file}'
+    cmd = f"{cmd} && mv {temp_file} {cached_file}"
+    
     if sync:
         if cached_file_size == 0:
             verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)
-        print('@@', cmd)
         subprocess.call(cmd, shell=True)
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
