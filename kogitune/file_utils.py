@@ -249,6 +249,7 @@ def zstd_file(filename, rm=False, sync=True):
 def unzstd_file(filename, rm=False, sync=True):
     if filename.endswith('.zst'):
         unzstd_filename = filename[:-4]
+        print(unzstd_filename, os.path.exists(unzstd_filename))
         if not os.path.exists(unzstd_filename):
             if rm:
                 cmd = f"zstd -dq --rm {filename}"
