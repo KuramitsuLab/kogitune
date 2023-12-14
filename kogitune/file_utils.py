@@ -233,24 +233,6 @@ def touch(file_path):
     file = Path(file_path)
     file.touch(exist_ok=True)
 
-def wait_for_file(file_path, timeout=60):
-    """
-    指定されたファイルが存在するかを定期的にチェックし、
-    タイムアウトまでにファイルが見つかった場合は True を返します。
-    タイムアウトした場合は False を返します。
-    """
-    start_time = time.time()
-    end_time = start_time + timeout
-    while time.time() < end_time:
-        print(os.path.exists(f'{file_path}.zst'), f'{file_path}.zst')
-        if os.path.exists(f'{file_path}.zst'):
-            ff = unzstd_file(f'{file_path}.zst')
-            print('@', ff, get_filesize(ff))
-        if get_filesize(file_path) > 0:
-            verbose_print(f'{time.time()-start_time} 秒, 待ちました')
-            return True  # ファイルが見つかった
-        time.sleep(0.5)  # 1秒待つ
-    return False  # タイムアウト
 
 
 def zstd_file(filename, rm=False, sync=True):
@@ -274,12 +256,32 @@ def unzstd_file(filename, rm=False, sync=True):
                 cmd = f"zstd -dq {filename}"
             if not sync:
                 cmd = f'{cmd} &'
-            print('@', cmd, subprocess.call(cmd, shell=True)) #, stderr=subprocess.DEVNULL)
+            result = subprocess.call(cmd, shell=True)
+            print('@', cmd, result) #, stderr=subprocess.DEVNULL)
         return unzstd_filename
-    else:
-        if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
-            return unzstd_file(f'{filename}.zst', rm=rm, sync=sync)
+    # else:
+    #     if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
+    #         return unzstd_file(f'{filename}.zst', rm=rm, sync=sync)
     return filename
+
+def wait_for_file(file_path, timeout=60):
+    """
+    指定されたファイルが存在するかを定期的にチェックし、
+    タイムアウトまでにファイルが見つかった場合は True を返します。
+    タイムアウトした場合は False を返します。
+    """
+    start_time = time.time()
+    end_time = start_time + timeout
+    while time.time() < end_time:
+        print(os.path.exists(f'{file_path}.zst'), f'{file_path}.zst')
+        if os.path.exists(f'{file_path}.zst'):
+            ff = unzstd_file(f'{file_path}.zst')
+            print('@', ff, get_filesize(ff))
+        if get_filesize(file_path) > 0:
+            verbose_print(f'{time.time()-start_time} 秒, 待ちました')
+            return True  # ファイルが見つかった
+        time.sleep(0.5)  # 1秒待つ
+    return False  # タイムアウト
 
 def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, verbose=True):
     remote_file = safe_join_path(url_base, file_path)
@@ -310,6 +312,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)
+        print('@@', cmd)
         subprocess.call(cmd, shell=True)
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
