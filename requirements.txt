@@ -1,11 +1,12 @@
-torch>=2.1.1
+torch>=2.0.0
 sentencepiece
-transformers>=4.35.0
-datasets>=2.15.0
+transformers>=4.34.0
+tokenizers>=0.14.0
+datasets>=2.11.0
 accelerate
-nvidia-ml-py3
 bitsandbytes
 deepspeed
+nvidia-ml-py3
 sacrebleu
 evaluate
 pyzstd
