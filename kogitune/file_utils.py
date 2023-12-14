@@ -244,7 +244,8 @@ def wait_for_file(file_path, timeout=60):
     while time.time() < end_time:
         print(os.path.exists(f'{file_path}.zst'), f'{file_path}.zst')
         if os.path.exists(f'{file_path}.zst'):
-            unzstd_file(f'{file_path}.zst')
+            ff = unzstd_file(f'{file_path}.zst')
+            print('@', ff, get_filesize(ff))
         if get_filesize(file_path) > 0:
             verbose_print(f'{time.time()-start_time} 秒, 待ちました')
             return True  # ファイルが見つかった
