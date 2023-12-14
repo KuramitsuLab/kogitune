@@ -293,9 +293,9 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
     if compressed:
         temp_file2 = f'{temp_file}.{compressed}'
         if remote_file.startswith('https://') or remote_file.startswith('http://'):
-            cmd = f"wget -qO {temp_file2} {remote_file}"
+            cmd = f"wget -qO {temp_file2} {remote_file}.{compressed}"
         else:
-            cmd = f'cp {remote_file} {temp_file2}'
+            cmd = f'cp {remote_file}.{compressed} {temp_file2}'
         cmd = f"{cmd} && zstd -dfq --rm {temp_file2}"
     else:
         if remote_file.startswith('https://') or remote_file.startswith('http://'):
