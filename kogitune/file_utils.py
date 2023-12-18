@@ -302,7 +302,8 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             cmd = f"wget -qO {temp_file} {remote_file}"
         else:
             cmd = f'cp {remote_file} {temp_file}'
-    cmd = f"{cmd} && mv {temp_file} {cached_file}"
+    if temp_file != cached_file:
+        cmd = f"{cmd} && mv {temp_file} {cached_file}"
     
     if sync:
         if cached_file_size == 0:
@@ -320,7 +321,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
 
     if get_filesize(cached_file) == -1:
         touch(cached_file)
-        verbose_print('プレフェッチ', remote_file, cmd)
+        #verbose_print('プレフェッチ', remote_file, cmd)
         subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
     return None
 
