@@ -64,7 +64,8 @@ class TensorArrayDataset(Dataset):
         self.prefetch=args.get('prefetch', 1)
 
     def load_config(self):
-        config_file = resolve_file(self.url, f'{self.prefix}config.json', self.cache_dir)
+        with _FileLock(self.lock_file):
+            config_file = resolve_file(self.url, f'{self.prefix}config.json', self.cache_dir)
         try:
             with open(config_file) as f:
                 config = json.load(f)
