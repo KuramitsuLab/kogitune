@@ -143,6 +143,11 @@ def get_world_size():
     else:
         return 1
 
+def verbose_print(*args, **kwargs):
+    fox_face = '🦊' * (get_rank() + 1)
+    print(fox_face, *args, **kwargs)
+
+
 class DistributedIndexer(Dataset):
     def __init__(self, dataset: TensorArrayDataset, args: dict):
         self.dataset = dataset
@@ -170,8 +175,14 @@ class DistributedIndexer(Dataset):
         self.sublength = self.length // get_world_size()
         if get_world_size() > 1:
             self.offset = self.offset + (get_rank() * self.sublength)
-            verbose_print(f'ノード(rank={get_rank()})ごとに再配置(offset={self.offset}します')
+            verbose_print(f'データ再配置: rank={get_rank()}, offset={self.offset}, length={self.sublength}')
         dataset.try_prefetch(self.offset)
+
+    def skip(self):
+        self.count += 1
+        if self.count >= self.sublength:
+            self.count = 0
+            self.epoch += 1
 
     def __len__(self):
         return self.length
@@ -187,7 +198,7 @@ class DistributedIndexer(Dataset):
     def report(self, max_length):
         iterations = self.sublength * self.epoch + self.count
         total_tokens = iterations * max_length
-        verbose_print(f'{self.dataset.url}({get_rank()}): 反復数{iterations:,} トークン数{total_tokens:,}')
+        verbose_print(f'{self.dataset.url}: 反復数{iterations:,} トークン数{total_tokens:,}')
         return iterations
     
     def get_valid_dataset(self, valid_split=0.1):
@@ -221,6 +232,7 @@ class MixingDataset(Dataset):
     def __init__(self, mixed, n_items, build_fn, max_length):
         self.mixed = mixed
         self.mixing = len(self.mixed)
+        self.global_count = 0
         self.n_items = n_items
         self.build_fn = build_fn
         self.max_length = max_length
@@ -229,8 +241,14 @@ class MixingDataset(Dataset):
         return self.n_items
 
     def __getitem__(self, index):
-        data = self.mixed[index % self.mixing][index]
+        data = self.mixed[self.global_count % self.mixing][index]
+        self.global_count += 1
         return self.build_fn(data, self.max_length)
+
+    def skip(self, index):
+        self.mixed[self.global_count % self.mixing].skip()
+        self.global_count += 1
+
 
     def get_valid_dataset(self, valid_split=0.1):
         mixed = []
@@ -268,10 +286,10 @@ class DefaultCollator(object):
 
 class DataComposer(MixingDataset):
     def __init__(self, url_list, max_length, 
-                 cache_dir = None, cleanup=False, use_filelock=True, 
-                 random_seed=None, shuffle=True,
+                 cache_dir = None, cleanup=False, 
+                 use_filelock=True, random_seed=None, shuffle=True,
 #                 build_fn=build_inputs_for_clm, 
-                 tokenizer=None, test_run=None, **args):
+                 tokenizer=None, start=0, test_run=None, **args):
         self.max_length = max_length
         self.data_type = get_dict_multi_keys(args, 'data_type', 'text')
         self.split = get_dict_multi_keys(args, 'split', 'train')
@@ -297,6 +315,12 @@ class DataComposer(MixingDataset):
         self.build_fn = DefaultCollator(args)
 
         # テスト実行
+        start = getint_environ('KG_START', 0, param_specified=start)
+        self.global_count = 0
+        if start > 0:
+            verbose_print(f'学習{start}回に減らして、テスト実行します')
+            for i in range(start):
+                self.skip(i)
         test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
             verbose_print(f'反復を {test_run} 回に減らして、テスト実行します')
@@ -377,11 +401,8 @@ class DataComposer(MixingDataset):
         return True
     
     def report(self):
-        iterations = 0
-        for ds in self.datasets:
-            iterations += ds.report(self.max_length)
-        total_tokens = iterations*self.max_length
-        verbose_print(f'合計 反復数 {iterations:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
+        total_tokens = self.global_count * self.max_length
+        verbose_print(f'反復数 {self.global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self
