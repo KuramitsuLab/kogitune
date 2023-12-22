@@ -289,7 +289,7 @@ class DataComposer(MixingDataset):
                  cache_dir = None, cleanup=False, 
                  use_filelock=True, random_seed=None, shuffle=True,
 #                 build_fn=build_inputs_for_clm, 
-                 tokenizer=None, start=0, test_run=None, **args):
+                 tokenizer=None, restart=None, test_run=None, **args):
         self.max_length = max_length
         self.data_type = get_dict_multi_keys(args, 'data_type', 'text')
         self.split = get_dict_multi_keys(args, 'split', 'train')
@@ -315,15 +315,15 @@ class DataComposer(MixingDataset):
         self.build_fn = DefaultCollator(args)
 
         # テスト実行
-        start = getint_environ('KG_START', 0, param_specified=start)
+        restart = getint_environ('KG_START', 0, param_specified=restart)
         self.global_count = 0
-        if start > 0:
-            verbose_print(f'学習{start}回に減らして、テスト実行します')
-            for i in range(start):
+        if restart > 0:
+            verbose_print(f'{restart}回(イテレーション)から、継続学習します')
+            for i in range(restart):
                 self.skip(i)
         test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
-            verbose_print(f'反復を {test_run} 回に減らして、テスト実行します')
+            verbose_print(f'イテレーションを {test_run} 回に減らして、テスト実行します')
             self.n_items = min(test_run, self.n_items)
 
     def prepare_data(self, urls, tokenizer=None):
@@ -402,7 +402,7 @@ class DataComposer(MixingDataset):
     
     def report(self):
         total_tokens = self.global_count * self.max_length
-        verbose_print(f'反復数 {self.global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
+        verbose_print(f'イテレーション {self.global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self
