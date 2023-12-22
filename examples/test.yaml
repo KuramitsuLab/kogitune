@@ -1,0 +1,25 @@
+# Wandb Configuration
+entity : "hogeteam"
+project : "hogepj"
+name : "testjob"
+group : "hogegroup"
+
+# Model Configuration
+n_dims : 64
+n_heads : 16
+n_layers : 27
+intermediate_size : 2048
+
+# Training Configuration
+max_steps : 10
+auto_find_batch_size : False
+# test_run : 10000
+# block_size: 256
+# logging_steps: 2
+num_train_epochs: 1
+# save_total_limit: 5
+# overwrite_output_dir: True
+dp_lambda : 20
+
+
+
