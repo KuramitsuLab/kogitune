@@ -9,10 +9,13 @@ def _load_tokenizer(tokenizer: str, legacy=False):
 
 class CharacterPerToken(object):
 
-    def __init__(self, tokenizer: str, legacy=False):
+    def __init__(self, tokenizer: str, length=None, legacy=False):
         self.tokenizer = _load_tokenizer(tokenizer, legacy=legacy)
+        self.length = length
 
     def __call__(self, text):
+        if self.length:
+            text = text[:self.length]
         text_length = len(text)
         token_length = len(self.tokenizer.encode(text))
         return text_length / token_length 
