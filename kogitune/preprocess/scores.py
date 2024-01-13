@@ -1,6 +1,25 @@
 import zlib, math
 from collections import Counter
 
+def _load_tokenizer(tokenizer: str, legacy=False):
+    from transformers import AutoTokenizer
+    if isinstance(tokenizer, str):
+        return AutoTokenizer.from_pretrained(tokenizer, legacy=legacy, trust_remote_code=True, use_fast=False)
+    return tokenizer
+
+class CharacterPerToken(object):
+
+    def __init__(self, tokenizer: str, legacy=False):
+        self.tokenizer = _load_tokenizer(tokenizer, legacy=legacy)
+
+    def __call__(self, text):
+        text_length = len(text)
+        token_length = len(self.tokenizer.encode(text))
+        return text_length / token_length 
+
+
+
+
 def zlib_ratio(text:str, length_factor: float = 0.0)->float:
     encoded = text.encode("utf-8", errors='ignore')
     encoded_length = len(encoded)

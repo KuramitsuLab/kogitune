@@ -185,14 +185,6 @@ def tokenizer_hash(tokenizer: AutoTokenizer):
     #print(len(allvoc), allvoc[:100], allvoc[:100].encode())
     return hashlib.md5(allvoc.encode()).hexdigest()
 
-# def get_tokenizer_info(tokenizer: AutoTokenizer):
-#     return dict(
-#         name_or_path=tokenizer.name_or_path,
-#         pad_token_id = tokenizer.pad_token_id,
-#         eos_token_id = tokenizer.eos_token_id,
-#         hash= tokenizer_hash(tokenizer), 
-#         vocab_size=tokenizer.vocab_size)
-
 def tokenizer_id(tokenizer: AutoTokenizer):
     _, _, name_or_path = tokenizer.name_or_path.rpartition('/')
     name_or_path=name_or_path.lower().replace('_', '-')

@@ -1,13 +1,18 @@
 from typing import Optional, List
+import sys
+import json
+from kogitune.file_utils import zopen, filelines
+
 import numpy as np
 import pandas as pd
-import zlib
-import math
-import re
 
 class Filter(object):
     def __init__(self, verbose=0):
+        """
+        verbose は指定した個数だけデバック出力する
+        """
         self.verbose = verbose
+        self.record = None
 
     def __call__(self, text: str) -> Optional[str]:
         if self.verbose > 0:
@@ -23,9 +28,24 @@ class Filter(object):
     def filter(self, text: str)-> Optional[str]:
         return text
 
+    def read_jsonl(self, filename: str, N=-1, output_path=None):
+        w = None
+        if isinstance(output_path, str):
+            w = zopen(output_path, 'wt')
+        for line in filelines(filename, N=N):
+            text = json.loads(line)['text']
+            text = self(text)
+            if text:
+                if w:
+                    print(json.dumps({'text': text}, ensure_ascii=False), file=w)
+                else:
+                    self.debug_print(text)
+
     def debug_print(self, *args):
         if self.verbose > 0:
             print('🦊', *args)
+            self.verbose -= 1
+
 
 class ComposeFilter(Filter):
     def __init__(self, *filters):
@@ -81,12 +101,45 @@ class LineByLineFilter(ComposeFilter):
         if len(lines) == 0:
             return None
         return self.sep.join(lines)
+    
+DEFAULT_PERCENTILES = [0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95]
 
+def _describe(values, funcname, histogram, percentiles=DEFAULT_PERCENTILES):
+    caption = histogram or funcname
+    if funcname is None:
+        return
+    df = pd.DataFrame({caption: values})
+    print(df.describe(percentiles=percentiles))
+    if histogram is None:
+        return
+    try:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        from matplotlib.ticker import PercentFormatter
+        sns.displot(df, stat='probability')
+        filename = caption.replace(' ', '_').replace('/', '_')
+        print(f'Saving Histgram {filename}.png Data {filename}.csv')
+        df.to_csv(f'{filename}.csv', index=None)
+        plt.savefig(filename)
+        plt.clf()
+    except:
+        pass
 
 class PercentileFilter(Filter):
-    def __init__(self, score_fn, caption=None,
-                 min_value=None, max_value=None, minq=None, maxq=None, 
-                 stats_window = 1000, verbose=0):
+    def __init__(self, 
+                 score_fn, 
+                 min_value=None, 
+                 max_value=None, 
+                 minq=None, maxq=None, 
+                 histogram: Optional[str] = None,
+                 funcname: Optional[str] = None,
+                 window_size = 10000, 
+                 percentiles = DEFAULT_PERCENTILES,
+                 extract_samples=[],
+                 verbose=0):
+        """
+        histogram: Histogram 名
+        """
         super().__init__(verbose=verbose)
         self.score_fn = score_fn
         self.min_value = min_value
@@ -94,17 +147,40 @@ class PercentileFilter(Filter):
         self.minq = minq
         self.maxq = maxq
         self.values = []
-        self.stats_window = stats_window
-        self.caption = caption if caption else score_fn.__name__
+        self.window_size = window_size
+        self.recheck_factor = 100
+        if funcname:
+            self.funcname = funcname
+        elif hasattr(score_fn, 'name'):
+            self.funcname = score_fn.name
+        elif hasattr(score_fn, '__name__'):
+            self.funcname = score_fn.__name__
+        else:
+            self.funcname = score_fn.__class__.__name__
+        self.histogram = histogram
+        self.percentiles = percentiles
+        self.extract_samples = set(round(x,2) for x in extract_samples)
 
     def filter(self, text):
         value = self.score_fn(text)
-        if len(self.values) < self.stats_window:
+        if len(self.values) < self.window_size:
             self.values.append(value)
-            if len(self.values) % 100 == 10:
-                 self.reestimate()
-            if len(self.values) == self.stats_window:
-                self.describe()
+            if len(self.values) % self.recheck_factor == 1:
+                 self.recheck()
+                 self.recheck_factor *= 2
+            if len(self.values) == self.window_size:
+                _describe(self.values, self.funcname, self.histogram, self.percentiles)
+        
+        if len(self.extract_samples) > 0:
+            key = round(value, 2)
+            if key in self.extract_samples:
+                print(f'{self.funcname}[sample={value:.5f}]', text)
+                self.extract_samples.discard(key)
+            else:
+                key = round(value, 1)
+                if key in self.extract_samples:
+                    print(f'{self.funcname}[sample={value:5f}]', text)
+                    self.extract_samples.discard(key)
 
         if (self.min_value and self.min_value > value):
             return None
@@ -112,33 +188,20 @@ class PercentileFilter(Filter):
             return None
         return text
     
-    def reestimate(self):
+    def recheck(self):
         a = np.array(self.values)
         if self.minq is not None:
-            self.min_value = np.percentile(a, self.minq)
+            min_value = self.min_value
+            self.min_value = round(np.percentile(a, self.minq),5)
+            if self.funcname:
+                print(f'{self.funcname}[{self.recheck_factor}] min_value: {min_value} => {self.min_value}')
         if self.maxq is not None:
-            self.max_value = np.percentile(a, self.maxq)
+            max_value = self.max_value
+            self.max_value = round(np.percentile(a, self.maxq),5)
+            if self.funcname:
+                print(f'{self.funcname}[{self.recheck_factor}] min_value: {max_value} => {self.max_value}')
+    
 
-    def describe(self):
-        df = pd.DataFrame({self.caption: self.values})
-        print(df.describe(percentiles=[0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95]))
-        plot_hist(self.caption, self.values)
-
-def plot_hist(caption, values):
-    try:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        from matplotlib.ticker import PercentFormatter
-        sns.displot(pd.DataFrame({caption: values}), stat='probability')
-        #plt.hist(values, bins=20)
-#        plt.xlabel(caption)
-#        plt.gca().yaxis.set_major_formatter(PercentFormatter(1))
-        filename = caption.replace(' ', '_')
-        print(f'Saving {filename}.png')
-        plt.savefig(filename)
-        plt.clf()
-    except:
-        pass
 
 
 # class ZLibFilter(PercentileFilter):  
