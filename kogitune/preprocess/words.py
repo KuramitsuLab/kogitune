@@ -168,7 +168,7 @@ def count_words_pattern(words: List[str]):
 
 
 def remove_footnote(words: List[str]):
-    pattern, n = compile_words_pattern(words, prefix=r'\n(', suffix=r'\s*\n')
+    pattern, n = compile_words_pattern(words, prefix=r'\n(', suffix=r')\s*\n')
     def remove(text) -> dict[str, Any]:
         matched = pattern.search(text)
         if matched:

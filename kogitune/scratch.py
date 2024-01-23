@@ -52,6 +52,58 @@ def print_model(model):
     else:
         print(config)
 
+def print_model_structure(model):
+    num_dict={}
+    for name, param in model.named_parameters():
+        num_dict[name]=param.numel()
+    repl_parts=[
+        "model",
+        "layers",
+        "weight",
+        "mlp",
+        "self_attn",
+    ]
+    def is_integer(s):
+        try:
+            int(s)
+            return True
+        except ValueError:
+            return False
+
+    name_set=[]
+    for original_name in num_dict:
+        name=original_name.split(".")
+        name=[i for i in name if i not in repl_parts]
+        name=[i for i in name if not is_integer(i)]
+        name_set.append(".".join(name))
+
+    #主要なレイヤーグループの表示
+    #print(set(name_set))
+
+    #パラメータ数の計算
+    name_group_dict={}
+    all_params=0
+    for k, v in num_dict.items():
+        found=False
+        for group_name in name_set:
+            if group_name in k:
+                if group_name not in name_group_dict:
+                    name_group_dict[group_name] = v
+                else:
+                    name_group_dict[group_name] += v
+                all_params += v
+                found=True
+                break
+        if not found:
+            print(k," not found")
+    #print(name_group_dict)
+    import pandas as pd
+    df=pd.DataFrame.from_dict(name_group_dict,orient="index")
+    df.columns=["params"]
+    df["ratio"]=df["params"]/all_params*100
+    print(df)
+
+
 def print_gpu_utilization():
     try:
         from pynvml import nvmlInit,nvmlDeviceGetHandleByIndex,nvmlDeviceGetMemoryInfo
@@ -213,11 +265,18 @@ def new_GPTNeoX(max_length=2048, n_dims=64, n_heads=12, n_layers=12, intermediat
 
 ## new_Lamma2
 
-def new_Llama2(max_length=2048, n_dims=128, n_heads=8, n_layers=28, intermediate_size=4096, tokenizer=DEFAULT_TOKENIZER):
+def new_Llama2(max_length=2048, 
+               n_dims=128, 
+               n_heads=8, n_groups = None,
+               n_layers=28, 
+               intermediate_size=4096, 
+               tokenizer=DEFAULT_TOKENIZER):
     from transformers import AutoTokenizer, LlamaForCausalLM, LlamaConfig
 
     if isinstance(tokenizer, str):
         tokenizer = AutoTokenizer.from_pretrained(tokenizer, legacy=False, trust_remote_code=True, use_fast=False)
+    if n_groups is None:
+        n_groups = n_heads
 
     config = LlamaConfig(
         vocab_size = len(tokenizer),
@@ -227,12 +286,14 @@ def new_Llama2(max_length=2048, n_dims=128, n_heads=8, n_layers=28, intermediate
         max_position_embeddings=max_length, #トークン数
         hidden_size=n_dims * n_heads,
         num_attention_heads = n_heads, #8
+        num_key_value_heads = n_groups,
         num_hidden_layers = n_layers, #28
         intermediate_size=intermediate_size,
     )
 
     model = LlamaForCausalLM(config)
     print_model(model)
+    print_model_structure(model)
     return model
 
 def new_TinyLlama(max_length=2048, n_dims=128, 
