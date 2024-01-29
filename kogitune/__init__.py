@@ -13,3 +13,6 @@ from .collators import (
     T5PretrainComposer, T5FinetuneComposer
 )
 
+from .new_composers import (
+    DatasetComposer
+)
