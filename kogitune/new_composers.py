@@ -178,7 +178,7 @@ class TokenDataset(Dataset):
                 logs.append(f'サイズ調整 resize={n_items/self.n_items:,.2f}')
             self.n_items = n_items
         
-        logs.append(f'トークン数 {self.n_items * max_length//10**9:.2f}B')
+        logs.append(f'トークン数 {self.n_items * max_length/10**9:.2f}B')
         verbose_print(' '.join(logs))
         self.queue = ChunkQueue(self.n_chunks, self.max_length)
         self.prefetch=1
@@ -448,7 +448,7 @@ class DatasetComposer():
         if not self.train_dataset:
             batch_size = batch_size or self.args['global_batch_size|batch_size|=1024']
             self.train_dataset = MixierDataset(self.datasets, self.collator_fn, batch_size)
-            resume_path = resume or self.args['resume']
+            resume_path = resume or self.args['resume_from_checkpoint|resume']
             if not isinstance(resume_path, str):
                 resume_path = self.args['output_dir']
                 self.args['overwrite_output_dir'] = False
@@ -458,7 +458,7 @@ class DatasetComposer():
                     verbose_print(f'チェックポイント {resume_path} が見つかりません')
                 if resume_step > 0:
                     verbose_print(f'チェックポイント step={resume_step} から再開します。')
-                    self.train_dataset.skip(resume_step * self.batch_size)
+                    self.train_dataset.skip(resume_step * batch_size)
         return self.train_dataset
 
     def report(self):
@@ -497,7 +497,7 @@ class DatasetComposer():
         acc_steps = global_batch_size // device_batch_size
         train_args = TrainingArguments(
             output_dir=args['output_dir|=output'],
-            overwrite_output_dir=True,
+            overwrite_output_dir=args['overwrite_output_dir|=True'],
             per_device_train_batch_size=args[f'per_device_train_batch_size|={device_batch_size}'],
             gradient_accumulation_steps=args[f'gradient_accumulation_steps|={acc_steps}'],
             # per_device_eval_batch_size=64,
@@ -507,7 +507,7 @@ class DatasetComposer():
             # eval_steps=50,
             optim=args['optim|=adamw_torch_fused'],
             num_train_epochs=args['num_train_epochs|=1'],
-            max_steps=args['max_steps'],
+            max_steps=args['max_steps|=-1'],
             weight_decay=args['weight_decay|=0.1'],
             lr_scheduler_type=args['lr_scheduler_type|=constant'],
             learning_rate=args['|=4e-4'], #Phi-1
@@ -515,8 +515,8 @@ class DatasetComposer():
             dataloader_pin_memory=False,
             save_steps=args['save_steps|=1000'],
             save_total_limit=args['save_total_limit|=2'],
-            save_only_model=args['save_only_model|=False'],
-            neftune_noise_alpha=args['neftune_noise_alpha'],
+#            save_only_model=args['save_only_model|=False'],
+#            neftune_noise_alpha=args['neftune_noise_alpha'],
             torch_compile=args['torch_compile|=False'],
             bf16=args[f'bf16|={is_bf16_available()}'],
             fp16=args[f'fp16|={torch.cuda.is_available()}'],
