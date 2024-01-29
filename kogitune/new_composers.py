@@ -482,6 +482,13 @@ class DatasetComposer():
             except:
                 pass
 
+    def get_collator(self, model):
+        from transformers import DataCollatorForLanguageModeling
+        tokenizer = self.get_tokenizer()
+        return DataCollatorForLanguageModeling(tokenizer, 
+                                               pad_to_multiple_of=8, 
+                                               mlm=False)
+
     def get_train_args(self, device_batch_size=16, **kwargs):
         from transformers import TrainingArguments
         self.args.update(kwargs)
