@@ -7,8 +7,6 @@ import json
 import shutil
 import hashlib
 
-from collections import deque
-
 from filelock import FileLock
 import numpy as np
 
@@ -19,7 +17,6 @@ from .adhocargs import AdhocArguments
 from .commons import *
 from .file_utils import *
 from .tokenizers import *
-from .store import Metastore
 from .splitters import make_local_store
 
 # ChunkedDataset
@@ -341,12 +338,23 @@ class MixierDataset(Dataset):
                 tokens[key] = ds.count
         return tokens
 
-def load_wandb():
+# TEAM
+# PROJECT
+# RUN
+
+class DummyWandb:
+    def finish(self):
+        pass
+
+def load_wandb(args: AdhocArguments):
     try:
         import wandb
+        wandb.init(
+            entity=args['wandb']
+        )
         return wandb
     except ModuleNotFoundError:
-        wandb = None
+        pass
 
 def get_trained_global_step(path: str):
     state_file = os.path.join(path, 'trainer_state.json')
@@ -370,18 +378,31 @@ def get_trained_global_step(path: str):
     newest = max(dirs, key=lambda dir: os.path.getmtime(dir))
     return get_trained_global_step(newest)
 
+def check_composer_args(args:None):
+    if args is None:
+        args = AdhocArguments({})
+    elif isinstance(args, dict):
+        args = AdhocArguments(args)
+
+    if 'run' not in args:
+        args['run'] = run = f'run{os.getpid()}'
+
+    if 'output_dir' not in args:
+        run = args['run']
+        args['output_dir'] = f'output_{run}'
+        verbose_print(f'出力先: output_{run}')
+
+    return args
 
 class DatasetComposer():
     def __init__(self, url_list:List[str], max_length:int, 
                  args:dict=None,
                  cache_dir = None, cleanup=False, 
-#                 build_fn=build_inputs_for_clm, 
-                 tokenizer=None, restart=None, test_run=None):
+                 collator_fn = None, tokenizer=None):
         self.max_length = max_length
-        if args is None:
-            args = AdhocArguments({})
-        self.args = args
-        self.batch_size = args['global_batch_size|batch_size|=1024']
+        self.args = check_composer_args(args)
+
+        # self.batch_size = args['global_batch_size|batch_size|=1024']
  
         # キャッシュ
         cache_dir = cache_dir or args['kg_cache_dir|cache_dir']
@@ -397,12 +418,14 @@ class DatasetComposer():
         os.makedirs(self.cache_dir, exist_ok=True)
         # self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
 
-        self.random_seed=args['random_seed|=42']
         url_list = parse_url_list(url_list)
         self.tokenizer = tokenizer
-        self.datasets = prepare_dataset(url_list, max_length, self.cache_dir, args, tokenizer)
+        self.datasets = prepare_dataset(url_list, max_length, self.cache_dir, self.args, tokenizer)
         self.train_dataset = None
-        self.build_fn = TextBlockCollator(max_length, args)
+        if collator_fn:
+            self.collator_fn = collator_fn
+        else:
+            self.collator_fn = TextBlockCollator(max_length, self.args)
 
         # # テスト実行
         # restart = getint_environ('KG_START', 0, param_specified=restart)
@@ -421,10 +444,14 @@ class DatasetComposer():
             self.tokenizer = load_tokenizer(self.datasets[0].tokenizer_path)
         return self.tokenizer
 
-    def get_train_dataset(self, resume=None):
+    def get_train_dataset(self, batch_size=None, resume=None):
         if not self.train_dataset:
-            self.train_dataset = MixierDataset(self.datasets, self.build_fn, self.batch_size)
+            batch_size = batch_size or self.args['global_batch_size|batch_size|=1024']
+            self.train_dataset = MixierDataset(self.datasets, self.collator_fn, batch_size)
             resume_path = resume or self.args['resume']
+            if not isinstance(resume_path, str):
+                resume_path = self.args['output_dir']
+                self.args['overwrite_output_dir'] = False
             if resume_path:
                 resume_step = get_trained_global_step(resume_path)
                 if resume_step == 0:
@@ -459,19 +486,20 @@ class DatasetComposer():
         from transformers import TrainingArguments
         self.args.update(kwargs)
         args = self.args
-        acc_steps = self.batch_size // device_batch_size
+        global_batch_size = args['global_batch_size|batch_size|=1024']
+        acc_steps = global_batch_size // device_batch_size
         train_args = TrainingArguments(
             output_dir=args['output_dir|=output'],
             overwrite_output_dir=True,
             per_device_train_batch_size=args[f'per_device_train_batch_size|={device_batch_size}'],
             gradient_accumulation_steps=args[f'gradient_accumulation_steps|={acc_steps}'],
             # per_device_eval_batch_size=64,
-            auto_find_batch_size=['auto_find_batch_size|=True'],  # バッチサイズ自動
+            auto_find_batch_size=args['auto_find_batch_size|=True'],  # バッチサイズ自動
             do_eval=args['do_eval|=False'],
             # evaluation_strategy='steps',
             # eval_steps=50,
             optim=args['optim|=adamw_torch_fused'],
-            num_train_epochs=['num_train_epochs|=1'],
+            num_train_epochs=args['num_train_epochs|=1'],
             max_steps=args['max_steps'],
             weight_decay=args['weight_decay|=0.1'],
             lr_scheduler_type=args['lr_scheduler_type|=constant'],
@@ -483,7 +511,16 @@ class DatasetComposer():
             save_only_model=args['save_only_model|=False'],
             neftune_noise_alpha=args['neftune_noise_alpha'],
             torch_compile=args['torch_compile|=False'],
-            bf16=args['bf16|=True'],
+            bf16=args[f'bf16|={is_bf16_available()}'],
+            fp16=args[f'fp16|={torch.cuda.is_available()}'],
         )
         return train_args
     
+def is_bf16_available():
+    if torch.cuda.is_available():
+        num_gpus = torch.cuda.device_count()
+        for i in range(num_gpus):
+            gpu_name = torch.cuda.get_device_name(i)
+            if 'A100' in gpu_name or 'H100' in gpu_name:
+                return True
+    return False
