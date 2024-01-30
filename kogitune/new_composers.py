@@ -403,12 +403,10 @@ def check_composer_args(args:None):
     elif isinstance(args, dict):
         args = AdhocArguments(args)
 
-    # if 'resume_from_checkpoint' in args:
-    #     resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
-    #     if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
-    #         args['output_dir'] = os.path.dirname(resume_from_checkpoint)
-    #     if 'overwrite_output_dir' not in args:
-    #         args['overwrite_output_dir'] = False
+    if 'resume_from_checkpoint' in args and not args['overwrite_output_dir|=True']:
+        resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
+        if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
+            args['output_dir'] = os.path.dirname(resume_from_checkpoint)
 
     if 'project' not in args:
         args['project'] = f'kogitune-sandbox'
