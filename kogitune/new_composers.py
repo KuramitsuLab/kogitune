@@ -606,7 +606,7 @@ class TimeoutStoppingCallback(transformers.TrainerCallback):
         interval = (current_time - self.start_time) / self.save_count
         remaining = self.estimated_end_time - current_time
         verbose_print(f'残り時間 {format_unit(remaining, scale=60)} 間隔 {format_unit(interval, scale=60)}')
-        if interval * self.mergin > remaining:
+        if interval * self.margin > remaining:
             verbose_print(f'そろそろ時間だから終了するよ！')
             control.should_training_stop = True
 
