@@ -126,7 +126,7 @@ class AdhocArguments(object):
         self._used_keys.add(key)
 
     def __contains__(self, key):
-        return key in self._args
+        return key in self._args or key.upper() in os.environ
 
     def update(self, otherdict:dict, overwrite=True):
         for key, value in otherdict.items():
