@@ -182,6 +182,7 @@ class TokenDataset(Dataset):
         verbose_print(' '.join(logs))
         self.queue = ChunkQueue(self.n_chunks, self.max_length)
         self.prefetch=1
+        self.try_prefetch(0)
 
     def __repr__(self):
         return str(self.name)
