@@ -602,7 +602,7 @@ class TimeoutStoppingCallback(transformers.TrainerCallback):
 
     def on_save(self, args, state, control, **kwargs):
         current_time = time.time()
-        self.save_cout += 1
+        self.save_count += 1
         interval = (current_time - self.start_time) / self.save_count
         remaining = self.estimated_end_time - current_time
         verbose_print(f'残り時間 {format_unit(remaining, scale=60)} 間隔 {format_unit(interval, scale=60)}')
