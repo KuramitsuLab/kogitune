@@ -424,7 +424,7 @@ class DatasetComposer():
         self.args = check_composer_args(args)
  
         # キャッシュ
-        cache_dir = cache_dir or args['kg_cache_dir|cache_dir']
+        cache_dir = cache_dir or self.args['kg_cache_dir|cache_dir']
         if cache_dir is None:
             self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
             self.cleanup = False if get_rank() > 0 else True
@@ -493,18 +493,20 @@ class DatasetComposer():
                                                pad_to_multiple_of=8, 
                                                mlm=False)
 
-    def get_train_args(self, device_batch_size=16, **kwargs):
+    def get_train_args(self, device_batch_size=None, **kwargs):
         from transformers import TrainingArguments
         self.args.update(kwargs)
         args = self.args
         global_batch_size = args['global_batch_size|batch_size|=1024']
-        acc_steps = global_batch_size // device_batch_size
+        device_batch_size = device_batch_size or args['device_batch_size|=16']
+        gas = global_batch_size // device_batch_size
+        verbose_print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
         overwrite_output_dir = 'resume_from_checkpoint' not in self.args
         train_args = TrainingArguments(
             output_dir=args['output_dir|=output'],
             overwrite_output_dir=args[f'overwrite_output_dir|={overwrite_output_dir}'],
             per_device_train_batch_size=args[f'per_device_train_batch_size|={device_batch_size}'],
-            gradient_accumulation_steps=args[f'gradient_accumulation_steps|={acc_steps}'],
+            gradient_accumulation_steps=args[f'gradient_accumulation_steps|={gas}'],
             # per_device_eval_batch_size=64,
             auto_find_batch_size=args['auto_find_batch_size|=True'],  # バッチサイズ自動
             do_eval=args['do_eval|=False'],
