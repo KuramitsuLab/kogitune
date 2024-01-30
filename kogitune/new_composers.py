@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Union
 
 import os
 import random
@@ -547,12 +547,23 @@ class DatasetComposer():
             model = AutoModelForCausalLM.from_pretrained(model_path)
         resume_from_checkpoint=self.args['resume_from_checkpoint|=False']
         wandb = load_wandb(self.args)
-        trainer = Trainer(
-            model=model,
-            data_collator=self.get_collator(model),
-            train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
-            args=self.get_train_args(),
-        )
+        if 'max_time' in self.args or 'sge_walltime_sec' in self.args:
+            max_time=self.args['max_time|sge_walltime_sec']
+            verbose_print(f'安全に止めるタイマーをセットしました。{max_time}')
+            trainer = Trainer(
+                model=model,
+                data_collator=self.get_collator(model),
+                train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                args=self.get_train_args(),
+                callbacks=[TimeoutStoppingCallback(max_time=max_time)]
+            )
+        else:
+            trainer = Trainer(
+                model=model,
+                data_collator=self.get_collator(model),
+                train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                args=self.get_train_args(),
+            )
         result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         save_path = save_path or self.args['save_path']
         if save_path:
@@ -571,4 +582,41 @@ def is_bf16_available():
             if 'A100' in gpu_name or 'H100' in gpu_name:
                 return True
     return False
+
+def parse_time_as_second(time:str):
+    if isinstance(time, int):
+        return time
+    hms = map(int, time.split(':'))
+    if len(hms) == 3:
+        return hms[0] * 3600 + hms[1] * 60 + hms[2]
+    return hms[0] * 3600
+
+import transformers
+
+class TimeoutStoppingCallback(transformers.TrainerCallback):
+
+    def __init__(self, max_time: Union[int,str], safety_time=300, safety_margin=1.05):
+        self.start_time = time.time()
+        self.estimated_end_time = self.start_time + parse_time_as_second(max_time) - 300
+        self.save_count = 0
+        self.margin = safety_margin
+        self.safety_time = safety_time
+
+    def on_save(self, args, state, control, metrics, **kwargs):
+        current_time = time.time()
+        self.save_cout += 1
+        interval = (current_time - self.start_time) / self.save_count
+        remaining = self.estimated_end_time - current_time
+        verbose_print(f'残り時間 {format_unit(remaining, scale=60)} 間隔 {format_unit(interval, scale=60)}')
+        if interval * self.mergin > remaining:
+            verbose_print(f'そろそろ時間だから終了するよ！')
+            control.should_training_stop = True
+
+    def on_step_end(self, args, state, control, metrics, **kwargs):
+        current_time = time.time()
+        remaining = self.estimated_end_time - current_time
+        if remaining < 300:
+            verbose_print(f'残り時間 {format_unit(remaining, scale=60)} が少ないから緊急停止するよ')
+            control.should_save = True
+            control.should_training_stop = True
 
