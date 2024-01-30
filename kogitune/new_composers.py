@@ -600,7 +600,7 @@ class TimeoutStoppingCallback(transformers.TrainerCallback):
         self.margin = safety_margin
         self.safety_time = safety_time
 
-    def on_save(self, args, state, control, metrics, **kwargs):
+    def on_save(self, args, state, control, **kwargs):
         current_time = time.time()
         self.save_cout += 1
         interval = (current_time - self.start_time) / self.save_count
@@ -610,7 +610,7 @@ class TimeoutStoppingCallback(transformers.TrainerCallback):
             verbose_print(f'そろそろ時間だから終了するよ！')
             control.should_training_stop = True
 
-    def on_step_end(self, args, state, control, metrics, **kwargs):
+    def on_step_end(self, args, state, control, **kwargs):
         current_time = time.time()
         remaining = self.estimated_end_time - current_time
         if remaining < 300:
