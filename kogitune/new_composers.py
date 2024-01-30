@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .adhocargs import AdhocArguments
+from .adhocargs import AdhocArguments, adhoc_argument_parser
 from .commons import *
 from .file_utils import *
 from .tokenizers import *
@@ -343,18 +343,29 @@ class MixierDataset(Dataset):
 # RUN
 
 class DummyWandb:
+    def log(self, *args, **kwargs):
+        pass
     def finish(self):
         pass
 
 def load_wandb(args: AdhocArguments):
     try:
         import wandb
-        wandb.init(
-            entity=args['wandb']
-        )
+        if 'wandb_team' in args:
+            wandb.init(
+                entity=args['wandb_team'],
+                project=args['project'],
+                name=args['run'],
+            )
+        else:
+            wandb.init(
+                project=args['project'],
+                name=args['run'],
+            )
         return wandb
     except ModuleNotFoundError:
-        pass
+        verbose_print('wandb は入れた方がいいよ')
+    return DummyWandb()
 
 def get_trained_global_step(path: str):
     state_file = os.path.join(path, 'trainer_state.json')
@@ -384,8 +395,18 @@ def check_composer_args(args:None):
     elif isinstance(args, dict):
         args = AdhocArguments(args)
 
+    if 'resume_from_checkpoint' in args:
+        resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
+        if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
+            args['output_dir'] = os.path.dirname(resume_from_checkpoint)
+        if 'overwrite_output_dir' not in args:
+            args['overwrite_output_dir'] = False
+
+    if 'project' not in args:
+        args['project'] = f'kogitune-sandbox'
+
     if 'run' not in args:
-        args['run'] = run = f'run{os.getpid()}'
+        args['run'] = f'run{os.getpid()}'
 
     if 'output_dir' not in args:
         run = args['run']
@@ -401,8 +422,6 @@ class DatasetComposer():
                  collator_fn = None, tokenizer=None):
         self.max_length = max_length
         self.args = check_composer_args(args)
-
-        # self.batch_size = args['global_batch_size|batch_size|=1024']
  
         # キャッシュ
         cache_dir = cache_dir or args['kg_cache_dir|cache_dir']
@@ -427,18 +446,6 @@ class DatasetComposer():
         else:
             self.collator_fn = TextBlockCollator(max_length, self.args)
 
-        # # テスト実行
-        # restart = getint_environ('KG_START', 0, param_specified=restart)
-        # self.global_count = 0
-        # if restart > 0:
-        #     verbose_print(f'{restart}回(イテレーション)から、継続学習します')
-        #     for i in range(restart):
-        #         self.skip(i)
-        # test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
-        # if test_run and isinstance(test_run, int):
-        #     verbose_print(f'イテレーションを {test_run} 回に減らして、テスト実行します')
-        #     self.n_items = min(test_run, self.n_items)
-
     def get_tokenizer(self):
         if not self.tokenizer and len(self.datasets) > 0:
             self.tokenizer = load_tokenizer(self.datasets[0].tokenizer_path)
@@ -448,10 +455,7 @@ class DatasetComposer():
         if not self.train_dataset:
             batch_size = batch_size or self.args['global_batch_size|batch_size|=1024']
             self.train_dataset = MixierDataset(self.datasets, self.collator_fn, batch_size)
-            resume_path = resume or self.args['resume_from_checkpoint|resume']
-            if not isinstance(resume_path, str):
-                resume_path = self.args['output_dir']
-                self.args['overwrite_output_dir'] = False
+            resume_path = resume or self.args['resume_from_checkpoint']
             if resume_path:
                 resume_step = get_trained_global_step(resume_path)
                 if resume_step == 0:
@@ -495,9 +499,10 @@ class DatasetComposer():
         args = self.args
         global_batch_size = args['global_batch_size|batch_size|=1024']
         acc_steps = global_batch_size // device_batch_size
+        overwrite_output_dir = 'resume_from_checkpoint' not in self.args
         train_args = TrainingArguments(
             output_dir=args['output_dir|=output'],
-            overwrite_output_dir=args['overwrite_output_dir|=True'],
+            overwrite_output_dir=args[f'overwrite_output_dir|={overwrite_output_dir}'],
             per_device_train_batch_size=args[f'per_device_train_batch_size|={device_batch_size}'],
             gradient_accumulation_steps=args[f'gradient_accumulation_steps|={acc_steps}'],
             # per_device_eval_batch_size=64,
@@ -510,8 +515,8 @@ class DatasetComposer():
             max_steps=args['max_steps|=-1'],
             weight_decay=args['weight_decay|=0.1'],
             lr_scheduler_type=args['lr_scheduler_type|=constant'],
-            learning_rate=args['|=4e-4'], #Phi-1
-            logging_steps=args['|=10'],
+            learning_rate=args['learning_rate|=4e-4'], #Phi-1
+            logging_steps=args['logging_steps|=10'],
             dataloader_pin_memory=False,
             save_steps=args['save_steps|=1000'],
             save_total_limit=args['save_total_limit|=2'],
@@ -523,6 +528,32 @@ class DatasetComposer():
         )
         return train_args
     
+    def train(self, model=None, save_path=None):
+        from transformers import Trainer, AutoModelForCausalLM
+        from kogitune.scratch import print_summary
+        if model is None:
+            model_path = self.args['resume_from_checkpoint|model_path|model']
+            if model_path is None:
+                self.args.raise_unset_key('model_path')
+            model = AutoModelForCausalLM.from_pretrained(model_path)
+        resume_from_checkpoint=self.args['resume_from_checkpoint|=False']
+        wandb = load_wandb(self.args)
+        trainer = Trainer(
+            model=model,
+            data_collator=self.get_collator(model),
+            train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+            args=self.get_train_args(),
+        )
+        result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        save_path = save_path or self.args['save_path']
+        if save_path:
+            self.get_tokenizer().save_pretrained(save_path)
+            model.save_pretrained(save_path)
+        print_summary(result)
+        wandb.finish()
+        return result
+
+
 def is_bf16_available():
     if torch.cuda.is_available():
         num_gpus = torch.cuda.device_count()
@@ -531,3 +562,4 @@ def is_bf16_available():
             if 'A100' in gpu_name or 'H100' in gpu_name:
                 return True
     return False
+
