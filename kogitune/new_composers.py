@@ -355,12 +355,12 @@ def load_wandb(args: AdhocArguments):
             wandb.init(
                 entity=args['wandb_team'],
                 project=args['project'],
-                name=args['run'],
+                name=args['run_name'],
             )
         else:
             wandb.init(
                 project=args['project'],
-                name=args['run'],
+                name=args['run_name'],
             )
         return wandb
     except ModuleNotFoundError:
@@ -389,29 +389,36 @@ def get_trained_global_step(path: str):
     newest = max(dirs, key=lambda dir: os.path.getmtime(dir))
     return get_trained_global_step(newest)
 
+def create_output_path(run_name):
+    for i in range(1, 1000):
+        output_path = f'output_{run_name}_{i}'
+        if not os.path.exists(output_path):
+            return output_path
+    return f'output_{run_name}'
+
+
 def check_composer_args(args:None):
     if args is None:
         args = AdhocArguments({})
     elif isinstance(args, dict):
         args = AdhocArguments(args)
 
-    if 'resume_from_checkpoint' in args:
-        resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
-        if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
-            args['output_dir'] = os.path.dirname(resume_from_checkpoint)
-        if 'overwrite_output_dir' not in args:
-            args['overwrite_output_dir'] = False
+    # if 'resume_from_checkpoint' in args:
+    #     resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
+    #     if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
+    #         args['output_dir'] = os.path.dirname(resume_from_checkpoint)
+    #     if 'overwrite_output_dir' not in args:
+    #         args['overwrite_output_dir'] = False
 
     if 'project' not in args:
         args['project'] = f'kogitune-sandbox'
 
-    if 'run' not in args:
-        args['run'] = f'run{os.getpid()}'
+    if 'run_name' not in args:
+        args['run_name'] = f'run{os.getpid()}'
 
     if 'output_dir' not in args:
-        run = args['run']
-        args['output_dir'] = f'output_{run}'
-        verbose_print(f'出力先: output_{run}')
+        args['output_dir'] = create_output_path(args['run_name'])
+        verbose_print(f'出力先:', args['output_dir'])
 
     return args
 
