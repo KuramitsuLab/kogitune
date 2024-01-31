@@ -32,6 +32,8 @@ class Filter(object):
         w = None
         if isinstance(output_path, str):
             w = zopen(output_path, 'wt')
+        else:
+            self.verbose = 10
         for line in filelines(filename, N=N):
             text = json.loads(line)['text']
             text = self(text)
@@ -83,7 +85,7 @@ class ExtractFilter(ComposeFilter):
         return text
 
 class LineByLineFilter(ComposeFilter):
-    def __init__(self, sep='\n', *filters):
+    def __init__(self, *filters, sep='\n'):
         super().__init__(*filters)
         self.sep = sep
 

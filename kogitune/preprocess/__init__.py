@@ -1,3 +1,4 @@
+from kogitune.file_utils import zopen, filelines
 
 from .filters import (
     Filter, 
@@ -22,4 +23,5 @@ from .replace import (
     replace_date, replace_time, replace_datetime,
     replace_bar, replace_longstring, replace_float,
     CCFilter,
+    ReplacementFilter,
 )

@@ -390,7 +390,7 @@ def replace_id(text, replaced='<name>', max_allowed_num=0):
     """
     text = replace_pattern(uuid_pattern, text, '<uuid>')
     text = replace_pattern(hash_pattern, text, '<hash>')
-    text = replace_pattern(account_pattern, text, replaced)
+#    text = replace_pattern(account_pattern, text, replaced)
     text = replace_pattern(base64_pattern, text, '<base64>')
     text = replace_pattern(product_id_pattern, text, '<id>')
     return text
@@ -637,6 +637,25 @@ def CCFilter(text):
     text = replace_bar(text)
     return cleanup(text)
 
+def find_replace_func(pattern:str):
+    func = globals().get(f'replace_{pattern}')
+    if func is None:
+        raise ValueError(f'replace_{pattern} is not found')
+    return func
+
+class ReplacementFilter:
+
+    def __init__(self, patterns: List[str]):
+        if isinstance(patterns,str):
+            patterns = patterns.split('|')
+        self.replace_funcs = [find_replace_func(pattern) for pattern in patterns]
+
+    def __call__(self, text):
+        for replace_fn in self.replace_funcs:
+            text = replace_fn(text)
+            if text is None:
+                break
+        return cleanup(text)
 
 if __name__ == '__main__':
     import doctest # doctestのための記載
