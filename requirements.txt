@@ -4,7 +4,6 @@ transformers>=4.34.0
 tokenizers>=0.14.0
 datasets>=2.11.0
 pyzstd
-yaml
 einops
 sacrebleu
 evaluate
