@@ -1,8 +1,8 @@
 from transformers import TrainingArguments
 import yaml
 import argparse
-import wandb
-from kogitune.composers import DP
+# import wandb
+from kogitune.trainers.old_composers import DP
 
 class FileLoader:
     @staticmethod

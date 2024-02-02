@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 
-from .words import score_japanese, score_english
+from .lang_ja import score_japanese, score_english
 from .replace import RE, replace_pattern, replace_datetime, replace_url, replace_email, replace_uuid
 
 code_pattern = RE(
@@ -14,10 +14,6 @@ inline_code_pattern = RE(
     r'`[^`]+?`'
 #    r'\$[\s\S]+?\$',
 )
-
-# base64_pattern = re.compile(r'^([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$')
-# uuid_pattern = re.compile(r'\b[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\b')
-# hash_pattern = re.compile(r'\b[a-fA-F0-9]{7,}\b')
 
 def alnum_fraction(text):
     total = len(text)

@@ -103,6 +103,17 @@ def filelines(filename, N=-1):
                 line = f.readline()
                 c += 1
 
+def multilines(filename, bufsize=4096):
+    lines=[]
+    with zopen(filename) as f:
+        line = f.readline()
+        while line:
+            lines.append(line.strip())
+            if len(lines) == bufsize:
+                yield lines
+                lines = []
+            line = f.readline()
+        yield lines
 
 def parse_strip(s):
     return s.strip().replace('<nL>', '\n')

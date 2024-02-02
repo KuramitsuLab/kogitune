@@ -7,7 +7,7 @@ from transformers import Trainer, TrainingArguments
 import numpy as np
 from datasets import Dataset
 
-from .commons import *
+from ..commons import *
 
 def count_parameters(model)->int:
     """

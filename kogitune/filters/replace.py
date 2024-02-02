@@ -640,12 +640,20 @@ def CCFilter(text):
 def find_replace_func(pattern:str):
     func = globals().get(f'replace_{pattern}')
     if func is None:
-        raise ValueError(f'replace_{pattern} is not found')
+        patterns = [s.replace('replace_', '') for s in globals() if s.startswith('replace_')]
+        raise ValueError(f'replace_{pattern} is not found. Select pattern from {patterns}')
     return func
 
 class ReplacementFilter:
+    """
+    置き換えフィルター
+    """
 
     def __init__(self, patterns: List[str]):
+        """
+        置き換えフィルターを作る
+        :param patterns: 置き換える文字列パターンのリスト
+        """
         if isinstance(patterns,str):
             patterns = patterns.split('|')
         self.replace_funcs = [find_replace_func(pattern) for pattern in patterns]

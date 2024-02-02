@@ -3,7 +3,7 @@ import argparse
 
 from kogitune.commons import *
 from .splitters import split_to_store
-from .composers import DataComposer
+from .trainers.old_composers import DataComposer
 from .file_utils import parse_url_args, safe_new_file
 
 def _tobool(s):

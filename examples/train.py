@@ -7,8 +7,8 @@ from deepspeed.utils.zero_to_fp32 import get_fp32_state_dict_from_zero_checkpoin
 
 
 from kogitune import PretrainComposer, load_tokenizer
-from kogitune.scratch import new_T5, new_GPT2, new_GPTNeoX, new_Llama2
-from kogitune.scratch import print_summary
+from kogitune.trainers.scratch import new_T5, new_GPT2, new_GPTNeoX, new_Llama2
+from kogitune.trainers.scratch import print_summary
 
 
 from args_parser import ArgsHandler, initialize_wandb, create_model

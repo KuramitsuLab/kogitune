@@ -13,11 +13,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .adhocargs import AdhocArguments, adhoc_argument_parser
-from .commons import *
-from .file_utils import *
-from .tokenizers import *
-from .splitters import make_local_store
+from ..adhocargs import AdhocArguments, adhoc_argument_parser
+from ..commons import *
+from ..file_utils import *
+from ..tokenizers import *
+from ..splitters import make_local_store
 
 # ChunkedDataset
 
@@ -538,7 +538,7 @@ class DatasetComposer():
     
     def train(self, model=None, save_path=None):
         from transformers import Trainer, AutoModelForCausalLM
-        from kogitune.scratch import print_summary
+        from kogitune.trainers.scratch import print_summary
         if model is None:
             model_path = self.args['resume_from_checkpoint|model_path|model']
             if model_path is None:
