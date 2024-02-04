@@ -1,8 +1,7 @@
 import os
-import argparse
 
 from kogitune.commons import *
-from .splitters import split_to_store
+from .adhocargs import adhoc_parse_arguments
 from .trainers.old_composers import DataComposer
 from .file_utils import parse_url_args, safe_new_file
 
@@ -31,40 +30,16 @@ def _parse_args(args):
             args_dict[key] = value
     return args_dict
 
-def main_store(hparams=None):
-    if hparams is None:
-        hparams = setup_store()
-    args = {k:v for k,v in vars(hparams).items() if v is not None}
-    split_to_store(hparams.files, validation=True, args=args)
+def main_store(args=None):
+    from .stores import split_to_store
 
-def setup_store(parser):
-    parser.add_argument("files", type=str, nargs="+", help="files")
-    parser.add_argument("--desc", type=str, default=None)
-    parser.add_argument("--tokenizer_path", default=DEFAULT_TOKENIZER)
-    parser.add_argument("--store_path", default=None)
-    parser.add_argument("--max_length", type=int, required=True)
-    parser.add_argument("--min_length", type=int, default=None)
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
-    parser.add_argument("--format", default="simple")
-    parser.add_argument("--split", default="train")
-    parser.add_argument("--section", type=str, default=None)
-    parser.add_argument("--overlap", type=int, default=None)
-    parser.add_argument("--padding", type=int, default=None)
-    # parser.add_argument("--split_args", type=_parse_args, default=None)
-    parser.add_argument("--N", "-N", type=int, default=-1)
-    parser.add_argument("--shuffle", type=int, default=0)
-    parser.add_argument("--random_seed", type=int, default=42)
-    parser.add_argument("--verbose", type=_tobool, default=True)
-    parser.add_argument("--histogram", type=_tobool, default=False)
-    parser.add_argument("--num_works", type=int, default=0)
-    parser.set_defaults(func=main_store)
+    split_to_store(args.files, validation=True, args=args)
 
-
-def main_head(hparams):
-    with DataComposer(hparams.urls, 
-                      data_type=hparams.data_type,
-                      max_length=hparams.max_length, 
-                      test_run=hparams.test_run, prefetch=0) as dc:
+def main_head(args):
+    with DataComposer(args.urls, 
+                      data_type=args.data_type,
+                      max_length=args.max_length, 
+                      test_run=args.test_run, prefetch=0) as dc:
         tokenizer = dc.prepare_tokenizer()
         for i in range(len(dc)):
             example = dc[i]
@@ -74,28 +49,21 @@ def main_head(hparams):
                 print(f'labels[{i}]:', tokenizer.decode(example['labels']))
             print('---')
 
-def setup_head(parser):
-    parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
-    parser.add_argument("--max_length", type=int, default=256)
-    parser.add_argument("--test_run", type=int, default=10)
-    parser.set_defaults(func=main_head)
-
 
 FREEZE='''
 from datasets import load_from_disk
 ds = load_from_disk("{}")
 '''
 
-def main_freeze(hparams):
+def main_freeze(args):
     from tqdm import tqdm
     from datasets import Dataset
     input_ids = []
     attention_mask = []
     labels=[]
-    with DataComposer(hparams.urls, 
-                      data_type=hparams.data_type,
-                      max_length=hparams.max_length,
+    with DataComposer(args.urls, 
+                      data_type=args.data_type,
+                      max_length=args.max_length,
                       prefetch=0) as dc:
         for i in tqdm(range(len(dc))):
             example=dc[i]
@@ -112,22 +80,15 @@ def main_freeze(hparams):
         ds_dict = { "input_ids": input_ids}
     ds = Dataset.from_dict(ds_dict).with_format("torch")
     print(ds)
-    ds.save_to_disk(hparams.output_path)
-    print(FREEZE.format(hparams.output_path))
+    ds.save_to_disk(args.output_path)
+    print(FREEZE.format(args.output_path))
 
-def setup_freeze(parser):
-    parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
-    parser.add_argument("--max_length", type=int, default=256)
-    parser.add_argument("--output_path", type=str, default='local_dataset')
-    parser.set_defaults(func=main_freeze)
-
-def main_histogram(hparams):
+def main_histogram(args):
     import pandas as pd
     from tqdm import tqdm
-    with DataComposer(hparams.urls, 
-                      data_type=hparams.data_type,
-                      max_length=hparams.max_length,
+    with DataComposer(args.urls, 
+                      data_type=args.data_type,
+                      max_length=args.max_length,
                       prefetch=0) as dc:
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
@@ -144,19 +105,12 @@ def main_histogram(hparams):
                     counts[token_id] += 1
         df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
         print(df['counts'].describe())
-        if hparams.output_file is None:
-            _, args = parse_url_args(hparams.urls[0], {})
+        if args.output_file is None:
+            _, args = parse_url_args(args.urls[0], {})
             _, _, path = args['url_path'].rpartition('/')
-            hparams.output_file = safe_new_file(f'histogram_{path}', 'csv')
-            verbose_print(f"字句の出現頻度を'{hparams.output_file}'に保存しました。")
-        df.to_csv(hparams.output_file)
-
-def setup_histogram(parser):
-    parser.add_argument("urls", type=str, nargs="+", help="urls")
-    parser.add_argument("--data_type", type=str, choices=['text', 'seq2seq'])
-    parser.add_argument("--max_length", type=int, default=None)
-    parser.add_argument("--output_file", type=str, default=None)
-    parser.set_defaults(func=main_histogram)
+            args.output_file = safe_new_file(f'histogram_{path}', 'csv')
+            verbose_print(f"字句の出現頻度を'{args.output_file}'に保存しました。")
+        df.to_csv(args.output_file)
 
 def conv_txt_to_jsonl(file):
     from .file_utils import zopen, filelines
@@ -168,55 +122,45 @@ def conv_txt_to_jsonl(file):
             print(json.dumps({'text': line}, ensure_ascii=False), file=w)
     verbose_print(f'"{newfile}"へ変換しました。')
 
-def main_quickconv(hparams):
-    for file in hparams.files:
+def main_oldconv(args):
+    for file in args.files:
         if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
             conv_txt_to_jsonl(file)
 
-def setup_quickconv(parser):
-    parser.add_argument("files", type=str, nargs="+", help="files")
-    parser.set_defaults(func=main_quickconv)
-
-
 def main_update(args):
+    args.verbose_print('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
 
 def main():
     # メインのパーサーを作成
-    parser = argparse.ArgumentParser(description='kogitune 🦊')
-
-    # サブコマンドのパーサーを作成
-    subparsers = parser.add_subparsers(title='subcommands', 
-                                       description='valid subcommands', 
-                                       help='additional help')
+    args = adhoc_parse_arguments(
+        subcommands='store|freeze|histogram|head|oldconv|update')
 
     # 'store' サブコマンド
-    setup_store(subparsers.add_parser('store', help='store'))
+    if args['subcommand'] == 'store':
+        main_store(args)
 
     # 'freeze' サブコマンド
-    setup_freeze(subparsers.add_parser('freeze', help='freeze'))
+    if args['subcommand'] == 'freeze':
+        main_freeze(args)
 
-    # 'freeze' サブコマンド
-    setup_histogram(subparsers.add_parser('histogram', help='histogram'))
+    # 'histogram' サブコマンド
+    if args['subcommand'] == 'histogram':
+        main_histogram(args)
 
     # 'head' サブコマンド
-    setup_head(subparsers.add_parser('head', help='dump'))
+    if args['subcommand'] == 'head':
+        main_head(args)
 
     # 'conv' サブコマンド
-    setup_quickconv(subparsers.add_parser('quickconv', help='conv'))
+    if args['subcommand'] == 'oldconv':
+        main_oldconv(args)
 
     # 'update' サブコマンド
-    update_parser = subparsers.add_parser('update', help='update')
-    update_parser.set_defaults(func=main_update)
-
-    # 引数をパースして対応する関数を実行
-    args = parser.parse_args()
-    if hasattr(args, 'func'):
-        args.func(args)
-    else:
-        parser.print_help()
+    if args['subcommand'] == 'update':
+        main_update(args)
 
 if __name__ == '__main__':
     main()

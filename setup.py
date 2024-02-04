@@ -20,7 +20,7 @@ setup(
     author="Kimio Kuramitsu",
     description="The KOGItune 🦊 LLM Project",
     url="https://github.com/kuramitsulab/kogitune",
-    packages=["kogitune", 'kogitune.filters', 'kogitune.trainers'],
+    packages=["kogitune", 'kogitune.filters', 'kogitune.trainers', 'kogitune.stores'],
     package_dir={"kogitune": "kogitune"},
     package_data={"kogitune": ["*/*"]},
     install_requires=_requires_from_file("requirements.txt"),

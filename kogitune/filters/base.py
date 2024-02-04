@@ -1,22 +1,11 @@
 from typing import Optional
 import json
-from kogitune.adhocargs import adhoc_argument_parser
-from kogitune.file_utils import zopen, filelines, get_filelines
+# import os
+# from kogitune.adhocargs import adhoc_parse_arguments
+from kogitune.file_utils import zopen, filelines, read_multilines, rename_with_linenum
 
-from multiprocess import Pool
 from tqdm import tqdm
-
-def multilines(filename, bufsize=4096):
-    lines=[]
-    with zopen(filename) as f:
-        line = f.readline()
-        while line:
-            lines.append(line.strip())
-            if len(lines) == bufsize:
-                yield lines
-                lines = []
-            line = f.readline()
-        yield lines
+from multiprocess import Pool
 
 class TextFilter(object):
     """
@@ -57,19 +46,19 @@ class TextFilter(object):
     def from_jsonl(self, filename: str, output_path:str=None, N=-1, num_workers=1):
         if num_workers == 1 or output_path is None:
             return self._from_jsonl_single(filename, N=N, output_path=output_path)
-        N = get_filelines(filename) if N==-1 else N
         c=0
+        n=0
         with zopen(output_path, 'wt') as w:
             with Pool(num_workers) as pool:
-                with tqdm(total=N, desc=filename) as pbar:
-                    for lines in multilines(filename, bufsize=10000 * num_workers):
-                        lines = pool.map(self, lines)
-                        for text in lines:
-                            pbar.update(1)
-                            if text:
-                                c+=1
-                                print(json.dumps({'text': text}, ensure_ascii=False), file=w)
-        print(f'Complete: {output_path} {c}/{N} {c/N:.3f}')
+                for lines in read_multilines(filename, N=N, bufsize=10000 * num_workers, tqdm=tqdm):
+                    lines = pool.map(self, lines)
+                    n += len(lines)
+                    for text in lines:
+                        if text:
+                            c+=1
+                            print(json.dumps({'text': text}, ensure_ascii=False), file=w)
+        newpath = rename_with_linenum(output_path, N=c, ext='json')
+        print(f'Complete: {newpath} {c}/{n} {c/n:.3f}')
 
     def _from_jsonl_single(self, filename: str, N=-1, output_path=None):
         w = None
@@ -78,10 +67,12 @@ class TextFilter(object):
         else:
             self.verbose = 10
         c=0
+        n=0
         for text in filelines(filename, N=N):
             record = {}
             self.set_record(record) # レコーダをセットする
             text = self(text)
+            n+=1
             if text:
                 record['text'] = text
                 c+=1
@@ -89,15 +80,17 @@ class TextFilter(object):
                     print(json.dumps(record, ensure_ascii=False), file=w)
                 else:
                     self.debug_print(record)
-        print(f'Complete: {output_path} {c}/{N} {c/N:.3f}')
+        if output_path:
+            newpath = rename_with_linenum(output_path, N=c, ext='json')
+            print(f'Complete: {newpath} {c}/{n} {c/n:.3f}')
 
-    def run_as_main(self):
-        args = adhoc_argument_parser()
-        output_path = args['output_path']
-        num_workers = args['num_workers|=1']
-        N = args['N|=-1']
-        for file in args.files:
-            self.from_jsonl(file, output_path=output_path, N=N, num_workers=num_workers)
+    # def run_as_main(self):
+    #     args = adhoc_argument_parser()
+    #     output_path = args['output_path']
+    #     num_workers = args['num_workers|=1']
+    #     N = args['N|=-1']
+    #     for file in args.files:
+    #         self.from_jsonl(file, output_path=output_path, N=N, num_workers=num_workers)
 
 
 class ComposeFilter(TextFilter):

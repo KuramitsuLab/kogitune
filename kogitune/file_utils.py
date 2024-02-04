@@ -1,3 +1,4 @@
+from typing import List, Union
 import os
 import time
 import random
@@ -8,10 +9,6 @@ import hashlib
 import subprocess
 from urllib.parse import urlparse, parse_qs
 
-from typing import List
-
-# from collections import deque
-# from filelock import FileLock
 
 import numpy as np
 import gzip
@@ -61,6 +58,7 @@ def get_filebase(filename):
 def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'
 
+
 ## file 
 
 def zopen(filepath, mode='rt'):
@@ -71,7 +69,33 @@ def zopen(filepath, mode='rt'):
     else:
         return open(filepath, mode)
 
-def get_filelines(filepath):
+import re
+fileline_pattern = re.compile(r"L(\d{4,})\D")
+
+def extract_linenum_from_filename(filepath):
+    matched = fileline_pattern.search(filepath)
+    if matched:
+        return int(matched.group(1))
+    return None
+
+def rename_with_linenum(filepath: str, N: int, ext='json', rename=True):
+    extracted = extract_linenum_from_filename(filepath)
+    if extracted:
+        newpath = filepath.replace(f'L{extracted}', f'L{N}')
+    else:
+        newpath = filepath.replace(f'.{ext}', f'_L{N}.{ext}')
+    if rename:
+        if os.path.exists(newpath):
+            os.remove(newpath)
+        if os.path.exists(filepath):
+            os.rename(filepath, newpath)
+    return newpath
+
+def get_linenum(filepath):
+    ret = extract_linenum_from_filename(filepath)
+    if ret is not None:
+        return ret
+
     if filepath.endswith('.gz'):
         ret = subprocess.run(f"gzcat {filepath} | wc -l", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
     elif filepath.endswith('.zst'):
@@ -82,6 +106,7 @@ def get_filelines(filepath):
         return int(ret.stdout)
     except:
         pass
+
     with zopen(filepath) as f:
         c=0
         line = f.readline()
@@ -90,9 +115,55 @@ def get_filelines(filepath):
             line = f.readline()
     return c
 
+class DummyTqdm:
+    def update(self, n=1):
+        pass
+    def close(self):
+        pass
+
+def collator_none(s):
+    return s
+
+def collator_strip(s):
+    return s.strip()
+
+def find_collator(s):
+    func = globals().get(f'collator_{s}')
+    if func is None:
+        patterns = [s.replace('collator_', '') for s in globals() if s.startswith('collator_')]
+        raise ValueError(f'collator_{s} is not found. Select pattern from {patterns}')
+    return func
+
+def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, collator = 'strip', tqdm = None):
+    if isinstance(filenames, str):
+        filenames = filenames.split('|')
+    for filename in filenames:
+        if tqdm is not None:
+            N = get_linenum(filename) if N==-1 else N
+            pbar = tqdm(total=N, desc=filename)
+        else:
+            pbar = DummyTqdm()
+        collator_fn = find_collator(collator)
+        buffer=[]
+        with zopen(filename) as f:
+            line = f.readline()
+            c=0
+            while line:
+                buffer.append(collator_fn(line))
+                c+=1
+                pbar.update()
+                if len(buffer) == bufsize:
+                    yield buffer
+                    buffer=[]
+                if N != -1 and c > N:
+                    break
+                line = f.readline()
+            yield buffer
+        pbar.close()
+
 def filelines(filename, N=-1):
     from tqdm import tqdm
-    N = get_filelines(filename) if N==-1 else N
+    N = get_linenum(filename) if N==-1 else N
     with tqdm(total=N, desc=filename) as pbar:
         with zopen(filename) as f:
             line = f.readline()
@@ -103,17 +174,9 @@ def filelines(filename, N=-1):
                 line = f.readline()
                 c += 1
 
-def multilines(filename, bufsize=4096):
-    lines=[]
-    with zopen(filename) as f:
-        line = f.readline()
-        while line:
-            lines.append(line.strip())
-            if len(lines) == bufsize:
-                yield lines
-                lines = []
-            line = f.readline()
-        yield lines
+
+######## OLD?
+
 
 def parse_strip(s):
     return s.strip().replace('<nL>', '\n')
@@ -126,7 +189,7 @@ def parse_jsonl(line):
 
 def file_iterator(filename, N=None, args={}):
     if N == -1:
-        N = get_filelines(filename)
+        N = get_linenum(filename)
     if N:
         from tqdm import tqdm
         pbar = tqdm(total=N, desc=filename)
@@ -196,7 +259,7 @@ def detect_datatype(filename:str, args: dict):
 
 def iterate_line(filename, N=None, args={}):
     if N == -1:
-        N = get_filelines(filename)
+        N = get_linenum(filename)
     if N:
         from tqdm import tqdm
         pbar = tqdm(total=N, desc=filename)
@@ -244,7 +307,39 @@ def touch(file_path):
     file = Path(file_path)
     file.touch(exist_ok=True)
 
+def compress_file(filename, compression='zst', rm=False, sync=True):
+    if filename.endswith(f'.{compression}'):
+        return filename
+    if os.path.exists(f'{filename}.{compression}'):
+        return f'{filename}.{compression}'
+    if compression == 'zst':
+        if rm:
+            cmd = f"zstd -fq --rm {filename}"
+        else:
+            cmd = f"zstd -fq {filename}"
+        if not sync:
+            cmd = f'{cmd} &'
+        subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
+        return f'{filename}.zst'
+    return filename
 
+def uncompress_file(filename, compression='zst', rm=False, sync=True):
+    if not filename.endswith(f'.{compression}'):
+        filename2 = f'{filename}.{compression}'
+        if os.path.exists(filename2):
+            filename = filename2
+        else:
+            return filename
+    if compression == 'zst':
+        unzstd_filename = filename[:-4]
+        if not os.path.exists(unzstd_filename):
+            if rm:
+                cmd = f"zstd -dfq --rm {filename}"
+            else:
+                cmd = f"zstd -dfq {filename}"
+            subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
+        return unzstd_filename
+    return filename
 
 def zstd_file(filename, rm=False, sync=True):
     if not os.path.exists(f'{filename}.zst'):

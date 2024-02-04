@@ -18,7 +18,7 @@ from torch.utils.data import Dataset
 from ..commons import *
 from ..file_utils import *
 from ..tokenizers import *
-from ..store import Metastore
+from ..stores.store import Metastore
 from ..splitters import make_local_store
 
 # 設定ファイル

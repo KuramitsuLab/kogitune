@@ -1,3 +1,4 @@
+from typing import List, Optional, Union
 import os
 import sys
 import json
@@ -71,37 +72,26 @@ class AdhocArguments(object):
     """
     アドホックな引数パラメータ
     """
-    def __init__(self, args:dict, expand_config=None, default_args:dict=None, use_environ=True):
+    def __init__(self, args:dict, 
+                 parent=None, 
+                 expand_config=None, 
+                 use_environ=True,
+                 face='🦊'):
         self._args = {}
         self._used_keys = set()
         self._use_environ = use_environ
+        self.parent = parent
         for key, value in args.items():
             if key == expand_config:
                 self.load_config(value)
             else:
                 self._args[key] = value
-        if default_args:
-            lost_found = False
-            for key, value in default_args.items():
-                if key in args:
-                    continue
-                if use_environ:
-                    environ_key = key.upper()
-                    if environ_key in os.environ:
-                        value = parse_argument_value(os.environ[environ_key])
-                if isinstance(value, tuple) and len(value)==1:
-                    print(f'Option {key} is required. {value[0]}')
-                    lost_found = True
-                else:
-                    self._used_keys.add(key)
-                    args[key] = value
-            if lost_found:
-                sys.exit(1)
+        self.face = face
 
     def __repr__(self):
         return repr(self._args)
 
-    def __getitem__(self, key):
+    def get(self, key, default_value=None):
         keys = key.split('|')
         for key in keys:
             if key in self._args:
@@ -109,8 +99,8 @@ class AdhocArguments(object):
                 return self._args[key]
             if key.startswith('='):
                 return parse_argument_value(key[1:])
-            if key.startswith('!'):
-                raise ValueError(f'{key[0]} is unset.')
+            if self.parent and key in self.parent :
+                return self.parent[key]
             if self._use_environ:
                 environ_key = key.upper()
                 if environ_key in os.environ:
@@ -118,7 +108,10 @@ class AdhocArguments(object):
                     self._used_keys.add(key)
                     self._args[key] = value
                     return value
-        return None
+        return default_value
+
+    def __getitem__(self, key):
+        return self.get(key, None)
 
     def __setitem__(self, key, value):
         self._args[key] = value
@@ -184,22 +177,30 @@ class AdhocArguments(object):
         self.utils_print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
         sys.exit(1)
 
-    def utils_print(self, *args, **kwargs):
-        print("🐥", *args, **kwargs)
+    def print(self, *args, **kwargs):
+        print(self.face, *args, **kwargs)
 
     def verbose_print(self, *args, **kwargs):
-        print("🐓", *args, **kwargs)
+        print(self.face, *args, **kwargs)
 
-def adhoc_argument_parser(subcommands=None,
-                          default_args:dict=None, 
+    @staticmethod
+    def to_adhoc(cls, args: dict=None, **kwargs):
+        if args is None:
+            args = AdhocArguments({})
+        elif isinstance(args, dict):
+            args = AdhocArguments(args)
+        # args = {k:v for k,v in vars(hparams).items() if v is not None}
+        args.update(dict(kwargs))
+        return args
+
+
+def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
+                          requires:Optional[List[str]]=None,
                           use_environ=True, expand_config=None):
     if subcommands is not None:
         if isinstance(subcommands,str):
             subcommands=subcommands.split('|')
-        if len(sys.argv) == 1:
-            print(f'{sys.argv[0]} requires subcommands: {subcommands}')
-            sys.exit(0)
-        if sys.argv[1] not in subcommands:
+        if len(sys.argv) == 1 or sys.argv[1] not in subcommands:
             print(f'{sys.argv[0]} requires subcommands: {subcommands}')
             sys.exit(0)
         argv = sys.argv[2:]
@@ -213,11 +214,25 @@ def adhoc_argument_parser(subcommands=None,
         if value is not None:
             args[key.replace('-', '_')] = value
     del args['_']
-    return AdhocArguments(args, 
+
+    args = AdhocArguments(args, 
+                          parent=None,
                           expand_config=expand_config, 
-                          default_args=default_args, 
                           use_environ=use_environ)
 
+    if requires:
+        if isinstance(requires, str):
+            requires = requires.split('|')
+        lost_found = False
+        for key in requires:
+            if key not in args:
+                args.print(f'Option {key} is required.')
+                lost_found = True
+        if lost_found:
+            sys.exit(1)
+
+    return args
+
 if __name__ == '__main__':
-    args = adhoc_argument_parser()
+    args = adhoc_parse_arguments()
     print(args)

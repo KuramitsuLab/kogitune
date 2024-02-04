@@ -1,41 +1,29 @@
 from typing import Optional
 import os
 
-# def safe_dir(dir):
-#     if dir.endswith('/'):
-#         dir = dir[:-1]
-#     return dir
+# def get_dict_multi_keys(d: dict, key:str, default=None, format_fn=lambda x: x):
+#     keys = key.split('|')
+#     for key in keys:
+#         try:
+#             if key in d:
+#                 return format_fn(d[key])
+#         except:
+#             pass
+#     return default
 
-# def safe_join(dir, file):
-#     if dir.endswith('/'):
-#         dir = dir[:-1]
-#     if file.startswith('/'):
-#         file = file[1:]
-#     return f'{dir}/{file}'
-
-def get_dict_multi_keys(d: dict, key:str, default=None, format_fn=lambda x: x):
-    keys = key.split('|')
-    for key in keys:
-        try:
-            if key in d:
-                return format_fn(d[key])
-        except:
-            pass
-    return default
-
-def get_environ(key:str, default=None, param_specified=None)->str:
-    if isinstance(param_specified, str):
-        return param_specified
-    return get_dict_multi_keys(os.environ, key, default)
+# def get_environ(key:str, default=None, param_specified=None)->str:
+#     if isinstance(param_specified, str):
+#         return param_specified
+#     return get_dict_multi_keys(os.environ, key, default)
 
 
-def getint_environ(key:str, default=0, param_specified=None)->int:
-    if isinstance(param_specified, int):
-        return param_specified
-    return get_dict_multi_keys(os.environ, key, default, format_fn=int)
+# def getint_environ(key:str, default=0, param_specified=None)->int:
+#     if isinstance(param_specified, int):
+#         return param_specified
+#     return get_dict_multi_keys(os.environ, key, default, format_fn=int)
 
-DEFAULT_TOKENIZER = get_environ('KG_TOKENIZER_PATH|TOKENIZER_PATH', 'kkuramitsu/kawagoe')
-DEFAULT_BLOCK_SIZE = getint_environ('KG_BLOCK_SIZE', 2048)
+DEFAULT_TOKENIZER = 'llm-jp/llm-jp-1.3b-v1.0'
+DEFAULT_BLOCK_SIZE = 2048
 
 '''
 def getint(kwargs:dict, 
@@ -78,26 +66,26 @@ def format_unit(num: int, scale=1000)->str:
         if num < scale:
             return str(num)
         elif num < scale**2:
-            return f"{num / scale:.1f}K"
+            return f"{num / scale:.2f}K"
         elif num < scale**3:
-            return f"{num / scale**2:.1f}M"
+            return f"{num / scale**2:.2f}M"
         elif num < scale**4:
-            return f"{num / scale**3:.1f}G"
+            return f"{num / scale**3:.2f}G"
         elif num < scale**5:
-            return f"{num / scale**4:.1f}T"
+            return f"{num / scale**4:.2f}T"
         elif num < scale**6:
-            return f"{num / scale**5:.1f}P"
+            return f"{num / scale**5:.2f}P"
         else:
-            return f"{num / scale**6:.1f}Exa"
+            return f"{num / scale**6:.2f}Exa"
     elif scale == 60:
         if num < 1.0:
-            return f"{num * 1000:.1f}ms"
+            return f"{num * 1000:.2f}ms"
         if num < scale:
-            return f"{num:.1f}sec"
+            return f"{num:.2f}sec"
         elif num < scale**2:
-            return f"{num / scale:.1f}min"
+            return f"{num / scale:.2f}min"
         elif num < (scale**2)*24:
-            return f"{num /(scale**2):.1f}h"
+            return f"{num /(scale**2):.2f}h"
         else:
             num2 = num % (scale**2)*24
             return f"{num//(scale**2)*24}d {num2/(scale**2):.1f}h"
@@ -105,13 +93,13 @@ def format_unit(num: int, scale=1000)->str:
         if num < 1_000:
             return str(num)
         elif num < 1_000_000:
-            return f"{num / 1_000:.1f}K"
+            return f"{num / 1_000:.2}K"
         elif num < 1_000_000_000:
-            return f"{num / 1_000_000:.1f}M"
+            return f"{num / 1_000_000:.2f}M"
         elif num < 1_000_000_000_000:
-            return f"{num / 1_000_000_000:.1f}B"
+            return f"{num / 1_000_000_000:.2f}B"
         else:
-            return f"{num / 1_000_000_000_000:.1f}T"
+            return f"{num / 1_000_000_000_000:.2f}T"
 
 
 def verbose_print(*args, **kwargs):
