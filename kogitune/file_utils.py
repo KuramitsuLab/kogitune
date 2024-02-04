@@ -83,7 +83,7 @@ def rename_with_linenum(filepath: str, N: int, ext='json', rename=True):
     if extracted:
         newpath = filepath.replace(f'L{extracted}', f'L{N}')
     else:
-        newpath = filepath.replace(f'.{ext}', f'_L{N}.{ext}')
+        newpath = filepath.replace(f'.', f'_L{N}.', 1)
     if rename:
         if os.path.exists(newpath):
             os.remove(newpath)

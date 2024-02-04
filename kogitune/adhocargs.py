@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import re
+import inspect
 
 def parse_argument_value(value):
     try:
@@ -146,6 +147,21 @@ class AdhocArguments(object):
                     key = key[1:]
                 subargs[key] = value
         return subargs
+
+
+    def find_function(self, option:str, prefix: str, namespace: dict = None):
+        if namespace is None:
+            # 呼び出し元のフレームを取得
+            caller_frame = inspect.stack()[1].frame
+            # 呼び出し元のグローバル変数の名前空間を取得
+            namespace = caller_frame.f_globals
+        func = namespace.get(f'{prefix}_{option}')
+        if func is None:
+            patterns = [s.replace(f'{prefix}_', '') for s in globals() if s.startswith(f'{prefix}_')]
+            raise ValueError(f'{prefix}_{option} is not found. Select pattern from {patterns}')
+        return func
+
+
 
     def utils_check(self):
         show_notion = True

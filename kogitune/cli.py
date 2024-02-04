@@ -127,6 +127,15 @@ def main_oldconv(args):
         if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
             conv_txt_to_jsonl(file)
 
+def main_linenum(args):
+    from file_utils import extract_linenum_from_filename, rename_with_linenum, get_linenum
+    for file in args['files']:
+        n = extract_linenum_from_filename()
+        if n is None:
+            n = get_linenum(file)
+            file = rename_with_linenum(file, n)
+
+
 def main_update(args):
     args.verbose_print('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
@@ -138,6 +147,11 @@ def main():
     args = adhoc_parse_arguments(
         subcommands='store|freeze|histogram|head|oldconv|update')
 
+    main_func = args.find_function(args['subcommand'], prefix='main')
+    main_func(args)
+
+
+def main2():
     # 'store' サブコマンド
     if args['subcommand'] == 'store':
         main_store(args)
