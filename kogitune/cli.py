@@ -1,38 +1,12 @@
 import os
 
-from kogitune.commons import *
+from .commons import *
 from .adhocargs import adhoc_parse_arguments
-from .trainers.old_composers import DataComposer
 from .file_utils import parse_url_args, safe_new_file
 
-def _tobool(s):
-    return s.lower() == 'true' or s == '1'
-
-def _is_float(s):
-    try:
-        float(s)
-        return True
-    except ValueError:
-        return False
-
-def _parse_args(args):
-    args_list = args.split(',')
-    args_dict = {}
-    for arg in args_list:
-        key, value = arg.split('=')
-        if value.isdigit():
-            args_dict[key] = int(value)
-        elif _is_float(value):
-            args_dict[key] = float(value)
-        elif value.lower() == 'true' or value.lower() == 'false':
-            args_dict[key] = _tobool(value)
-        else:
-            args_dict[key] = value
-    return args_dict
 
 def main_store(args=None):
     from .stores import split_to_store
-
     split_to_store(args.files, validation=True, args=args)
 
 def main_head(args):
