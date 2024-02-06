@@ -77,10 +77,13 @@ class MaxMinFilter(TextFilter):
                     if key in self.extract_samples:
                         print(f'{self.funcname}[sample={value:5f}]', text)
                         self.extract_samples.discard(key)
-
         if (self.min_value and self.min_value > value):
+            if self.verbose > 0:
+                self.debug_print(f'DROP[{self.funcname}:{value}<]\n{text}\n')
             return None
         if (self.max_value and self.max_value < value):
+            if self.verbose > 0:
+                self.debug_print(f'DROP[{self.funcname}:{value}>]\n{text}\n')
             return None
         return text
     
