@@ -61,3 +61,24 @@ class EnglishWordCounter(object):
             return word_count / length_count if length_count > 0 else 0.0
         return word_count
 
+# 空白の前がアルファベットであればカウントしない
+pattern_whitespace = re.compile(r'[^A-Za-z\,][\s　]+')
+
+class WhitespaceCounter:
+    """
+    与えられたテキストの空白文字を数える。ただし、空白の前がアルファベットであればカウントしません。
+    """
+    def __init__(self, length_fraction=False):
+        """
+        与えられたテキストの空白文字を数える評価関数を作る
+        :param length_fraction: 全テキストにおける比率 
+        """
+        self.length_fraction = length_fraction
+
+    def __call__(self, text):
+        ws = pattern_whitespace.findall(text)
+        whitespace_count = len(ws)
+        if self.length_fraction:
+            length_count =len(text)
+            return (whitespace_count / length_count) if length_count > 0 else 0.0
+        return whitespace_count

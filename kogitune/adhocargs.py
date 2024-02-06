@@ -149,6 +149,14 @@ class AdhocArguments(object):
         return subargs
 
 
+    def find_options(self, prefix: str, namespace: dict = None):
+        if namespace is None:
+            # 呼び出し元のフレームを取得
+            caller_frame = inspect.stack()[1].frame
+            # 呼び出し元のグローバル変数の名前空間を取得
+            namespace = caller_frame.f_globals
+        return [s.replace(f'{prefix}_', '') for s in globals() if s.startswith(f'{prefix}_')]
+
     def find_function(self, option:str, prefix: str, namespace: dict = None):
         if namespace is None:
             # 呼び出し元のフレームを取得
@@ -161,9 +169,7 @@ class AdhocArguments(object):
             raise ValueError(f'{prefix}_{option} is not found. Select pattern from {patterns}')
         return func
 
-
-
-    def utils_check(self):
+    def check_unused(self):
         show_notion = True
         for key, value in self._args.items():
             if key not in self._used_keys:

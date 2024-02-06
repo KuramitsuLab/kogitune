@@ -1,20 +1,18 @@
 import os
+from tqdm import tqdm
 
 from .commons import *
 from .adhocargs import adhoc_parse_arguments
 from .file_utils import parse_url_args, safe_new_file
 
-
 def main_store(args=None):
     from .stores import split_to_store
-    split_to_store(args.files, validation=True, args=args)
+    split_to_store(args.files, skip_validation=False, args=args)
 
 def main_head(args):
-    with DataComposer(args.urls, 
-                      data_type=args.data_type,
-                      max_length=args.max_length, 
-                      test_run=args.test_run, prefetch=0) as dc:
-        tokenizer = dc.prepare_tokenizer()
+    from .trainers import DatasetComposer
+    with DatasetComposer(args.files) as dc:
+        tokenizer = dc.get_tokenizer()
         for i in range(len(dc)):
             example = dc[i]
             if 'input_ids' in example:
@@ -59,11 +57,11 @@ def main_freeze(args):
 
 def main_histogram(args):
     import pandas as pd
-    from tqdm import tqdm
-    with DataComposer(args.urls, 
-                      data_type=args.data_type,
-                      max_length=args.max_length,
-                      prefetch=0) as dc:
+    from .trainers import DatasetComposer
+    url_list = args['files']
+    if len(url_list) == 0:
+        
+    with DatasetComposer(url_list, args=args) as dc:
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
         vocabs = tokenizer.convert_ids_to_tokens(token_ids)
@@ -71,20 +69,21 @@ def main_histogram(args):
         # csv_file = f'{store_path.replace("/", "_")}.csv'
 
         for i in tqdm(range(len(dc)), desc='counting tokens'):
-            example=dc[i]
+            example = dc[i]
             for token_id in example['input_ids']:
                 counts[token_id] += 1
             if 'labels' in example:
                 for token_id in example['labels']:
                     counts[token_id] += 1
-        df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
-        print(df['counts'].describe())
-        if args.output_file is None:
-            _, args = parse_url_args(args.urls[0], {})
-            _, _, path = args['url_path'].rpartition('/')
-            args.output_file = safe_new_file(f'histogram_{path}', 'csv')
-            verbose_print(f"字句の出現頻度を'{args.output_file}'に保存しました。")
-        df.to_csv(args.output_file)
+    df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
+    print(df['counts'].describe())
+    output_file = args['output_file|output_path']
+    if output_file is None:
+        _, _args = parse_url_args(args['files'][0], {})
+        _, _, path = _args['url_path'].rpartition('/')
+        output_file = safe_new_file(f'histogram_{path}', 'csv')
+        verbose_print(f"字句の出現頻度を'{output_file}'に保存しました。")
+    df.to_csv(args.output_file)
 
 def conv_txt_to_jsonl(file):
     from .file_utils import zopen, filelines
@@ -118,37 +117,11 @@ def main_update(args):
 
 def main():
     # メインのパーサーを作成
-    args = adhoc_parse_arguments(
-        subcommands='store|freeze|histogram|head|oldconv|update')
-
+    subcommands = args.find_options('main')
+    args = adhoc_parse_arguments(subcommands=subcommands)
     main_func = args.find_function(args['subcommand'], prefix='main')
     main_func(args)
-
-
-def main2():
-    # 'store' サブコマンド
-    if args['subcommand'] == 'store':
-        main_store(args)
-
-    # 'freeze' サブコマンド
-    if args['subcommand'] == 'freeze':
-        main_freeze(args)
-
-    # 'histogram' サブコマンド
-    if args['subcommand'] == 'histogram':
-        main_histogram(args)
-
-    # 'head' サブコマンド
-    if args['subcommand'] == 'head':
-        main_head(args)
-
-    # 'conv' サブコマンド
-    if args['subcommand'] == 'oldconv':
-        main_oldconv(args)
-
-    # 'update' サブコマンド
-    if args['subcommand'] == 'update':
-        main_update(args)
+    args.check_unused()
 
 if __name__ == '__main__':
     main()

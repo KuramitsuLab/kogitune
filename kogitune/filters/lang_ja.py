@@ -88,6 +88,7 @@ class JapaneseWordCounter:
             return (word_count / length_count) if length_count > 0 else 0.0
         return word_count
 
+
 pattern_wikipedia_footnote = compile_words_pattern([
         "脚注",
         "関連項目",
