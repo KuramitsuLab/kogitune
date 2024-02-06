@@ -25,6 +25,7 @@ from .scores import (
 from .lang_en import (
     contains_english, 
     EnglishWordCounter,
+    WhitespaceCounter,
 )
 
 from .lang_ja import (
