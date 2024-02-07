@@ -552,7 +552,18 @@ def parse_url_args(url, args={}):
     args.update(param_args)
     return safe_dir(base_url), args
 
+def basename_from_url_list(url_list, ext='', prefix=''):
+    if isinstance(url_list, str):
+        url_list = url_list.split('|')
+    _, _args = parse_url_args(url_list[0], {})
+    base = _args['url_path']
+    if '/' in base:
+        _, _, base = base.rpartition('/')
+    if ext:
+        return f'{prefix}{base}'
+    return base
 
+'''
 def read_metadata(index_file_or_url, cache_dir=None):
     if cache_dir is not None:
         index_file = resolve_file(index_file_or_url, 'kogitune.json', cache_dir)
@@ -603,6 +614,7 @@ def find_valid_prefix(metadata, train_prefix):
     if train_prefix.replace('train', 'dev') in prefixes:
         return train_prefix.replace('train', 'dev')
     return None
-            
+
+'''         
 
 

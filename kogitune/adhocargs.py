@@ -188,8 +188,12 @@ class AdhocArguments(object):
         with open(file_path, 'w', encoding='utf-8') as w:
             print(json.dumps(self._args, ensure_ascii=False, indent=4), file=w)
 
+    def raise_files(self, msg='ファイルの指定が一つ以上必要です。'):
+        self.print(msg)
+        sys.exit(1)
+
     def raise_uninstalled_module(self, module_name):
-        self.utils_print(f'{module_name}がインストールされていません//Uninstalled {module_name}')
+        self.print(f'{module_name}がインストールされていません//Uninstalled {module_name}')
         print(f'pip3 install -U {module_name}')
         sys.exit(1)
 

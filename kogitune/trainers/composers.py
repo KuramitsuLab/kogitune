@@ -296,6 +296,39 @@ class TextBlockCollator(object):
     def __call__(self, data):
         return torch.tensor(data[:self.max_length].astype(np.int64), dtype=torch.long)
 
+class NumpyCollator(object):
+    def __init__(self, max_length, args):
+        self.max_length = max_length
+        self.is_seq2seq = args['datatype|data_type|=text'] == 'seq2seq'
+
+    def __call__(self, data):
+        return {
+            "input_ids": data,
+        }
+
+class TensorCollator(object):
+    def __init__(self, max_length, args):
+        self.max_length = max_length
+        self.is_seq2seq = args['datatype|data_type|=text'] == 'seq2seq'
+
+    def __call__(self, data):
+        if self.is_seq2seq:
+            version = data[0] % CHUNK_MAGIC
+            if version == 1:
+                index = (data[0] // CHUNK_MAGIC) + 1
+                inputs = data[1:index]
+                labels = data[index:]
+                return {
+                    "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
+                    "attention_mask": torch.ones(len(inputs), dtype=torch.long),
+                    "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),
+                }
+            else:
+                data = data[1:]
+        return {
+            "input_ids": torch.tensor(data.astype(np.int64), dtype=torch.long),
+            "attention_mask": torch.ones(len(data), dtype=torch.long),
+        }
 
 class MixierDataset(Dataset):
     def __init__(self, datasets: List[TokenDataset], collator_fn, batch_size=1024, random_seed=42):
@@ -380,12 +413,11 @@ def get_trained_global_step(path: str):
 
     if not os.path.isdir(path):
         return 0
-
     # 指定されたパス内のすべてのファイルとディレクトリのリストを取得
-    dirs = [os.path.join(path, item) for item in os.listdir(path) if os.path.isdir(os.path.join(path, item))]
+    dirs = [os.path.join(path, item) for item in os.listdir(path) 
+            if os.path.isdir(os.path.join(path, item))]
     if len(dirs) == 0:
         return 0
-    
     # 最も新しいディレクトリを見つける
     newest = max(dirs, key=lambda dir: os.path.getmtime(dir))
     return get_trained_global_step(newest)
@@ -397,12 +429,7 @@ def create_output_path(run_name):
             return output_path
     return f'output_{run_name}'
 
-
 def check_composer_args(args:None):
-    if args is None:
-        args = AdhocArguments({})
-    elif isinstance(args, dict):
-        args = AdhocArguments(args)
 
     if 'resume_from_checkpoint' in args and not args['overwrite_output_dir|=True']:
         resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
@@ -422,13 +449,14 @@ def check_composer_args(args:None):
     return args
 
 class DatasetComposer():
-    def __init__(self, url_list:List[str], max_length:int, 
-                 args:dict=None,
+    def __init__(self, url_list:List[str], max_length:int = None, 
+                 args:dict = None,
                  cache_dir = None, cleanup=False, 
                  collator_fn = None, tokenizer=None):
-        self.max_length = max_length
+        args = AdhocArguments.to_adhoc(args)
         self.args = check_composer_args(args)
- 
+        self.max_length = max_length or args['max_length|block_size']
+
         # キャッシュ
         cache_dir = cache_dir or self.args['kg_cache_dir|cache_dir']
         if cache_dir is None:
@@ -451,6 +479,12 @@ class DatasetComposer():
             self.collator_fn = collator_fn
         else:
             self.collator_fn = TextBlockCollator(max_length, self.args)
+
+    def with_format(self, type):
+        if type == 'tensor' or type == 'torch':
+            self.collator_fn = TensorCollator(self.max_length, self.args)
+        if type == 'numpy':
+            self.collator_fn = NumpyCollator(self.max_length, self.args)
 
     def get_tokenizer(self):
         if not self.tokenizer and len(self.datasets) > 0:
