@@ -133,8 +133,7 @@ def main_update(args):
 
 def main():
     # メインのパーサーを作成
-    subcommands = args.find_options('main')
-    args = adhoc_parse_arguments(subcommands=subcommands)
+    args = adhoc_parse_arguments(subcommands='head|freeze|histogram|linenum|update')
     main_func = args.find_function(args['subcommand'], prefix='main')
     main_func(args)
     args.check_unused()
