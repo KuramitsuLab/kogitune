@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhocargs import AdhocArguments, adhoc_argument_parser
+from ..adhocargs import AdhocArguments, adhoc_parse_arguments
 from ..commons import *
 from ..file_utils import *
 from ..tokenizers import *

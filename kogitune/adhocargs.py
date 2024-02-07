@@ -200,8 +200,13 @@ class AdhocArguments(object):
     def raise_unset_key(self, key, desc_ja=None, desc_en=None):
         desc_ja = f' ({desc_ja})' if desc_ja else ''
         desc_en = f' ({desc_en})' if desc_en else ''
-        self.utils_print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
+        self.print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
         sys.exit(1)
+
+    def warn_unset_key(self, key, value):
+        self.print(f'{key}を設定してください//Please set {key}')
+        print(f'とりあえず、{value}をデフォルト値とします。')
+        return value
 
     def print(self, *args, **kwargs):
         print(self.face, *args, **kwargs)
@@ -222,7 +227,7 @@ class AdhocArguments(object):
 
 def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
                           requires:Optional[List[str]]=None,
-                          use_environ=True, expand_config=None):
+                          use_environ=True, expand_config=None)->AdhocArguments:
     if subcommands is not None:
         if isinstance(subcommands,str):
             subcommands=subcommands.split('|')
