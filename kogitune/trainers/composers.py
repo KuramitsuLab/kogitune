@@ -475,12 +475,12 @@ class DatasetComposer():
 
         url_list = parse_url_list(url_list)
         self.tokenizer = tokenizer
-        self.datasets = prepare_dataset(url_list, max_length, self.cache_dir, self.args, tokenizer)
+        self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, self.args, tokenizer)
         self.train_dataset = None
         if collator_fn:
             self.collator_fn = collator_fn
         else:
-            self.collator_fn = TextBlockCollator(max_length, self.args)
+            self.collator_fn = TextBlockCollator(self.max_length, self.args)
 
     def with_format(self, type):
         if type == 'tensor' or type == 'torch':
