@@ -1,13 +1,13 @@
 
-from composers import (
+from .composers import (
     DatasetComposer
 )
 
-from old_composers import (
+from .old_composers import (
     DataComposer,
 )
 
-from collators import (
+from .collators import (
     PretrainComposer, FinetuneComposer,
     T5PretrainComposer, T5FinetuneComposer
 )
