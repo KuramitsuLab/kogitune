@@ -13,11 +13,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhocargs import AdhocArguments, adhoc_parse_arguments
+from ..adhocargs import AdhocArguments
 from ..commons import *
 from ..file_utils import *
 from ..tokenizers import *
-from ..splitters import make_local_store
+from kogitune.stores.splitters import make_local_store
 
 # ChunkedDataset
 
@@ -456,6 +456,8 @@ class DatasetComposer():
         args = AdhocArguments.to_adhoc(args)
         self.args = check_composer_args(args)
         self.max_length = max_length or args['max_length|block_size']
+        if self.max_length is None:
+            self.max_length=args.warn_unset_key('max_length', 512)
 
         # キャッシュ
         cache_dir = cache_dir or self.args['kg_cache_dir|cache_dir']
