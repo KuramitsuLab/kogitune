@@ -552,10 +552,10 @@ def parse_url_args(url, args={}):
     args.update(param_args)
     return safe_dir(base_url), args
 
-def basename_from_url_list(url_list, ext='', prefix=''):
-    if isinstance(url_list, str):
-        url_list = url_list.split('|')
-    _, _args = parse_url_args(url_list[0], {})
+def basename_from_url(url, ext='', prefix=''):
+    if isinstance(url, (list, tuple)):
+        url = url[0]
+    _, _args = parse_url_args(url, {})
     base = _args['url_path']
     if '/' in base:
         _, _, base = base.rpartition('/')

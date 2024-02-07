@@ -77,7 +77,9 @@ def main_histogram(args):
     url_list = args['files']
     if len(url_list) == 0:
         args.raise_files('パスが一つ以上必要です。')
+    
     with DatasetComposer(url_list, args=args) as dc:
+        dc.with_format("numpy")
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
         vocabs = tokenizer.convert_ids_to_tokens(token_ids)
