@@ -16,7 +16,7 @@ def main_head(args: AdhocArguments):
         args.raise_files('パスが一つ以上必要です。')
 
     start = args['start|=0']
-    N = args['head|N|batch=1024']
+    N = args['head|N|batch|=1024']
 
     with DatasetComposer(url_list, args=args) as dc:
         dc.with_format('numpy')
