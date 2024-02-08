@@ -17,7 +17,7 @@ def main_head(args: AdhocArguments):
     url_list = args['files']
     if len(url_list) == 0:
         args.raise_files('データセットへのパスが一つ以上必要です。')
-
+    print('@', args)
     start = args['start|=0']
     N = args['head|N|batch|=1024']
 
