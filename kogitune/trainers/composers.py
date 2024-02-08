@@ -430,6 +430,7 @@ def create_output_path(run_name):
     return f'output_{run_name}'
 
 def check_composer_args(args:None):
+    args = AdhocArguments.to_adhoc(args)
 
     if 'resume_from_checkpoint' in args and not args['overwrite_output_dir|=True']:
         resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
@@ -453,7 +454,6 @@ class DatasetComposer():
                  args:dict = None,
                  cache_dir = None, cleanup=False, 
                  collator_fn = None, tokenizer=None):
-        args = AdhocArguments.to_adhoc(args)
         self.args = check_composer_args(args)
         self.max_length = max_length or self.args['max_length|block_size']
         print('@', self.args, max_length)

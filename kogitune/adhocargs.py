@@ -214,12 +214,13 @@ class AdhocArguments(object):
     def verbose_print(self, *args, **kwargs):
         print(self.face, *args, **kwargs)
 
-    @staticmethod
+    @classmethod
     def to_adhoc(cls, args: dict=None, **kwargs):
-        if args is None:
-            args = AdhocArguments({})
-        elif isinstance(args, dict):
-            args = AdhocArguments(args)
+        if not isinstance(args, AdhocArguments):
+            if args is None:
+                args = AdhocArguments({})
+            elif isinstance(args, dict):
+                args = AdhocArguments(args)
         # args = {k:v for k,v in vars(hparams).items() if v is not None}
         args.update(dict(kwargs))
         return args
