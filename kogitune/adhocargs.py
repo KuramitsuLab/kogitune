@@ -174,11 +174,11 @@ class AdhocArguments(object):
         for key, value in self._args.items():
             if key not in self._used_keys:
                 if show_notion:
-                    self.utils_print(f'未使用のパラメータ一覧//List of unused parameters')
+                    self.print(f'未使用のパラメータ一覧//List of unused parameters')
                     show_notion = False
                 print(f'{key}: {repr(value)}')
         if not show_notion:
-            self.utils_print(f'スペルミスがないか確認してください//Check if typos exist.')
+            self.print(f'スペルミスがないか確認してください//Check if typos exist.')
 
     def save_as_json(self, file_path):
         directory = os.path.dirname(file_path)
