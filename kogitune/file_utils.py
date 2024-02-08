@@ -377,7 +377,7 @@ def wait_for_file(file_path, timeout=60):
     end_time = start_time + timeout
     while time.time() < end_time:
         if get_filesize(file_path) > 0:
-            verbose_print(f'{time.time()-start_time} 秒, 待ちました')
+            verbose_print(f'{time.time()-start_time:.2f}秒, 待ちました')
             return True  # ファイルが見つかった
         time.sleep(0.5)  # 1秒待つ
     return False  # タイムアウト
@@ -413,7 +413,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
     
     if sync:
         if cached_file_size == 0:
-            verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
+            #verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)

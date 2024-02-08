@@ -70,7 +70,7 @@ def main_freeze(args):
     print(ds)
     output_path = args['output_path']
     if output_path is None:
-        output_path = 'dataset_{basename}'
+        output_path = f'dataset_{basename}'
     ds.save_to_disk(output_path)
     print(FREEZE.format(output_path))
 
