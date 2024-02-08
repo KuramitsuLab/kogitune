@@ -121,7 +121,7 @@ class DatasetStore(object):
                 filepath = safe_join_path(self.store_path, chunk_file)
                 checks = {
                     'filesize': get_filesize(filepath), 
-                    'sha1': get_file_sha1(filepath)
+                    'sha1': get_file_sha1(filepath),
                 }
                 self.checked_files[chunk_file] = checks
             if not skip_validation:

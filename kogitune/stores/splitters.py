@@ -323,7 +323,7 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
                 'docs': None,
                 'blocks': None,
             })
-        for batch in buffered_multilines(filenames, N=N, bufsize=1024 * num_workers, tqdm=tqdm):
+        for batch in read_multilines(filenames, N=N, bufsize=1024 * num_workers, tqdm=tqdm):
             batch_size = len(batch) // num_workers
             for i in range(num_workers):
                 func_args[i]['docs'] = batch[batch_size*i:batch_size*(i+1)]

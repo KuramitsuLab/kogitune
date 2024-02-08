@@ -7,13 +7,16 @@ from .file_utils import basename_from_url
 
 def main_store(args=None):
     from .stores import split_to_store
-    split_to_store(args.files, skip_validation=False, args=args)
+    url_list = args['files']
+    if len(url_list) == 0:
+        args.raise_files('ファイルの指定が一つ以上必要です。')
+    split_to_store(url_list, skip_validation=False, args=args)
 
 def main_head(args: AdhocArguments):
     from .trainers import DatasetComposer
     url_list = args['files']
     if len(url_list) == 0:
-        args.raise_files('パスが一つ以上必要です。')
+        args.raise_files('データセットへのパスが一つ以上必要です。')
 
     start = args['start|=0']
     N = args['head|N|batch|=1024']
@@ -41,7 +44,7 @@ def main_freeze(args):
     from .trainers import DatasetComposer
     url_list = args['files']
     if len(url_list) == 0:
-        args.raise_files('パスが一つ以上必要です。')
+        args.raise_files('データセットへのパスが一つ以上必要です。')
     basename = basename_from_url(url_list)
 
     input_ids = []
@@ -76,7 +79,7 @@ def main_histogram(args):
     from .trainers import DatasetComposer
     url_list = args['files']
     if len(url_list) == 0:
-        args.raise_files('パスが一つ以上必要です。')
+        args.raise_files('データセットへのパスが一つ以上必要です。')
     
     with DatasetComposer(url_list, args=args) as dc:
         dc.with_format("numpy")
