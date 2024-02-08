@@ -455,9 +455,9 @@ class DatasetComposer():
                  collator_fn = None, tokenizer=None):
         args = AdhocArguments.to_adhoc(args)
         self.args = check_composer_args(args)
-        self.max_length = max_length or args['max_length|block_size']
+        self.max_length = max_length or self.args['max_length|block_size']
         if self.max_length is None:
-            self.max_length=args.warn_unset_key('max_length', 512)
+            self.max_length=self.args.warn_unset_key('max_length', 512)
 
         # キャッシュ
         cache_dir = cache_dir or self.args['kg_cache_dir|cache_dir']
