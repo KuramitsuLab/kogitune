@@ -14,7 +14,7 @@ N_CHUNKS = 4096
 
 class DatasetStore(object):
     def __init__(self, store_path, args=None, **kwargs):
-        args = AdhocArguments.to_adhoc(args, kwargs)
+        args = AdhocArguments.to_adhoc(args, **kwargs)
         self.store_path = safe_dir(store_path)
 
         self.data_type = args['datatype|data_type|=text']

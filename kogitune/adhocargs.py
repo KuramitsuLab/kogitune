@@ -122,10 +122,12 @@ class AdhocArguments(object):
     def __contains__(self, key):
         return key in self._args or key.upper() in os.environ
 
-    def update(self, otherdict:dict, overwrite=True):
+    def update(self, otherdict:dict, overwrite=True, used=True):
         for key, value in otherdict.items():
             if overwrite or key not in self._args:
                 self._args[key] = value
+                if used:
+                    self._used_keys.add(key)
 
     def load_config(self, config_file, merge=True, overwrite=True):
         loaded_data = load_config(config_file)

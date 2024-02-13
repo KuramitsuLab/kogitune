@@ -151,7 +151,7 @@ class TextBlockSpliter(object):
         if length == 0:
             return []
         pad_id = self.tokenizer.eos_token_id
-        # self.padding_count += length
+        self.record.padded(length)
         if length == 1:
             return [pad_id]
         # 予想しやすいpad作る
@@ -188,7 +188,7 @@ class TextBlockSpliter(object):
         unused_size = self.block_size - len(extra_tokens)
         if 0 < unused_size <= self.padding_size:
             ## パッディングする
-            self.blocks.append(extra_tokens+self.pad(unused_size))
+            self.append_block(extra_tokens+self.pad(unused_size))
             self.extra_tokens = empty_tokens
         else:
             self.extra_tokens = self.try_trancate(extra_tokens)
@@ -236,7 +236,7 @@ class SectionSplitter(TextBlockSpliter):
                 continue
             unused_size = block_size - len(extra)
             if (unused_size / block_size) < self.overlap_factor:
-                self.blocks.append(extra+tokens[:unused_size])
+                self.append_block(extra+tokens[:unused_size])
                 self.record.overlapped(unused_size)
                 extra = self.try_block(tokens)
             else:
@@ -276,7 +276,7 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
     """
     if isinstance(filenames, str):
         filenames = filenames.split('|')
-    args = AdhocArguments.to_adhoc(args, kwargs)
+    args = AdhocArguments.to_adhoc(args, **kwargs)
 
     tokenizer = args.get('tokenizer|tokenizer_path', DEFAULT_TOKENIZER)
     if isinstance(tokenizer, str):
@@ -287,7 +287,7 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
     splitter.report_to(logs)
     args.verbose_print(logs)
 
-    store_path = args['store_path|store_dir']
+    store_path = args['store_path|store_dir|store']
     if store_path is None:
         filebase = get_filebase(filenames[0])
         tokenizer_name = tokenizer_id(tokenizer)

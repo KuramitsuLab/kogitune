@@ -135,7 +135,7 @@ def main_update(args):
 
 def main():
     # メインのパーサーを作成
-    args = adhoc_parse_arguments(subcommands='head|freeze|histogram|linenum|update')
+    args = adhoc_parse_arguments(subcommands='store|head|freeze|histogram|linenum|update')
     main_func = args.find_function(args['subcommand'], prefix='main')
     main_func(args)
     args.check_unused()
