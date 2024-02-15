@@ -37,7 +37,7 @@ class EnglishWordCounter(object):
     与えられたテキストに英単語(欧文単語)が含まれるか判定する評価関数
     """
     def __init__(self, pattern=None, unification=False, 
-                 alpha_fraction=True, length_fraction=False):
+                 alpha_fraction=True, length_fraction=False, aargs=None):
         """
         与えられたテキストに英単語が含まれるか判定する評価関数を作る
         :param words: 英単語のリスト(省略した場合は GPT-4による頻出英単語)
