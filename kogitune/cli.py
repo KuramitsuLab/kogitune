@@ -6,7 +6,7 @@ from .adhocargs import adhoc_parse_arguments, AdhocArguments
 from .file_utils import basename_from_url
 
 def main_maxmin(aargs=None):
-    from .filters.scores import maxmin
+    from .filters.cli import maxmin
     url_list = aargs['files']
     if url_list is None or len(url_list) == 0:
         aargs.raise_files('ファイルの指定が一つ以上必要です。')
