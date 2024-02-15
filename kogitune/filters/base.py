@@ -68,18 +68,19 @@ class TextFilter(object):
             self.verbose = 10
         c=0
         n=0
-        for text in filelines(filename, N=N):
-            record = {}
-            self.set_record(record) # レコーダをセットする
-            text = self(text)
-            n+=1
-            if text:
-                record['text'] = text
-                c+=1
-                if w:
-                    print(json.dumps(record, ensure_ascii=False), file=w)
-                else:
-                    self.debug_print(record)
+        for lines in read_multilines(filename, N=N, tqdm=tqdm):
+            for text in lines:
+                record = {}
+                self.set_record(record) # レコーダをセットする
+                text = self(text)
+                n+=1
+                if text:
+                    record['text'] = text
+                    c+=1
+                    if w:
+                        print(json.dumps(record, ensure_ascii=False), file=w)
+                    else:
+                        self.debug_print(record)
         if output_path:
             newpath = rename_with_linenum(output_path, N=c, ext='json')
             print(f'Complete: {newpath} {c}/{n} {c/n:.3f}')

@@ -6,6 +6,9 @@ import pandas as pd
 
 from .base import TextFilter
 
+from ..adhocargs import AdhocArguments
+from ..commons import load_tokenizer
+
 DEFAULT_PERCENTILES = [0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95]
 
 class MaxMinFilter(TextFilter):
@@ -126,17 +129,19 @@ class TokenizerCompression(object):
     トークンナイザーの圧縮率による評価関数
     """
 
-    def __init__(self, tokenizer: str, 
-                 length=None, head=None, chars_per_tokens=False, legacy=False):
+    def __init__(self, 
+                 tokenizer: str = None, length=None, head=None, 
+                 chars_per_tokens=None, aargs=None):
         """
         トークンナイザーの圧縮率による評価関数を作る
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
         :param head: 指定された先頭の文字数だけチェックする（デフォルトは全体）   
         :param chars_per_tokens: 圧縮率の計算を1トークン辺りの文字数(chars/tokens)にする。
         """
-        self.tokenizer = _load_tokenizer(tokenizer, legacy=legacy)
-        self.head = head or length
-        self.chars_per_tokens = chars_per_tokens
+        aargs = AdhocArguments.to_adhoc(aargs)
+        self.tokenizer = load_tokenizer(tokenizer, aargs=aargs)
+        self.head = head or length or aargs['head|length']
+        self.chars_per_tokens = chars_per_tokens or aargs['chars_per_tokens|=false']
 
     def __call__(self, text):
         if self.head:
@@ -157,12 +162,13 @@ class TokenizerEntropy(object):
     逆にエントロピーが低い場合、トークンの分布は比較的均一で予測が容易です。
     """
 
-    def __init__(self, tokenizer: str, length=None, head=None, legacy=False):
+    def __init__(self, tokenizer: str=None, aargs=None):
         """
         トークンナイザーによるエントロピー評価関数を作る
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
         """
-        self.tokenizer = _load_tokenizer(tokenizer, legacy=legacy)
+        aargs = AdhocArguments.to_adhoc(aargs)
+        self.tokenizer = load_tokenizer(tokenizer, aargs=aargs)
 
     def __call__(self, text):
         tokens = self.tokenizer.encode(text)
@@ -187,11 +193,12 @@ class ZLibCompression(object):
     """
     Zlib圧縮率による評価関数
     """
-    def __init__(self, length_factor: float = 0.0):
+    def __init__(self, length_factor: float = None, aargs=None):
         """
         Zlib圧縮率による評価関数をつくる
         """
-        self.length_factor = length_factor
+        aargs = AdhocArguments.to_adhoc(aargs)
+        self.length_factor = length_factor or aargs['length_factor|=0.0']
 
     def __call__(self, text):
         encoded = text.encode("utf-8", errors='ignore')
@@ -207,5 +214,3 @@ class ZLibCompression(object):
         score = ratio + length_penalty
         return score
 
-
-    

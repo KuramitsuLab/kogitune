@@ -337,10 +337,6 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
     report_split(logs['record'], args)
     store.save(tokenizer, logs=logs, skip_validation=False)
 
-
-
-
-
 def make_local_store(filename:str, tokenizer, args:dict):
     if 'cache_dir' in args and 'store_path' not in args:
         filebase = get_filebase(filename)
@@ -350,11 +346,11 @@ def make_local_store(filename:str, tokenizer, args:dict):
     return str(os.path.abspath(args['store_path']))
 
 def make_histogram(tokenizer, store_path, chunk_files, verbose=True):
+    from tqdm import tqdm
     token_ids = list(range(0, tokenizer.vocab_size))
     vocabs = tokenizer.convert_ids_to_tokens(token_ids)
     counts = [0] * tokenizer.vocab_size
     csv_file = f'{store_path.replace("/", "_")}.csv'
-    from tqdm import tqdm
     for chunk_file in tqdm(chunk_files):
         chunks = load_chunk_file(store_path, chunk_file)
         for chunk in chunks:

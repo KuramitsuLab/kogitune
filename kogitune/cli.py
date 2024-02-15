@@ -5,17 +5,25 @@ from .commons import *
 from .adhocargs import adhoc_parse_arguments, AdhocArguments
 from .file_utils import basename_from_url
 
+def main_maxmin(aargs=None):
+    from .filters.scores import maxmin
+    url_list = aargs['files']
+    if url_list is None or len(url_list) == 0:
+        aargs.raise_files('ファイルの指定が一つ以上必要です。')
+    maxmin(url_list, aargs=aargs)
+
+
 def main_store(args=None):
     from .stores import split_to_store
     url_list = args['files']
-    if len(url_list) == 0:
+    if url_list is None or len(url_list) == 0:
         args.raise_files('ファイルの指定が一つ以上必要です。')
     split_to_store(url_list, skip_validation=False, args=args)
 
 def main_head(args: AdhocArguments):
     from .trainers import DatasetComposer
     url_list = args['files']
-    if len(url_list) == 0:
+    if url_list is None or len(url_list) == 0:
         args.raise_files('データセットへのパスが一つ以上必要です。')
     start = args['start|=0']
     N = args['head|N|batch|=1024']
@@ -42,7 +50,7 @@ def main_freeze(args):
     from datasets import Dataset
     from .trainers import DatasetComposer
     url_list = args['files']
-    if len(url_list) == 0:
+    if url_list is None or len(url_list) == 0:
         args.raise_files('データセットへのパスが一つ以上必要です。')
     basename = basename_from_url(url_list)
 
@@ -77,8 +85,8 @@ def main_histogram(args):
     import pandas as pd
     from .trainers import DatasetComposer
     url_list = args['files']
-    if len(url_list) == 0:
-        args.raise_files('データセットへのパスが一つ以上必要です。')
+    if url_list is None or len(url_list) == 0:
+        args.raise_files('データストアへのパスが一つ以上必要です。')
     
     with DatasetComposer(url_list, args=args) as dc:
         dc.with_format("numpy")
@@ -135,7 +143,7 @@ def main_update(args):
 
 def main():
     # メインのパーサーを作成
-    args = adhoc_parse_arguments(subcommands='store|head|freeze|histogram|linenum|update')
+    args = adhoc_parse_arguments(subcommands='maxmin|store|head|freeze|histogram|linenum|update')
     main_func = args.find_function(args['subcommand'], prefix='main')
     main_func(args)
     args.check_unused()

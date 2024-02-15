@@ -155,7 +155,7 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, collator
                 if len(buffer) == bufsize:
                     yield buffer
                     buffer=[]
-                if N != -1 and c > N:
+                if N != -1 and c >= N:
                     break
                 line = f.readline()
             yield buffer
@@ -164,6 +164,7 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, collator
 def filelines(filename, N=-1):
     from tqdm import tqdm
     N = get_linenum(filename) if N==-1 else N
+    print('@', tqdm, N, type(N), filename)
     with tqdm(total=N, desc=filename) as pbar:
         with zopen(filename) as f:
             line = f.readline()

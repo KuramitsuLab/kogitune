@@ -46,6 +46,27 @@ def _parse_key_value(key, next_value, args):
             args['files'] = files
     return key, None
 
+## ファイル
+
+def get_basename_from_filepath(filepath:str)->str:
+    """
+    ファイルパスからベースの名前を取り出す
+    """
+    filebase = filepath
+    if '/' in filebase:
+        _, _, filebase = filebase.rpartition('/')
+    if '\\' in filebase:
+        _, _, filebase = filebase.rpartition('\\')
+    if '_L' in filebase:
+        left, _, right = filebase.rpartition('_L')
+        if right[0].isdigit():
+            filebase = left
+    filebase, _, _ = filebase.partition('.')
+    return filebase
+
+
+
+
 def load_yaml(config_file):
     import yaml
     loaded_data = {}
@@ -150,6 +171,24 @@ class AdhocArguments(object):
                 subargs[key] = value
         return subargs
 
+    def get_subargs(self, keys, exclude=None):
+        subargs = {}
+        for key in keys.split('|'):
+            if key.endswith('*'):
+                prefix = key[:-1]
+                for key, value in self._args.items():
+                    if key.startswith(prefix):
+                        self._used_keys.add(key)
+                        key = key[len(prefix):]
+                        subargs[key] = value
+            elif key in self:
+                subargs[key] = self[key]
+        if exclude is not None:
+            for key in exclude.split('|'):
+                if key in subargs:
+                    del subargs[key]
+        return subargs
+
 
     def find_options(self, prefix: str, namespace: dict = None):
         if namespace is None:
@@ -217,15 +256,16 @@ class AdhocArguments(object):
         print(self.face, *args, **kwargs)
 
     @classmethod
-    def to_adhoc(cls, args: dict=None, **kwargs):
-        if not isinstance(args, AdhocArguments):
-            if args is None:
-                args = AdhocArguments({})
-            elif isinstance(args, dict):
-                args = AdhocArguments(args)
+    def to_adhoc(cls, aargs: dict=None, args=None, **kwargs):
+        aargs = aargs or args
+        if not isinstance(aargs, AdhocArguments):
+            if aargs is None:
+                aargs = AdhocArguments({})
+            elif isinstance(aargs, dict):
+                aargs = AdhocArguments(aargs)
         # args = {k:v for k,v in vars(hparams).items() if v is not None}
-        args.update(dict(kwargs))
-        return args
+        aargs.update(dict(kwargs))
+        return aargs
 
 
 def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,

@@ -12,7 +12,7 @@ class JSONConvertor(TextFilter):
         return json.loads(text)[self.target]
 
 class JSONTemplateConvertor(TextFilter):
-    def __init__(self, template:str):
+    def __init__(self, template:str='{text}'):
         super().__init__(verbose=0)
         self.template = template
 
