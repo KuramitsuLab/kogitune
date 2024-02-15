@@ -2,6 +2,7 @@ from typing import Any, List
 import re
 import os
 from collections import Counter
+from ..adhocargs import AdhocArguments
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...
@@ -35,20 +36,19 @@ class EnglishWordCounter(object):
     """
     与えられたテキストに英単語(欧文単語)が含まれるか判定する評価関数
     """
-    def __init__(self, pattern=None, unique=True, 
+    def __init__(self, pattern=None, unification=True, 
                  alpha_fraction=False, length_fraction=False):
         """
         与えられたテキストに英単語が含まれるか判定する評価関数を作る
         :param words: 英単語のリスト(省略した場合は GPT-4による頻出英単語)
-        :param unique: 単一化
+        :param unification: 単一化
         :param alpha_fraction: 英文字における比率
         :param length_fraction: 全テキストにおける比率 
         """
-
-        self.pattern = pattern or pattern_english_common_words
-        self.unique = unique
-        self.alpha_fraction = alpha_fraction
-        self.length_fraction = length_fraction
+        aargs=AdhocArguments.to_adhoc(aargs)
+        self.unique = aargs[f'unification|={unification}']
+        self.alpha_fraction = aargs[f'ja_fraction|={alpha_fraction}']
+        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
 
     def __call__(self, text):
         ws = self.pattern.findall(text)
@@ -64,16 +64,17 @@ class EnglishWordCounter(object):
 # 空白の前がアルファベットであればカウントしない
 pattern_whitespace = re.compile(r'[^A-Za-z\,][\s　]+')
 
-class WhitespaceCounter:
+class WhitespaceCounter(object):
     """
     与えられたテキストの空白文字を数える。ただし、空白の前がアルファベットであればカウントしません。
     """
-    def __init__(self, length_fraction=False):
+    def __init__(self, length_fraction=False, aargs=None):
         """
         与えられたテキストの空白文字を数える評価関数を作る
         :param length_fraction: 全テキストにおける比率 
         """
-        self.length_fraction = length_fraction
+        aargs=AdhocArguments.to_adhoc(aargs)
+        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
 
     def __call__(self, text):
         ws = pattern_whitespace.findall(text)
