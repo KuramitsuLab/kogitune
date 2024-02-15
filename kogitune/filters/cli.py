@@ -7,7 +7,7 @@ def find_eval_function(name: str, aargs: AdhocArguments):
     if name in ns:
         return ns[name](aargs=aargs)
 
-def cli_maxmin(files: List[str], aargs=None):
+def maxmin(files: List[str], aargs=None):
     from .documents import JSONTemplateConvertor
     aargs = AdhocArguments.to_adhoc(aargs)
     name = aargs['eval|score']
