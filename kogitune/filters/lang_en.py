@@ -46,6 +46,7 @@ class EnglishWordCounter(object):
         :param length_fraction: 全テキストにおける比率 
         """
         aargs=AdhocArguments.to_adhoc(aargs)
+        self.pattern = pattern or pattern_english_common_words
         self.unique = aargs[f'unification|={unification}']
         self.alpha_fraction = aargs[f'alpha_fraction|={alpha_fraction}']
         self.length_fraction = aargs[f'length_fraction|={length_fraction}']
