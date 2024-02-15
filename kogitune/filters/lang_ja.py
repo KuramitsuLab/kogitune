@@ -3,6 +3,7 @@ import re
 import os
 
 from .base import TextFilter
+from ..adhocargs import AdhocArguments
 
 pattern_hirakata = re.compile(r'[ぁ-んァ-ヶ]')
 pattern_japanese = re.compile(r'[ぁ-んァ-ヶー・\u4E00-\u9FFF\u3400-\u4DBF、。]')
@@ -58,24 +59,27 @@ class JapaneseWordCounter:
     """
     与えられたテキストに日本語単語が含まれるか判定する評価関数
     """
-    def __init__(self, words: Optional[List[str]] = None, 
-                 unique=True, 
+    def __init__(self, 
+                 words: Optional[List[str]] = None, 
+                 unification=True, 
                  ja_fraction=False, 
-                 length_fraction=False):
+                 length_fraction=False, aargs=None):
         """
         与えられたテキストに日本語単語が含まれるか判定する評価関数を作る
         :param words: 日本語単語のリスト(省略した場合は助詞)
-        :param unique: 単一化
+        :param unification: 単一化
         :param ja_fraction: 漢字/ひらがな/かたかな文字における比率
         :param length_fraction: 全テキストにおける比率 
         """
+        aargs=AdhocArguments.to_adhoc(aargs)
+        words = words or aargs['words']
         if words:
             self.pattern = compile_words_pattern(words)
         else:
             self.pattern = pattern_japanese_common_words
-        self.unique = unique
-        self.ja_fraction = ja_fraction
-        self.length_fraction = length_fraction
+        self.unique = aargs[f'unification|={unification}']
+        self.ja_fraction = aargs[f'ja_fraction|={ja_fraction}']
+        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
 
     def __call__(self, text):
         ws = self.pattern.findall(text)
