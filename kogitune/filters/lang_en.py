@@ -36,8 +36,8 @@ class EnglishWordCounter(object):
     """
     与えられたテキストに英単語(欧文単語)が含まれるか判定する評価関数
     """
-    def __init__(self, pattern=None, unification=True, 
-                 alpha_fraction=False, length_fraction=False):
+    def __init__(self, pattern=None, unification=False, 
+                 alpha_fraction=True, length_fraction=False):
         """
         与えられたテキストに英単語が含まれるか判定する評価関数を作る
         :param words: 英単語のリスト(省略した場合は GPT-4による頻出英単語)
@@ -47,18 +47,18 @@ class EnglishWordCounter(object):
         """
         aargs=AdhocArguments.to_adhoc(aargs)
         self.unique = aargs[f'unification|={unification}']
-        self.alpha_fraction = aargs[f'ja_fraction|={alpha_fraction}']
+        self.alpha_fraction = aargs[f'alpha_fraction|={alpha_fraction}']
         self.length_fraction = aargs[f'length_fraction|={length_fraction}']
 
     def __call__(self, text):
         ws = self.pattern.findall(text)
         word_count = len(set(ws)) if self.unique else len(ws)
-        if self.alpha_fraction:
-            alpha_count = len([c for c in text if 'A' <= c <= 'z'])
-            return word_count / alpha_count if alpha_count > 0 else 0.0 
         if self.length_fraction:
             length_count =len(text)
             return word_count / length_count if length_count > 0 else 0.0
+        elif self.alpha_fraction:
+            alpha_count = len([c for c in text if 'A' <= c <= 'z'])
+            return word_count / alpha_count if alpha_count > 0 else 0.0 
         return word_count
 
 # 空白の前がアルファベットであればカウントしない

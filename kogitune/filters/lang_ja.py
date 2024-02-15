@@ -61,8 +61,8 @@ class JapaneseWordCounter:
     """
     def __init__(self, 
                  words: Optional[List[str]] = None, 
-                 unification=True, 
-                 ja_fraction=False, 
+                 unification=False, 
+                 ja_fraction=True, 
                  length_fraction=False, aargs=None):
         """
         与えられたテキストに日本語単語が含まれるか判定する評価関数を作る
@@ -84,12 +84,12 @@ class JapaneseWordCounter:
     def __call__(self, text):
         ws = self.pattern.findall(text)
         word_count = len(set(ws)) if self.unique else len(ws)
-        if self.ja_fraction:
-            ja_count = count_japanese_characters(text)
-            return (word_count / ja_count) if ja_count > 0 else 0.0 
         if self.length_fraction:
             length_count =len(text)
             return (word_count / length_count) if length_count > 0 else 0.0
+        elif self.ja_fraction:
+            ja_count = count_japanese_characters(text)
+            return (word_count / ja_count) if ja_count > 0 else 0.0 
         return word_count
 
 
