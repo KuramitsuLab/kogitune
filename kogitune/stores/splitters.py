@@ -174,12 +174,12 @@ class TextBlockSpliter(object):
             segmented = tokens[i : i + work_size]
             self.append_block(segmented)
         unused_size = len(tokens) % work_size
-        return tokens[-unused_size:]
+        return empty_tokens if unused_size == 0 else tokens[-unused_size:]
     
     def try_trancate(self, extra_tokens):
         if len(extra_tokens) <= self.trancate_size:
             self.record.trancated(len(extra_tokens))
-            return []
+            return empty_tokens
         return extra_tokens
     
     def append_text(self, text):
@@ -308,8 +308,9 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
 
     num_workers = args['num_workers|=1']
     N=args['head|N|=-1']
+    template = args['json_template|template|={text}']
     if num_workers == 1:
-        for docs in read_multilines(filenames, bufsize=1024, tqdm=tqdm):
+        for docs in read_multilines(filenames, N=N, bufsize=1024, template=template, tqdm=tqdm):
             blocks = splitter(docs)
             store.append(blocks)
         splitter.report_to(logs)
@@ -323,7 +324,7 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
                 'docs': None,
                 'blocks': None,
             })
-        for batch in read_multilines(filenames, N=N, bufsize=1024 * num_workers, tqdm=tqdm):
+        for batch in read_multilines(filenames, N=N, template=template, bufsize=1024 * num_workers, tqdm=tqdm):
             batch_size = len(batch) // num_workers
             for i in range(num_workers):
                 func_args[i]['docs'] = batch[batch_size*i:batch_size*(i+1)]

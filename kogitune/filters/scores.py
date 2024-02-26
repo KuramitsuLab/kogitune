@@ -131,7 +131,9 @@ class TokenizerCompression(object):
 
     def __init__(self, 
                  tokenizer: str = None, length=None, head=None, 
-                 chars_per_tokens=None, aargs=None):
+                 chars_per_tokens=False, 
+                 zlib_fraction=False,
+                 aargs=None):
         """
         トークンナイザーの圧縮率による評価関数を作る
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
@@ -141,7 +143,8 @@ class TokenizerCompression(object):
         aargs = AdhocArguments.to_adhoc(aargs)
         self.tokenizer = load_tokenizer(tokenizer, aargs=aargs)
         self.head = head or length or aargs['head|length']
-        self.chars_per_tokens = chars_per_tokens or aargs['chars_per_tokens|=false']
+        self.chars_per_tokens = aargs[f'chars_per_tokens|={chars_per_tokens}']
+        self.zlib_fraction = aargs[f'zlib_fraction|={zlib_fraction}']
 
     def __call__(self, text):
         if self.head:
@@ -150,9 +153,13 @@ class TokenizerCompression(object):
         if text_length == 0:
             return 1
         token_length = len(self.tokenizer.encode(text))
+        if self.zlib_fraction:
+            encoded = text.encode("utf-8", errors='ignore')
+            compressed = zlib.compress(encoded, level=9)    
+            text_length = len(compressed)
         if self.chars_per_tokens:
             return text_length / token_length 
-        return text_length / token_length
+        return token_length / text_length
 
 class TokenizerEntropy(object):
     """

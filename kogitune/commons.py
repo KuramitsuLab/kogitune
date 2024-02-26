@@ -34,6 +34,8 @@ def load_tokenizer(tokenizer:str = None, aargs=None):
         local_args = aargs.get_subargs('tokenizer_*|trust_remote_code', exclude='tokenizer_path')
         if 'trust_remote_code' not in local_args:
             local_args['trust_remote_code'] = True
+        if 'use_fast' not in local_args:
+            local_args['use_fast'] = False
         # AutoTokenizer.from_pretrained(tokenizer, legacy=legacy, trust_remote_code=True, use_fast=False)
         return AutoTokenizer.from_pretrained(tokenizer, **local_args)
     return tokenizer

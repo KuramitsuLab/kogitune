@@ -456,7 +456,6 @@ class DatasetComposer():
                  collator_fn = None, tokenizer=None):
         self.args = check_composer_args(args)
         self.max_length = max_length or self.args['max_length|block_size']
-        print('@', self.args, max_length)
         if self.max_length is None:
             self.max_length=self.args.warn_unset_key('max_length', 512)
 

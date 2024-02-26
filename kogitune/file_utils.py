@@ -17,8 +17,8 @@ import pyzstd
 from tqdm import tqdm
 
 #import torch
-from transformers import AutoTokenizer
-from torch.utils.data import Dataset
+#from transformers import AutoTokenizer
+#from torch.utils.data import Dataset
 
 from .commons import *
 
@@ -127,6 +127,9 @@ def collator_none(s):
 def collator_strip(s):
     return s.strip()
 
+def collator_json(s):
+    return json.loads(s)['text']
+
 def find_collator(s):
     func = globals().get(f'collator_{s}')
     if func is None:
@@ -134,7 +137,13 @@ def find_collator(s):
         raise ValueError(f'collator_{s} is not found. Select pattern from {patterns}')
     return func
 
-def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, collator = 'strip', tqdm = None):
+class JSONTemplate(object):
+    def __init__(self, template='{text}'):
+        self.template = template
+    def __call__(self, s) -> str:
+        return self.template.format(**json.loads(s))
+
+def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, template=None, collator = 'strip', tqdm = None):
     if isinstance(filenames, str):
         filenames = filenames.split('|')
     for filename in filenames:
@@ -143,7 +152,10 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, collator
             pbar = tqdm(total=N, desc=filename)
         else:
             pbar = DummyTqdm()
-        collator_fn = find_collator(collator)
+        if template:
+            collator_fn = JSONTemplate(template)
+        else:
+            collator_fn = find_collator(collator)
         buffer=[]
         with zopen(filename) as f:
             line = f.readline()
@@ -308,12 +320,12 @@ def touch(file_path):
     file = Path(file_path)
     file.touch(exist_ok=True)
 
-def compress_file(filename, compression='zst', rm=False, sync=True):
-    if filename.endswith(f'.{compression}'):
+def compress_file(filename, compressed='zst', rm=False, sync=True):
+    if filename.endswith(f'.{compressed}'):
         return filename
-    if os.path.exists(f'{filename}.{compression}'):
-        return f'{filename}.{compression}'
-    if compression == 'zst':
+    if os.path.exists(f'{filename}.{compressed}'):
+        return f'{filename}.{compressed}'
+    if compressed == 'zst':
         if rm:
             cmd = f"zstd -fq --rm {filename}"
         else:
@@ -324,14 +336,14 @@ def compress_file(filename, compression='zst', rm=False, sync=True):
         return f'{filename}.zst'
     return filename
 
-def uncompress_file(filename, compression='zst', rm=False, sync=True):
-    if not filename.endswith(f'.{compression}'):
-        filename2 = f'{filename}.{compression}'
+def uncompress_file(filename, compressed='zst', rm=False, sync=True):
+    if not filename.endswith(f'.{compressed}'):
+        filename2 = f'{filename}.{compressed}'
         if os.path.exists(filename2):
             filename = filename2
         else:
             return filename
-    if compression == 'zst':
+    if compressed == 'zst':
         unzstd_filename = filename[:-4]
         if not os.path.exists(unzstd_filename):
             if rm:
@@ -385,9 +397,6 @@ def wait_for_file(file_path, timeout=60):
 
 def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, verbose=True):
     remote_file = safe_join_path(url_base, file_path)
-    # if remote_file.startswith('/'):
-    #     # ローカルなファイルパスの場合
-    #     return remote_file
     cached_file = safe_join_path(cache_dir, file_path)
     # ディレクトリを作っておく
     os.makedirs(cached_file.rpartition("/")[0], exist_ok=True)
@@ -396,21 +405,18 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
         return cached_file
 
     # コマンド
-    temp_file = cached_file.replace('npz', 'tmp')
-    if compressed:
-        temp_file2 = f'{temp_file}.{compressed}'
+    if compressed == 'zst':
+        temp_file = cached_file.replace('npz', 'tmp')
         if remote_file.startswith('https://') or remote_file.startswith('http://'):
-            cmd = f"wget -qO {temp_file2} {remote_file}.{compressed}"
+            cmd = f"wget -qO {temp_file}.zst {remote_file}.zst && zstd -dfq --rm {temp_file}.zst && mv {temp_file} {cached_file}"
         else:
-            cmd = f'cp {remote_file}.{compressed} {temp_file2}'
-        cmd = f"{cmd} && zstd -dfq --rm {temp_file2}"
+            cmd = f"zstd -dfq {remote_file}.zst && mv {remote_file} {cached_file}"
     else:
+        temp_file = cached_file.replace('npz', 'tmp')
         if remote_file.startswith('https://') or remote_file.startswith('http://'):
-            cmd = f"wget -qO {temp_file} {remote_file}"
+            cmd = f"wget -qO {temp_file} {remote_file} && mv {temp_file} {cached_file}"
         else:
-            cmd = f'cp {remote_file} {temp_file}'
-    if temp_file != cached_file:
-        cmd = f"{cmd} && mv {temp_file} {cached_file}"
+            cmd = f"cp {remote_file} {cached_file}"
     
     if sync:
         if cached_file_size == 0:
@@ -418,11 +424,12 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)
-        subprocess.call(cmd, shell=True)
+        res=subprocess.call(cmd, shell=True)
+        print('res', res)
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
             if verbose:
-                verbose_print(f'ダウンロード失敗 file={cached_file} {format_unit(cached_file_size, scale=1024)}B', cmd)
+                verbose_print(f'ダウンロード失敗 file={cached_file} by', cmd)
             os.remove(cached_file)
         return cached_file
 
@@ -451,7 +458,6 @@ def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
     else:
         filepath = safe_join_path(base_dir, chunk_file)
     try:
-        # filepath = unzstd_file(filepath)
         npz = np.load(filepath, allow_pickle=True)
         chunks = [npz[n] for n in npz.files]
         if subblocks > 1:
