@@ -20,6 +20,6 @@ def maxmin(files: List[str], aargs=None):
     output_path = aargs['output_path']
     if output_path is None:
         basename = get_basename_from_filepath(files[0])
-        output_path = f'{basename}_maxmin.jsonl'
+        output_path = f'maxmin_{basename}.jsonl'
         aargs.print(f'{output_path}に評価値も保存します。')
     filter.from_jsonl(files, N=N, output_path=output_path, num_workers=1)

@@ -95,7 +95,8 @@ class ChunkQueue(object):
 
     
 class TokenDataset(Dataset):
-    def __init__(self, url: str, max_length: int, prefix: str, config:dict, local_cache_dir:str, local_args:dict):
+    def __init__(self, url: str, max_length: int, prefix: str, config:dict, 
+                 local_cache_dir:str, local_args:dict):
         self.url = safe_dir(url)
         if '/' in self.url:
             _, _, self.name = self.url.rpartition('/')
@@ -181,7 +182,7 @@ class TokenDataset(Dataset):
         logs.append(f'トークン数 {self.n_items * max_length/10**9:.2f}B')
         verbose_print(' '.join(logs))
         self.queue = ChunkQueue(self.n_chunks, self.max_length)
-        self.prefetch=0
+        self.prefetch=local_args.get('prefetch', 1)
         self.try_prefetch(0)
 
     def __repr__(self):
@@ -240,7 +241,7 @@ def find_dataset_config(url, datatype, max_length, split, cache_dir):
         max_length *= 2
     return None
 
-def prepare_dataset(url_list, max_length, cache_dir, args, tokenizer=None):
+def prepare_dataset(url_list, max_length, cache_dir, args, tokenizer=None, prefetch=1):
     datatype = args['data_type|datatype|=text']
     split = args['split|=train']
     global_args = {'datatype': datatype, 'split': split}
@@ -255,6 +256,7 @@ def prepare_dataset(url_list, max_length, cache_dir, args, tokenizer=None):
         found = find_dataset_config(url, datatype, max_length, split, cache_dir)
         if found:
             prefix, config = found
+            local_args['prefetch'] = prefetch
             dataset = TokenDataset(url, max_length, prefix, config, cache_dir, local_args)
             # if self.check_tokenizer(url, dataset) == False:
             #     continue
@@ -455,10 +457,10 @@ def check_composer_args(args:None):
 
 class DatasetComposer():
     def __init__(self, url_list:List[str], max_length:int = None, 
-                 args:dict = None,
-                 cache_dir = None, cleanup=False, 
+                 args = None, aargs = None, 
+                 cache_dir = None, cleanup=False, prefetch = 1,  
                  collator_fn = None, tokenizer=None):
-        self.args = check_composer_args(args)
+        self.args = check_composer_args(aargs or args)
         self.max_length = max_length or self.args['max_length|block_size']
         if self.max_length is None:
             self.max_length=self.args.warn_unset_key('max_length', 512)
@@ -479,7 +481,7 @@ class DatasetComposer():
 
         url_list = parse_url_list(url_list)
         self.tokenizer = tokenizer
-        self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, self.args, tokenizer)
+        self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, self.args, tokenizer, prefetch=prefetch)
         self.train_dataset = None
         if collator_fn:
             self.collator_fn = collator_fn
