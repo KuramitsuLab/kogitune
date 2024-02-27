@@ -46,6 +46,7 @@ ds = load_from_disk("{}")
 '''
 
 def main_freeze(aargs):
+    import time
     from tqdm import tqdm
     from datasets import Dataset
     from .trainers import DatasetComposer
@@ -53,12 +54,13 @@ def main_freeze(aargs):
     if url_list is None or len(url_list) == 0:
         aargs.raise_files('データセットへのパスが一つ以上必要です。')
     basename = basename_from_url(url_list)
-    if output_path not in aargs:
+    if 'output_path' not in aargs:
         aargs['output_path'] = f'freezed_{basename}'
 
     input_ids = []
     attention_mask = []
     labels=[]
+    start = time.time()
     with DatasetComposer(url_list, args=aargs, prefetch=0) as dc:
         dc.with_format("tensor")
         ds = dc.get_train_dataset()
@@ -75,6 +77,7 @@ def main_freeze(aargs):
                 ds_dict = { "input_ids": input_ids, "attention_mask": attention_mask}
             else:
                 ds_dict = { "input_ids": input_ids}
+    aargs.print(f'ダウンロード時間: {time.time()-start} s')
     ds = Dataset.from_dict(ds_dict).with_format("torch")
     print(ds)
     output_path = aargs['output_path']
