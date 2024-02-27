@@ -45,19 +45,21 @@ from datasets import load_from_disk
 ds = load_from_disk("{}")
 '''
 
-def main_freeze(args):
+def main_freeze(aargs):
     from tqdm import tqdm
     from datasets import Dataset
     from .trainers import DatasetComposer
-    url_list = args['files']
+    url_list = aargs['files']
     if url_list is None or len(url_list) == 0:
-        args.raise_files('データセットへのパスが一つ以上必要です。')
+        aargs.raise_files('データセットへのパスが一つ以上必要です。')
     basename = basename_from_url(url_list)
+    if output_path not in aargs:
+        aargs['output_path'] = f'freezed_{basename}'
 
     input_ids = []
     attention_mask = []
     labels=[]
-    with DatasetComposer(url_list, args=args) as dc:
+    with DatasetComposer(url_list, args=aargs, prefetch=0) as dc:
         dc.with_format("tensor")
         ds = dc.get_train_dataset()
         for i in tqdm(range(len(ds)), desc=basename):
@@ -75,9 +77,7 @@ def main_freeze(args):
                 ds_dict = { "input_ids": input_ids}
     ds = Dataset.from_dict(ds_dict).with_format("torch")
     print(ds)
-    output_path = args['output_path']
-    if output_path is None:
-        output_path = f'dataset_{basename}'
+    output_path = aargs['output_path']
     ds.save_to_disk(output_path)
     print(FREEZE.format(output_path))
 
