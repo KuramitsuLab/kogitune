@@ -425,7 +425,6 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
                 return cached_file
         touch(cached_file)
         res=subprocess.call(cmd, shell=True)
-        print('res', res)
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
             if verbose:

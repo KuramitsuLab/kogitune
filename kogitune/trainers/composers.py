@@ -181,7 +181,7 @@ class TokenDataset(Dataset):
         logs.append(f'トークン数 {self.n_items * max_length/10**9:.2f}B')
         verbose_print(' '.join(logs))
         self.queue = ChunkQueue(self.n_chunks, self.max_length)
-        self.prefetch=1
+        self.prefetch=0
         self.try_prefetch(0)
 
     def __repr__(self):
@@ -209,7 +209,11 @@ class TokenDataset(Dataset):
         chunks = self.get_chunks(chunk_file)
         if self.prefetch > 0 and index % self.n_chunks == 0:
             self.try_prefetch(index+(self.prefetch*self.n_chunks))
-        return chunks[index % self.n_chunks]
+        try:
+            return chunks[index % self.n_chunks]
+        except BaseException as e:
+            print('@@@', chunk_file, index, self.n_chunks, 'index', index % self.n_chunks, len(chunks))
+            raise e
 
     def try_prefetch(self, index):
         if self.prefetch > 0:
