@@ -31,6 +31,7 @@ class DatasetStore(object):
         self.max_length = 0
         self.mix_length = DEFAULT_MAX_LENGTH*10
         self.chunks = []
+        self.n_items = 0
         self.checked_files = {}
         self.logs = []
         self.load_config(append_mode=aargs['append_mode|append'])
@@ -66,6 +67,7 @@ class DatasetStore(object):
             else:
                 self.chunks = []
                 self.chunk_files = chunk_files
+            self.n_items = len(self.chunk_files) * self.n_chunks
             self.max_length = config.get('max_length', self.max_length)
             self.mix_length = config.get('min_length', self.min_length)
             self.logs = self.logs + config.get('logs', [])
@@ -101,6 +103,7 @@ class DatasetStore(object):
             chunk_file = chunkseq_to_filename(len(self.chunk_files), self.prefix, self.file_ext)
             save_chunk_file(self.store_path, chunk_file, self.chunks)
             self.chunk_files.append(chunk_file)
+            self.n_items += len(self.chunks)
             self.chunks = []
 
     def append(self, block: List[int]):
@@ -140,7 +143,7 @@ class DatasetStore(object):
                 if not os.path.exists(compressed_file):
                     compress_file(filepath, compressed=compressed, rm=True)
 
-    def save(self, tokenizer, logs=None, skip_validation=True, compressed='zst'):
+    def save(self, source, tokenizer, logs=None, skip_validation=True, compressed='zst'):
         fraction = 0 # 端数
         if len(self.chunks) > 0:
             fraction = len(self.chunks)
@@ -149,7 +152,14 @@ class DatasetStore(object):
         self.compress(compressed=compressed)
         if logs:
             self.logs.append(logs)
+        n_files = len(self.checked_files)
+        if fraction > 0:
+            n_items = (n_files-1) * self.n_chunks + fraction
+        else:
+            n_items = n_files * self.n_chunks
+        n_tokens = n_items * self.block_size
         config = dict(
+            source = source,
             datatype = self.data_type,
             split = self.split,
             prefix = self.prefix,
@@ -159,6 +169,8 @@ class DatasetStore(object):
             tokenizer_id =  tokenizer_id(tokenizer),
             n_chunks = self.n_chunks,
             fraction = fraction,
+            n_items = n_items,
+            n_tokens = n_tokens,
             block_size = self.block_size,
             max_length = self.max_length,
             min_length = self.min_length,
@@ -169,11 +181,5 @@ class DatasetStore(object):
         )
         with open(self.config_file, "w") as w:
             json.dump(config, w, indent=2)
-        n_files = len(self.checked_files)
-        if fraction > 0:
-            n_items = (n_files-1) * self.n_chunks + fraction
-        else:
-            n_items = n_files * self.n_chunks
-        n_tokens = n_items * self.block_size
         verbose_print(f'チャンク: {n_files}, 件数: {n_items:,}, トークン数: {n_tokens:,}')
 

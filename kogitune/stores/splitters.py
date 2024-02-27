@@ -336,7 +336,7 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
         for a in func_args:
             a['record'].report_to(logs['record'])
     report_split(logs['record'], args)
-    store.save(tokenizer, logs=logs, skip_validation=False)
+    store.save(filenames, tokenizer, logs=logs, skip_validation=False)
 
 def make_local_store(filename:str, tokenizer, args:dict):
     if 'cache_dir' in args and 'store_path' not in args:
