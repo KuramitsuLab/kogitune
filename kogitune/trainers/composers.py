@@ -550,6 +550,10 @@ class DatasetComposer():
         gas = global_batch_size // device_batch_size
         verbose_print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
         overwrite_output_dir = 'resume_from_checkpoint' not in self.args
+        bf16_enabled = args[f'bf16|={is_bf16_available()}']
+        fp16_enabled = False
+        if not bf16_enabled:
+            fp16_enabled=args[f'fp16|={torch.cuda.is_available()}']
         train_args = TrainingArguments(
             output_dir=args['output_dir|=output'],
             overwrite_output_dir=args[f'overwrite_output_dir|={overwrite_output_dir}'],
@@ -573,8 +577,7 @@ class DatasetComposer():
 #            save_only_model=args['save_only_model|=False'],
 #            neftune_noise_alpha=args['neftune_noise_alpha'],
             torch_compile=args['torch_compile|=False'],
-            bf16=args[f'bf16|={is_bf16_available()}'],
-            fp16=args[f'fp16|={torch.cuda.is_available()}'],
+            bf16=bf16_enabled, fp16=fp16_enabled,
         )
         return train_args
     
