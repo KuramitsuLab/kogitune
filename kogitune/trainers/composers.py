@@ -493,14 +493,17 @@ class DatasetComposer():
         if not self.train_dataset:
             batch_size = self.aargs['global_batch_size|batch_size|=1024']
             self.train_dataset = MixierDataset(self.datasets, self.collator_fn, batch_size)
-            resume_path = self.aargs['resume_from_checkpoint']
-            if resume_path:
-                resume_step = get_trained_global_step(resume_path)
-                if resume_step == 0:
-                    verbose_print(f'チェックポイント {resume_path} が見つかりません')
-                if resume_step > 0:
-                    verbose_print(f'チェックポイント step={resume_step} から再開します。')
-                    self.train_dataset.skip(resume_step * batch_size)
+        
+        resume_path = self.aargs['resume_from_checkpoint']
+        if resume_path == True:
+            resume_path = self.aargs['output_dir']
+        if isinstance(resume_path, str):
+            resume_step = get_trained_global_step(resume_path)
+            if resume_step == 0:
+                verbose_print(f'チェックポイント {resume_path} が見つかりません')
+            if resume_step > 0:
+                verbose_print(f'チェックポイント step={resume_step} から再開します。')
+                self.train_dataset.skip(resume_step * batch_size)
         return self.train_dataset
 
     def report(self):
@@ -580,16 +583,18 @@ class DatasetComposer():
                 if model_path is None:
                     self.aargs.raise_unset_key('model_path')
                 if model_path == 'scratch' and not os.path.exists('scratch'):
+                    verbose_print('scratch モデルを生成しますよ')
                     model = new_scratch_llm()
                 else:
                     model = AutoModelForCausalLM.from_pretrained(model_path)
             wandb = load_wandb(aargs)
+            resume_from_checkpoint=aargs['resume_from_checkpoint|=False']
             if 'max_time' in aargs or 'sge_walltime_sec' in aargs:
                 max_time = self.aargs['max_time|sge_walltime_sec']
                 trainer = Trainer(
                     model=model,
                     data_collator=self.get_collator(model),
-                    train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                    train_dataset=self.get_train_dataset(),
                     args=self.get_train_args(),
                     callbacks=[TimeoutStoppingCallback(max_time=max_time)]
                 )
@@ -597,10 +602,9 @@ class DatasetComposer():
                 trainer = Trainer(
                     model=model,
                     data_collator=self.get_collator(model),
-                    train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                    train_dataset=self.get_train_dataset(),
                     args=self.get_train_args(),
                 )
-            resume_from_checkpoint=aargs['resume_from_checkpoint|=False']
             result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
             save_path = aargs['save_path|model_output_path']
             if save_path:
