@@ -474,13 +474,13 @@ class DatasetComposer():
             if collator_fn:
                 self.collator_fn = collator_fn
             else:
-                self.collator_fn = TextBlockCollator(self.max_length, self.args)
+                self.collator_fn = TextBlockCollator(self.max_length, self.aargs)
 
     def with_format(self, type):
         if type == 'tensor' or type == 'torch':
-            self.collator_fn = TensorCollator(self.max_length, self.args)
+            self.collator_fn = TensorCollator(self.max_length, self.aargs)
         if type == 'numpy':
-            self.collator_fn = NumpyCollator(self.max_length, self.args)
+            self.collator_fn = NumpyCollator(self.max_length, self.aargs)
 
     def get_tokenizer(self):
         if not self.tokenizer and len(self.datasets) > 0:
@@ -578,14 +578,14 @@ class DatasetComposer():
             if model is None:
                 model_path = aargs['model_path|model']
                 if model_path is None:
-                    self.args.raise_unset_key('model_path')
+                    self.aargs.raise_unset_key('model_path')
                 if model_path == 'scratch' and not os.path.exists('scratch'):
                     model = new_scratch_llm()
                 else:
                     model = AutoModelForCausalLM.from_pretrained(model_path)
             wandb = load_wandb(aargs)
             if 'max_time' in aargs or 'sge_walltime_sec' in aargs:
-                max_time = self.args['max_time|sge_walltime_sec']
+                max_time = self.aargs['max_time|sge_walltime_sec']
                 trainer = Trainer(
                     model=model,
                     data_collator=self.get_collator(model),
