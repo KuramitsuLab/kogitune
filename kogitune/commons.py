@@ -23,8 +23,10 @@ from .adhocargs import AdhocArguments
 #         return param_specified
 #     return get_dict_multi_keys(os.environ, key, default, format_fn=int)
 
-DEFAULT_TOKENIZER = 'llm-jp/llm-jp-1.3b-v1.0'
+
 DEFAULT_BLOCK_SIZE = 2048
+
+DEFAULT_TOKENIZER = 'llm-jp/llm-jp-1.3b-v1.0'
 
 def load_tokenizer(tokenizer:str = None, aargs=None):
     from transformers import AutoTokenizer

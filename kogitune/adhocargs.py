@@ -46,6 +46,49 @@ def _parse_key_value(key, next_value, args):
             args['files'] = files
     return key, None
 
+def format_unit(num: int, scale=1000)->str:
+    """
+    大きな数をSI単位系に変換して返す
+    """
+    if scale == 1024:
+        if num < scale:
+            return str(num)
+        elif num < scale**2:
+            return f"{num / scale:.2f}K"
+        elif num < scale**3:
+            return f"{num / scale**2:.2f}M"
+        elif num < scale**4:
+            return f"{num / scale**3:.2f}G"
+        elif num < scale**5:
+            return f"{num / scale**4:.2f}T"
+        elif num < scale**6:
+            return f"{num / scale**5:.2f}P"
+        else:
+            return f"{num / scale**6:.2f}Exa"
+    elif scale == 60:
+        if num < 1.0:
+            return f"{num * 1000:.2f}ms"
+        if num < scale:
+            return f"{num:.2f}sec"
+        elif num < scale**2:
+            return f"{num / scale:.2f}min"
+        elif num < (scale**2)*24:
+            return f"{num /(scale**2):.2f}h"
+        else:
+            num2 = num % (scale**2)*24
+            return f"{num//(scale**2)*24}d {num2/(scale**2):.1f}h"
+    else:
+        if num < 1_000:
+            return str(num)
+        elif num < 1_000_000:
+            return f"{num / 1_000:.2}K"
+        elif num < 1_000_000_000:
+            return f"{num / 1_000_000:.2f}M"
+        elif num < 1_000_000_000_000:
+            return f"{num / 1_000_000_000:.2f}B"
+        else:
+            return f"{num / 1_000_000_000_000:.2f}T"
+
 ## ファイル
 
 def get_basename_from_filepath(filepath:str)->str:
@@ -64,8 +107,7 @@ def get_basename_from_filepath(filepath:str)->str:
     filebase, _, _ = filebase.partition('.')
     return filebase
 
-
-
+## コンフィグファイル
 
 def load_yaml(config_file):
     import yaml
@@ -82,7 +124,6 @@ def load_json(config_file):
     with open(config_file, 'r') as file:
         return json.load(file)
 
-
 def load_config(config_file):
     if config_file.endswith('.json'):
         return load_json(config_file)
@@ -90,27 +131,53 @@ def load_config(config_file):
         return load_yaml(config_file)
     return {}
 
+# main adhoc arguments
+
+main_aargs = None
+
+def main_adhoc_arguments():
+    global main_aargs
+    if main_aargs is None:
+        main_aargs = AdhocArguments({})
+    return main_aargs
+
+def verbose_print(*args, **kwargs):
+    aargs = main_adhoc_arguments()
+    aargs.verbose_print(*args, **kwargs)
+
+
+
+# main
+
+
+
 class AdhocArguments(object):
     """
     アドホックな引数パラメータ
     """
-    def __init__(self, args:dict, 
-                 parent=None, 
+    def __init__(self, 
+                 args:dict, 
+                 parent=None,
                  expand_config=None, 
                  use_environ=True,
                  face='🦊'):
         self._args = {}
         self._used_keys = set()
         self._use_environ = use_environ
+        self.face = face
         self.parent = parent
+        if parent:
+            self._use_environ = parent._use_environ
+            self.face = parent.face
         for key, value in args.items():
             if key == expand_config:
                 self.load_config(value)
             else:
                 self._args[key] = value
-        self.face = face
 
     def __repr__(self):
+        if self.parent:
+            return f'{self._args}+{self.parent}'
         return repr(self._args)
 
     def get(self, key, default_value=None):
@@ -121,6 +188,8 @@ class AdhocArguments(object):
                 return self._args[key]
             if key.startswith('='):
                 return parse_argument_value(key[1:])
+            if key.startswith('!'):
+                return self.warn_unset_key(key[0], parse_argument_value(key[1:]))
             if self.parent and key in self.parent :
                 return self.parent[key]
             if self._use_environ:
@@ -137,11 +206,34 @@ class AdhocArguments(object):
 
     def __setitem__(self, key, value):
         self._args[key] = value
-        setattr(self, key, value)
+        # setattr(self, key, value)
         self._used_keys.add(key)
 
     def __contains__(self, key):
-        return key in self._args or key.upper() in os.environ
+        return key in self._args or (self._use_environ and key.upper() in os.environ)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if exc_type is None:
+            for key, value in self._args.items():
+                if key not in self._used_keys:
+                    raise TypeError(f'{key} is an unused keyword')
+
+    def from_kwargs(self, parent_aargs:dict, **kwargs):
+        aargs = AdhocArguments(parent_aargs, parent=self, use_environ=self._use_environ, face=self.face)
+        for key, value in kwargs.items():
+            aargs._args[key] = value
+        return aargs
+
+    @classmethod
+    def from_main(cls, **kwargs):
+        aargs = main_adhoc_arguments()
+        aargs = AdhocArguments({}, parent=aargs)
+        for key, value in kwargs.items():
+            aargs._args[key] = value
+        return aargs
 
     def update(self, otherdict:dict, overwrite=True, used=True):
         for key, value in otherdict.items():
@@ -188,7 +280,6 @@ class AdhocArguments(object):
                 if key in subargs:
                     del subargs[key]
         return subargs
-
 
     def find_options(self, prefix: str, namespace: dict = None):
         if namespace is None:
@@ -245,8 +336,7 @@ class AdhocArguments(object):
         sys.exit(1)
 
     def warn_unset_key(self, key, value):
-        self.print(f'{key}を設定してください//Please set {key}')
-        print(f'とりあえず、{value}をデフォルト値とします。')
+        self.print(f'{key}を忘れずに設定してください。とりあえず{value}にしてます。//Please set {key}')
         return value
 
     def print(self, *args, **kwargs):
@@ -271,6 +361,7 @@ class AdhocArguments(object):
 def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
                           requires:Optional[List[str]]=None,
                           use_environ=True, expand_config=None)->AdhocArguments:
+    global main_aargs
     if subcommands is not None:
         if isinstance(subcommands,str):
             subcommands=subcommands.split('|')
@@ -289,7 +380,7 @@ def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
             args[key.replace('-', '_')] = value
     del args['_']
 
-    args = AdhocArguments(args, 
+    aargs = AdhocArguments(args, 
                           parent=None,
                           expand_config=expand_config, 
                           use_environ=use_environ)
@@ -299,14 +390,38 @@ def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
             requires = requires.split('|')
         lost_found = False
         for key in requires:
-            if key not in args:
-                args.print(f'Option {key} is required.')
+            if key not in aargs:
+                aargs.print(f'Option {key} is required.')
                 lost_found = True
         if lost_found:
             sys.exit(1)
+    main_aargs = aargs
+    return aargs
 
-    return args
+###
+###
+
+
+DEFAULT_TOKENIZER = 'llm-jp/llm-jp-1.3b-v1.0'
+
+def load_tokenizer(tokenizer:str = None, **kwargs):
+    from transformers import AutoTokenizer
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|={DEFAULT_TOKENIZER}']
+        if isinstance(tokenizer, str):
+            local_args = aargs.get_subargs('tokenizer_*|trust_remote_code', exclude='tokenizer_path')
+            if 'trust_remote_code' not in local_args:
+                local_args['trust_remote_code'] = True
+            if 'use_fast' not in local_args:
+                local_args['use_fast'] = False
+            # AutoTokenizer.from_pretrained(tokenizer, legacy=legacy, trust_remote_code=True, use_fast=False)
+            return AutoTokenizer.from_pretrained(tokenizer, **local_args)
+        return tokenizer
+
+
 
 if __name__ == '__main__':
-    args = adhoc_parse_arguments()
-    print(args)
+    aargs = adhoc_parse_arguments()
+    with AdhocArguments.from_main(a=False,b=1) as aargs:
+        print(aargs)
+        print(aargs['a'])

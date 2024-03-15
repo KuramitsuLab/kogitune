@@ -13,25 +13,16 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhocargs import AdhocArguments
-from ..commons import *
+from ..adhocargs import AdhocArguments, verbose_print, load_tokenizer
 from ..file_utils import *
 from ..tokenizers import *
+
+from .gpus import *
+from .callbacks import TimeoutStoppingCallback
+
 from kogitune.stores.splitters import make_local_store
 
 # ChunkedDataset
-
-def get_rank():
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        return torch.distributed.get_rank()
-    else:
-        return 0
-
-def get_world_size():
-    if torch.distributed.is_available() and torch.distributed.is_initialized():
-        return torch.distributed.get_world_size()
-    else:
-        return 1
 
 def url_to_hash(url):
     return hashlib.md5(url.encode()).hexdigest()
@@ -213,7 +204,7 @@ class TokenDataset(Dataset):
         try:
             return chunks[index % self.n_chunks]
         except BaseException as e:
-            print('@@@', chunk_file, index, self.n_chunks, 'index', index % self.n_chunks, len(chunks))
+            # print('@@@', chunk_file, index, self.n_chunks, 'index', index % self.n_chunks, len(chunks))
             raise e
 
     def try_prefetch(self, index):
@@ -241,9 +232,9 @@ def find_dataset_config(url, datatype, max_length, split, cache_dir):
         max_length *= 2
     return None
 
-def prepare_dataset(url_list, max_length, cache_dir, args, tokenizer=None, prefetch=1):
-    datatype = args['data_type|datatype|=text']
-    split = args['split|=train']
+def prepare_dataset(url_list, max_length, cache_dir, aargs, tokenizer=None, prefetch=1):
+    datatype = aargs['data_type|datatype|=text']
+    split = aargs['split|=train']
     global_args = {'datatype': datatype, 'split': split}
     datasets = []
     for url in url_list:
@@ -295,17 +286,17 @@ class Indexer(Dataset):
         random.shuffle(self.dataset.chunk_files)
 
 class TextBlockCollator(object):
-    def __init__(self, max_length, args):
+    def __init__(self, max_length, aargs):
         self.max_length = max_length
-        self.is_seq2seq = args['datatype|data_type|=text'] == 'seq2seq'
+        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
 
     def __call__(self, data):
         return torch.tensor(data[:self.max_length].astype(np.int64), dtype=torch.long)
 
 class NumpyCollator(object):
-    def __init__(self, max_length, args):
+    def __init__(self, max_length, aargs):
         self.max_length = max_length
-        self.is_seq2seq = args['datatype|data_type|=text'] == 'seq2seq'
+        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
 
     def __call__(self, data):
         return {
@@ -313,9 +304,9 @@ class NumpyCollator(object):
         }
 
 class TensorCollator(object):
-    def __init__(self, max_length, args):
+    def __init__(self, max_length, aargs):
         self.max_length = max_length
-        self.is_seq2seq = args['datatype|data_type|=text'] == 'seq2seq'
+        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
 
     def __call__(self, data):
         if self.is_seq2seq:
@@ -435,58 +426,55 @@ def create_output_path(run_name):
             return output_path
     return f'output_{run_name}'
 
-def check_composer_args(args:None):
-    args = AdhocArguments.to_adhoc(args)
+def check_composer_args(aargs: None):
+    if 'resume_from_checkpoint' in aargs and not aargs['overwrite_output_dir|=True']:
+        resume_from_checkpoint = safe_dir(str(aargs['resume_from_checkpoint']))
+        if 'output_dir' not in aargs and os.path.isdir(resume_from_checkpoint):
+            aargs['output_dir'] = os.path.dirname(resume_from_checkpoint)
 
-    if 'resume_from_checkpoint' in args and not args['overwrite_output_dir|=True']:
-        resume_from_checkpoint = safe_dir(str(args['resume_from_checkpoint']))
-        if 'output_dir' not in args and os.path.isdir(resume_from_checkpoint):
-            args['output_dir'] = os.path.dirname(resume_from_checkpoint)
+    if 'project' not in aargs:
+        aargs['project'] = f'kogitune-sandbox'
 
-    if 'project' not in args:
-        args['project'] = f'kogitune-sandbox'
+    if 'run_name' not in aargs:
+        aargs['run_name'] = f'run{os.getpid()}'
 
-    if 'run_name' not in args:
-        args['run_name'] = f'run{os.getpid()}'
+    if 'output_dir' not in aargs:
+        aargs['output_dir'] = create_output_path(aargs['run_name'])
+        verbose_print(f'出力先:', aargs['output_dir'])
 
-    if 'output_dir' not in args:
-        args['output_dir'] = create_output_path(args['run_name'])
-        verbose_print(f'出力先:', args['output_dir'])
-
-    return args
+    return aargs
 
 class DatasetComposer():
-    def __init__(self, url_list:List[str], max_length:int = None, 
-                 args = None, aargs = None, 
-                 cache_dir = None, cleanup=False, prefetch = 1,  
-                 collator_fn = None, tokenizer=None):
-        self.args = check_composer_args(aargs or args)
-        self.max_length = max_length or self.args['max_length|block_size']
-        if self.max_length is None:
-            self.max_length=self.args.warn_unset_key('max_length', 512)
+    def __init__(self, url_list:List[str],  
+                 collator_fn = None, tokenizer=None, 
+                 cleanup=False, prefetch = 1, **kwargs):
+        with AdhocArguments.from_main(**kwargs) as aargs:
+            # self.args = check_composer_args(aargs)
+            self.aargs = aargs
+            self.max_length = aargs['max_length|block_size|!512']
 
-        # キャッシュ
-        cache_dir = cache_dir or self.args['kg_cache_dir|cache_dir']
-        if cache_dir is None:
-            self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
-            self.cleanup = False if get_rank() > 0 else True
-        else:
-            self.cache_dir = safe_dir(cache_dir)
-            self.cleanup = False if get_rank() > 0 else cleanup
-        if os.path.isdir(self.cache_dir):
-            verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
-            self.cleanup = False
-        os.makedirs(self.cache_dir, exist_ok=True)
-        # self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
+            # キャッシュ
+            cache_dir = aargs['kg_cache_dir|cache_dir']
+            if cache_dir is None:
+                self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
+                self.cleanup = False if get_rank() > 0 else True
+            else:
+                self.cache_dir = safe_dir(cache_dir)
+                self.cleanup = False if get_rank() > 0 else cleanup
+            if os.path.isdir(self.cache_dir):
+                verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
+                self.cleanup = False
+            else:
+                os.makedirs(self.cache_dir, exist_ok=True)
 
-        url_list = parse_url_list(url_list)
-        self.tokenizer = tokenizer
-        self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, self.args, tokenizer, prefetch=prefetch)
-        self.train_dataset = None
-        if collator_fn:
-            self.collator_fn = collator_fn
-        else:
-            self.collator_fn = TextBlockCollator(self.max_length, self.args)
+            url_list = parse_url_list(url_list)
+            self.tokenizer = tokenizer
+            self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, aargs, tokenizer, prefetch=prefetch)
+            self.train_dataset = None
+            if collator_fn:
+                self.collator_fn = collator_fn
+            else:
+                self.collator_fn = TextBlockCollator(self.max_length, self.args)
 
     def with_format(self, type):
         if type == 'tensor' or type == 'torch':
@@ -497,13 +485,15 @@ class DatasetComposer():
     def get_tokenizer(self):
         if not self.tokenizer and len(self.datasets) > 0:
             self.tokenizer = load_tokenizer(self.datasets[0].tokenizer_path)
+        if not self.tokenizer:
+            self.tokenizer = load_tokenizer()
         return self.tokenizer
 
-    def get_train_dataset(self, batch_size=None, resume=None):
+    def get_train_dataset(self):
         if not self.train_dataset:
-            batch_size = batch_size or self.args['global_batch_size|batch_size|=1024']
+            batch_size = self.aargs['global_batch_size|batch_size|=1024']
             self.train_dataset = MixierDataset(self.datasets, self.collator_fn, batch_size)
-            resume_path = resume or self.args['resume_from_checkpoint']
+            resume_path = self.aargs['resume_from_checkpoint']
             if resume_path:
                 resume_step = get_trained_global_step(resume_path)
                 if resume_step == 0:
@@ -541,126 +531,82 @@ class DatasetComposer():
                                                pad_to_multiple_of=8, 
                                                mlm=False)
 
-    def get_train_args(self, device_batch_size=None, **kwargs):
+    def get_train_args(self, **kwargs):
         from transformers import TrainingArguments
-        self.args.update(kwargs)
-        args = self.args
-        global_batch_size = args['global_batch_size|batch_size|=1024']
-        device_batch_size = device_batch_size or args['device_batch_size|=16']
-        gas = global_batch_size // device_batch_size
-        verbose_print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
-        overwrite_output_dir = 'resume_from_checkpoint' not in self.args
-        bf16_enabled = args[f'bf16|={is_bf16_available()}']
-        fp16_enabled = False
-        if not bf16_enabled:
-            fp16_enabled=args[f'fp16|={torch.cuda.is_available()}']
-        train_args = TrainingArguments(
-            output_dir=args['output_dir|=output'],
-            overwrite_output_dir=args[f'overwrite_output_dir|={overwrite_output_dir}'],
-            per_device_train_batch_size=args[f'per_device_train_batch_size|={device_batch_size}'],
-            gradient_accumulation_steps=args[f'gradient_accumulation_steps|={gas}'],
-            # per_device_eval_batch_size=64,
-            auto_find_batch_size=args['auto_find_batch_size|=True'],  # バッチサイズ自動
-            do_eval=args['do_eval|=False'],
-            # evaluation_strategy='steps',
-            # eval_steps=50,
-            optim=args['optim|=adamw_torch_fused'],
-            num_train_epochs=args['num_train_epochs|=1'],
-            max_steps=args['max_steps|=-1'],
-            weight_decay=args['weight_decay|=0.1'],
-            lr_scheduler_type=args['lr_scheduler_type|=constant'],
-            learning_rate=args['learning_rate|=4e-4'], #Phi-1
-            logging_steps=args['logging_steps|=10'],
-            dataloader_pin_memory=False,
-            save_steps=args['save_steps|=1000'],
-            save_total_limit=args['save_total_limit|=2'],
-#            save_only_model=args['save_only_model|=False'],
-#            neftune_noise_alpha=args['neftune_noise_alpha'],
-            torch_compile=args['torch_compile|=False'],
-            bf16=bf16_enabled, fp16=fp16_enabled,
-        )
-        return train_args
+        with AdhocArguments.from_main(**kwargs) as aargs:
+            global_batch_size = aargs['global_batch_size|batch_size|=1024']
+            device_batch_size = aargs['device_batch_size|=16']
+            gas = global_batch_size // device_batch_size
+            verbose_print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
+            overwrite_output_dir = 'resume_from_checkpoint' not in aargs
+            bf16_enabled = aargs[f'bf16|={bf16_is_available()}']
+            fp16_enabled = False
+            if not bf16_enabled:
+                fp16_enabled=aargs[f'fp16|={torch.cuda.is_available()}']
+            train_args = TrainingArguments(
+                output_dir=aargs['output_dir|=output'],
+                overwrite_output_dir=aargs[f'overwrite_output_dir|={overwrite_output_dir}'],
+                per_device_train_batch_size=aargs[f'per_device_train_batch_size|={device_batch_size}'],
+                gradient_accumulation_steps=aargs[f'gradient_accumulation_steps|={gas}'],
+                # per_device_eval_batch_size=64,
+                auto_find_batch_size=aargs['auto_find_batch_size|=True'],  # バッチサイズ自動
+                do_eval=aargs['do_eval|=False'],
+                # evaluation_strategy='steps',
+                # eval_steps=50,
+                optim=aargs['optim|=adamw_torch_fused'],
+                num_train_epochs=aargs['num_train_epochs|=1'],
+                max_steps=aargs['max_steps|=-1'],
+                weight_decay=aargs['weight_decay|=0.1'],
+                lr_scheduler_type=aargs['lr_scheduler_type|=cosine'],
+                learning_rate=aargs['learning_rate|=4e-4'], 
+                logging_steps=aargs['logging_steps|=10'],
+                dataloader_pin_memory=False,
+                save_steps=aargs['save_steps|=1000'],
+                save_total_limit=aargs['save_total_limit|=2'],
+    #            save_only_model=args['save_only_model|=False'],
+    #            neftune_noise_alpha=args['neftune_noise_alpha'],
+                torch_compile=aargs['torch_compile|=False'],
+                bf16=bf16_enabled, 
+                fp16=fp16_enabled,
+            )
+            return train_args
     
-    def train(self, model=None, save_path=None):
+    def train(self, model=None, **kwargs):
         from transformers import Trainer, AutoModelForCausalLM
-        from kogitune.trainers.scratch import print_summary
-        if model is None:
-            model_path = self.args['resume_from_checkpoint|model_path|model']
-            if model_path is None:
-                self.args.raise_unset_key('model_path')
-            model = AutoModelForCausalLM.from_pretrained(model_path)
-        resume_from_checkpoint=self.args['resume_from_checkpoint|=False']
-        wandb = load_wandb(self.args)
-        if 'max_time' in self.args or 'sge_walltime_sec' in self.args:
-            max_time=self.args['max_time|sge_walltime_sec']
-            verbose_print(f'安全に止めるタイマーをセットしました。{max_time}')
-            trainer = Trainer(
-                model=model,
-                data_collator=self.get_collator(model),
-                train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
-                args=self.get_train_args(),
-                callbacks=[TimeoutStoppingCallback(max_time=max_time)]
-            )
-        else:
-            trainer = Trainer(
-                model=model,
-                data_collator=self.get_collator(model),
-                train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
-                args=self.get_train_args(),
-            )
-        result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-        save_path = save_path or self.args['save_path']
-        if save_path:
-            self.get_tokenizer().save_pretrained(save_path)
-            model.save_pretrained(save_path)
-        print_summary(result)
-        wandb.finish()
-        return result
-
-
-def is_bf16_available():
-    if torch.cuda.is_available():
-        num_gpus = torch.cuda.device_count()
-        for i in range(num_gpus):
-            gpu_name = torch.cuda.get_device_name(i)
-            if 'A100' in gpu_name or 'H100' in gpu_name:
-                return True
-    return False
-
-def parse_time_as_second(time:str):
-    if isinstance(time, int):
-        return time
-    hms = map(int, time.split(':'))
-    if len(hms) == 3:
-        return hms[0] * 3600 + hms[1] * 60 + hms[2]
-    return hms[0] * 3600
-
-import transformers
-
-class TimeoutStoppingCallback(transformers.TrainerCallback):
-
-    def __init__(self, max_time: Union[int,str], safety_time=300, safety_margin=1.05):
-        self.start_time = time.time()
-        self.estimated_end_time = self.start_time + parse_time_as_second(max_time) - 300
-        self.save_count = 0
-        self.margin = safety_margin
-        self.safety_time = safety_time
-
-    def on_save(self, args, state, control, **kwargs):
-        current_time = time.time()
-        self.save_count += 1
-        interval = (current_time - self.start_time) / self.save_count
-        remaining = self.estimated_end_time - current_time
-        verbose_print(f'残り時間 {format_unit(remaining, scale=60)} 間隔 {format_unit(interval, scale=60)}')
-        if interval * self.margin > remaining:
-            verbose_print(f'そろそろ時間だから終了するよ！')
-            control.should_training_stop = True
-
-    def on_step_end(self, args, state, control, **kwargs):
-        current_time = time.time()
-        remaining = self.estimated_end_time - current_time
-        if remaining < 300:
-            verbose_print(f'残り時間 {format_unit(remaining, scale=60)} が少ないから緊急停止するよ')
-            control.should_save = True
-            control.should_training_stop = True
+        from kogitune.trainers.scratch import new_scratch_llm, print_summary
+        with AdhocArguments.from_kwargs(**kwargs) as aargs:
+            if model is None:
+                model_path = aargs['model_path|model']
+                if model_path is None:
+                    self.args.raise_unset_key('model_path')
+                if model_path == 'scratch' and not os.path.exists('scratch'):
+                    model = new_scratch_llm()
+                else:
+                    model = AutoModelForCausalLM.from_pretrained(model_path)
+            wandb = load_wandb(aargs)
+            if 'max_time' in aargs or 'sge_walltime_sec' in aargs:
+                max_time = self.args['max_time|sge_walltime_sec']
+                trainer = Trainer(
+                    model=model,
+                    data_collator=self.get_collator(model),
+                    train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                    args=self.get_train_args(),
+                    callbacks=[TimeoutStoppingCallback(max_time=max_time)]
+                )
+            else:
+                trainer = Trainer(
+                    model=model,
+                    data_collator=self.get_collator(model),
+                    train_dataset=self.get_train_dataset(resume=resume_from_checkpoint),
+                    args=self.get_train_args(),
+                )
+            resume_from_checkpoint=aargs['resume_from_checkpoint|=False']
+            result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+            save_path = aargs['save_path|model_output_path']
+            if save_path:
+                self.get_tokenizer().save_pretrained(save_path)
+                model.save_pretrained(save_path)
+            print_summary(result)
+            wandb.finish()
+            return result
 
