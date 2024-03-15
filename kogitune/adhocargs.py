@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 import os
 import sys
 import json
@@ -221,11 +221,6 @@ class AdhocArguments(object):
                 if key not in self._used_keys:
                     raise TypeError(f'{key} is an unused keyword')
 
-    def from_kwargs(self, parent_aargs:dict, **kwargs):
-        aargs = AdhocArguments(parent_aargs, parent=self, use_environ=self._use_environ, face=self.face)
-        for key, value in kwargs.items():
-            aargs._args[key] = value
-        return aargs
 
     @classmethod
     def from_main(cls, **kwargs):
@@ -234,6 +229,13 @@ class AdhocArguments(object):
         for key, value in kwargs.items():
             aargs._args[key] = value
         return aargs
+
+    def from_kwargs(self, **kwargs):
+        aargs = AdhocArguments({}, parent=self)
+        for key, value in kwargs.items():
+            aargs._args[key] = value
+        return aargs
+
 
     def update(self, otherdict:dict, overwrite=True, used=True):
         for key, value in otherdict.items():

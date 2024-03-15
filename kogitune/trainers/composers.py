@@ -533,7 +533,7 @@ class DatasetComposer():
 
     def get_train_args(self, **kwargs):
         from transformers import TrainingArguments
-        with AdhocArguments.from_main(**kwargs) as aargs:
+        with self.aargs.from_kwargs(**kwargs) as aargs:
             global_batch_size = aargs['global_batch_size|batch_size|=1024']
             device_batch_size = aargs['device_batch_size|=16']
             gas = global_batch_size // device_batch_size
@@ -574,7 +574,7 @@ class DatasetComposer():
     def train(self, model=None, **kwargs):
         from transformers import Trainer, AutoModelForCausalLM
         from kogitune.trainers.scratch import new_scratch_llm, print_summary
-        with AdhocArguments.from_kwargs(**kwargs) as aargs:
+        with self.aargs.from_kwargs(**kwargs) as aargs:
             if model is None:
                 model_path = aargs['model_path|model']
                 if model_path is None:
