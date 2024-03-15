@@ -189,7 +189,7 @@ class AdhocArguments(object):
             if key.startswith('='):
                 return parse_argument_value(key[1:])
             if key.startswith('!'):
-                return self.warn_unset_key(key[0], parse_argument_value(key[1:]))
+                return self.warn_unset_key(keys[0], parse_argument_value(key[1:]))
             if self.parent and key in self.parent :
                 return self.parent[key]
             if self._use_environ:
@@ -338,7 +338,7 @@ class AdhocArguments(object):
         sys.exit(1)
 
     def warn_unset_key(self, key, value):
-        self.print(f'{key}を忘れずに設定してください。とりあえず{value}にしてます。//Please set {key}')
+        self.print(f'{key}を忘れずに設定してください。とりあえず{value}にします。//Please set {key}')
         return value
 
     def print(self, *args, **kwargs):
