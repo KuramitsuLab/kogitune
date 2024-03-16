@@ -8,7 +8,7 @@ from transformers import AutoTokenizer
 from ..adhocargs import *
 from ..tokenizers import *
 from ..commons import *
-from ..fileutils import *
+from ..utils_file import *
 from .store import DatasetStore
 from .section import find_section_fn
 

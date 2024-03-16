@@ -4,7 +4,17 @@ try:
 except:
     from tqdm import tqdm
 
-class DummyTqdm:
+from .adhocargs import AdhocArguments
+
+def configure_tqdm(iterable, desc=None, **kwargs):
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        enabled_tqdm = aargs['enabled_tqdm|=true']
+        if enabled_tqdm:
+            return tqdm(iterable, desc=desc)
+        else:
+            return iterable
+
+class _DummyTqdm:
     def update(self, n=1):
         pass
 
@@ -17,7 +27,7 @@ class DummyTqdm:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-def progress_bar(desc=None, total=None, **kwargs):
+def configure_progress_bar(desc=None, total=None, **kwargs):
     """
     from kogitune.utils_tqdm import progress_bar
 
@@ -25,11 +35,10 @@ def progress_bar(desc=None, total=None, **kwargs):
         for n in range(10):
             pbar.update()
     """
-    from .adhocargs import AdhocArguments
     with AdhocArguments.from_main(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|=true']
         if enabled_tqdm:
             return tqdm(desc=desc, total=total)
         else:
-            return DummyTqdm()
+            return _DummyTqdm()
 

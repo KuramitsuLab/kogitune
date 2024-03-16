@@ -5,7 +5,7 @@ import numpy as np
 
 from ..tokenizers import *
 from ..commons import *
-from ..fileutils import *
+from ..utils_file import *
 from ..adhocargs import AdhocArguments
 
 ## meta

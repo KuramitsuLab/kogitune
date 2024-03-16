@@ -4,6 +4,7 @@ import sys
 import json
 import re
 import inspect
+from urllib.parse import urlparse, parse_qs
 
 def parse_argument_value(value):
     try:
@@ -19,6 +20,29 @@ def parse_argument_value(value):
     if value.lower() == 'false':
         return False
     return value
+
+def parse_path_arguments(url_or_filepath: str, include_url=True):
+    parsed_url = urlparse(url_or_filepath)
+    options = parse_qs(parsed_url.query)
+    args = {k: parse_argument_value(v[0]) for k, v in options.items()}
+    args['path'] = parsed_url.path
+    if include_url:
+        args['url_scheme'] = parsed_url.scheme
+        args['url_host'] = parsed_url.netloc
+        if parsed_url.username:
+            args['userame'] = parsed_url.username
+            args['password'] = parsed_url.password
+        if parsed_url.port:
+            args['port'] = parsed_url.port
+    if len(parsed_url.scheme):
+        if parsed_url.port:
+            args['url'] = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
+        else:
+            args['url'] = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+    else:
+        args['url'] = f"{parsed_url.path}"
+    return args
+
 
 _key_pattern = re.compile(r'^[A-Za-z0-9\.\-_]+\=')
 

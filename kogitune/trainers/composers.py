@@ -14,7 +14,7 @@ import torch
 from torch.utils.data import Dataset
 
 from ..adhocargs import AdhocArguments, verbose_print, load_tokenizer
-from ..fileutils import *
+from ..utils_file import *
 from ..tokenizers import *
 
 from .gpus import *

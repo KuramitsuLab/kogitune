@@ -2,7 +2,7 @@ from typing import Optional
 import json
 # import os
 # from kogitune.adhocargs import adhoc_parse_arguments
-from kogitune.fileutils import zopen, filelines, read_multilines, rename_with_linenum
+from kogitune.utils_file import zopen, filelines, read_multilines, rename_with_linenum
 
 from tqdm import tqdm
 from multiprocess import Pool

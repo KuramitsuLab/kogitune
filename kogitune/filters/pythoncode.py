@@ -1,7 +1,7 @@
 from typing import List
 import re
 import ast
-from kogitune.fileutils import filelines, zopen
+from kogitune.utils_file import filelines, zopen
 from .lang_ja import *
 from .replace import *
 

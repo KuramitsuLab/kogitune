@@ -14,39 +14,69 @@ import numpy as np
 import gzip
 import pyzstd
 
-from tqdm import tqdm
+from utils_tqdm import configure_progress_bar
 
-class DummyTqdm:
-    def update(self, n=1):
-        pass
-    def close(self):
-        pass
+# パス
 
-def switch_tqdm(**kwargs):
-    from .adhocargs import AdhocArguments
-    with AdhocArguments.from_main(**kwargs) as aargs:
-        enabled_tqdm = aargs['enabled_tqdm|=True']
-        if enabled_tqdm:
-            return tqdm
-        else:
-            DummyTqdm()
+"""
+def parse_url_list(url_list=[]):
+    if isinstance(url_list, str):
+        if os.path.exists(url_list):
+            with open(url_list) as f:
+                return [url.strip() for url in f.readlines() if url.strip() != '' and not url.startswith('#')]
+        return url_list.split('|')
+    return url_list
 
-
-
-
-def check_zstd_installed():
+def _convert_to_number(value):
+    lower_string = str(value).lower()
+    if lower_string == 'true':
+        return True
+    if lower_string == 'false':
+        return False
     try:
-        # 'zstd --version' コマンドを実行してみる
-        result = subprocess.run(["zstd", "--version"], capture_output=True, text=True, check=True)
-        # コマンドの実行に成功した場合、zstd はインストールされている
-        return True, result.stdout
-    except subprocess.CalledProcessError as e:
-        # コマンドの実行に失敗した場合、zstd はインストールされていないか、別の問題がある
-        return False, e.stderr
-    except FileNotFoundError:
-        # zstd コマンドが見つからない場合
-        return False, "zstd command not found"
+        return int(value)
+    except ValueError:
+        try:
+            return float(value)
+        except ValueError:
+            return str(value)
 
+def parse_url_args(url, args={}):
+    parsed_url = urlparse(url)
+    param_args = parse_qs(parsed_url.query)
+    param_args = {k: _convert_to_number(v[0]) for k, v in param_args.items()}
+    param_args['url_scheme'] = parsed_url.scheme
+    param_args['url_host'] = parsed_url.netloc
+    param_args['url_path'] = parsed_url.path
+    if parsed_url.username:
+        param_args['url_userame'] = parsed_url.username
+        param_args['url_password'] = parsed_url.password
+    if len(parsed_url.scheme):
+        if parsed_url.port:
+            param_args['url_port'] = parsed_url.port
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
+        else:
+            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+    else:
+        base_url = f"{parsed_url.path}"
+        base_dir = os.path.abspath(base_url)
+        if os.path.isdir(base_dir):
+            base_url = base_dir
+    args = args.copy()
+    args.update(param_args)
+    return safe_dir(base_url), args
+
+def basename_from_url(url, ext='', prefix=''):
+    if isinstance(url, (list, tuple)):
+        url = url[0]
+    _, _args = parse_url_args(url, {})
+    base = _args['url_path']
+    if '/' in base:
+        _, _, base = base.rpartition('/')
+    if ext:
+        return f'{prefix}{base}'
+    return base
+"""
 
 # ファイルシステム
 
@@ -64,6 +94,7 @@ def safe_join_path(dir, file):
         file = file[1:]
     return f'{dir}/{file}'
 
+'''
 def safe_new_file(filebase, ext, max=1000):
     filename=f'{filebase}.{ext}'
     if not os.path.exists(filename):
@@ -73,6 +104,7 @@ def safe_new_file(filebase, ext, max=1000):
         if not os.path.exists(filename):
             break
     return filename
+'''
 
 def get_filebase(filename):
     filebase = filename
@@ -142,47 +174,73 @@ def get_linenum(filepath):
     return c
 
 
-def collator_none(s):
-    return s
+# readline
 
-def collator_strip(s):
-    return s.strip()
-
-def collator_json(s):
-    return json.loads(s)['text']
-
-def find_collator(s):
-    func = globals().get(f'collator_{s}')
-    if func is None:
-        patterns = [s.replace('collator_', '') for s in globals() if s.startswith('collator_')]
-        raise ValueError(f'collator_{s} is not found. Select pattern from {patterns}')
-    return func
-
-class JSONTemplate(object):
+class _JSONTemplate(object):
     def __init__(self, template='{text}'):
         self.template = template
     def __call__(self, s) -> str:
         return self.template.format(**json.loads(s))
 
-def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, template=None, collator = 'strip', tqdm = None):
+def _collator_none(s):
+    return s
+
+def _collator_strip(s):
+    return s.strip()
+
+def _collator_json(s):
+    return json.loads(s)['text']
+
+def _find_reader_fn(reader_name):
+    func = globals().get(f'_reader_{reader_name}')
+    if func is None:
+        patterns = [s.replace('_reader_', '') for s in globals() if s.startswith('_reader_')]
+        raise ValueError(f'_reader_{reader_name} is not found. Select pattern from {patterns}')
+    return func
+
+def configure_line_reader(**kwargs):
+    from .adhocargs import AdhocArguments
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        template = aargs['json_template']
+        if template:
+            return _JSONTemplate(template)
+        reader_name = aargs['line_reader|=strip']
+        return _find_reader_fn(reader_name)
+
+def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_reader = 'strip'):
+    reader_fn = configure_line_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
-    for filename in filenames:
-        if tqdm is not None:
-            N = get_linenum(filename) if N==-1 else N
-            pbar = tqdm(total=N, desc=filename)
-        else:
-            pbar = DummyTqdm()
-        if template:
-            collator_fn = JSONTemplate(template)
-        else:
-            collator_fn = find_collator(collator)
+    for i, filename in enumerate(filenames):
+        N = get_linenum(filename) if N==-1 else N
+        pbar = configure_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
+        with zopen(filename) as f:
+            line = f.readline()
+            c=0
+            while line:
+                line = reader_fn(line)
+                c+=1
+                pbar.update()
+                yield line
+                if N != -1 and c >= N:
+                    break
+                line = f.readline()
+            yield line
+        pbar.close()
+
+def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip', tqdm = None):
+    reader_fn = configure_line_reader(json_template=json_template, line_reader=line_reader)
+    if isinstance(filenames, str):
+        filenames = filenames.split('|')
+    for i, filename in enumerate(filenames):
+        N = get_linenum(filename) if N==-1 else N
+        pbar = configure_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         buffer=[]
         with zopen(filename) as f:
             line = f.readline()
             c=0
             while line:
-                buffer.append(collator_fn(line))
+                buffer.append(reader_fn(line))
                 c+=1
                 pbar.update()
                 if len(buffer) == bufsize:
@@ -193,19 +251,6 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, template
                 line = f.readline()
             yield buffer
         pbar.close()
-
-def filelines(filename, N=-1, tqdm = True):
-    from tqdm import tqdm
-    N = get_linenum(filename) if N==-1 else N
-    with tqdm(total=N, desc=filename) as pbar:
-        with zopen(filename) as f:
-            line = f.readline()
-            c=1
-            while line and c <= N:
-                pbar.update()
-                yield line.strip()
-                line = f.readline()
-                c += 1
 
 
 ######## OLD?
@@ -311,282 +356,6 @@ def iterate_line(filename, N=None, args={}):
         pbar.close()
 """
 
-def _makedirs(path):
-    dir, _,  file = path.rpartition("/")
-    if '.' in file: #拡張子が含まれる場合
-        os.makedirs(dir,  exist_ok=True)
-    elif not os.path.isfile(path):
-        os.makedirs(path,  exist_ok=True)
-
-def get_file_sha1(filepath: str):
-    # ファイルをバイナリモードで読み込む
-    with open(filepath, 'rb') as f:
-        # ファイルの内容を読み込む
-        content = f.read()
-        # SHA-1ハッシュオブジェクトを作成
-        sha1 = hashlib.sha1()
-        # ファイルの内容をハッシュオブジェクトに追加
-        sha1.update(content)
-        # 16進数でハッシュ値を取得
-        sha1_hexdigest = sha1.hexdigest()
-    return sha1_hexdigest
-
-def get_filesize(file_path):
-    if os.path.exists(file_path) and os.path.isfile(file_path):
-        return os.path.getsize(file_path)
-    else:
-        return -1
-
-def touch(file_path):
-    file = Path(file_path)
-    file.touch(exist_ok=True)
-
-def compress_file(filename, compressed='zst', rm=False, sync=True):
-    if filename.endswith(f'.{compressed}'):
-        return filename
-    if os.path.exists(f'{filename}.{compressed}'):
-        return f'{filename}.{compressed}'
-    if compressed == 'zst':
-        if rm:
-            cmd = f"zstd -fq --rm {filename}"
-        else:
-            cmd = f"zstd -fq {filename}"
-        if not sync:
-            cmd = f'{cmd} &'
-        subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-        return f'{filename}.zst'
-    return filename
-
-def uncompress_file(filename, compressed='zst', rm=False, sync=True):
-    if not filename.endswith(f'.{compressed}'):
-        filename2 = f'{filename}.{compressed}'
-        if os.path.exists(filename2):
-            filename = filename2
-        else:
-            return filename
-    if compressed == 'zst':
-        unzstd_filename = filename[:-4]
-        if not os.path.exists(unzstd_filename):
-            if rm:
-                cmd = f"zstd -dfq --rm {filename}"
-            else:
-                cmd = f"zstd -dfq {filename}"
-            subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-        return unzstd_filename
-    return filename
-
-def zstd_file(filename, rm=False, sync=True):
-    if not os.path.exists(f'{filename}.zst'):
-        if rm:
-            cmd = f"zstd -fq --rm {filename}"
-        else:
-            cmd = f"zstd -fq {filename}"
-        if not sync:
-            cmd = f'{cmd} &'
-        subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-    return f'{filename}.zst'
-
-def unzstd_file(filename, rm=False, sync=True):
-    if filename.endswith('.zst'):
-        unzstd_filename = filename[:-4]
-        if not os.path.exists(unzstd_filename):
-            if rm:
-                cmd = f"zstd -dfq --rm {filename}"
-            else:
-                cmd = f"zstd -dfq {filename}"
-            result = subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
-        return unzstd_filename
-    # else:
-    #     if not os.path.exists(filename) and os.path.exists(f'{filename}.zst'):
-    #         return unzstd_file(f'{filename}.zst', rm=rm, sync=sync)
-    return filename
-
-def wait_for_file(file_path, timeout=60):
-    """
-    指定されたファイルが存在するかを定期的にチェックし、
-    タイムアウトまでにファイルが見つかった場合は True を返します。
-    タイムアウトした場合は False を返します。
-    """
-    start_time = time.time()
-    end_time = start_time + timeout
-    while time.time() < end_time:
-        if get_filesize(file_path) > 0:
-            verbose_print(f'{time.time()-start_time:.2f}秒, 待ちました')
-            return True  # ファイルが見つかった
-        time.sleep(0.5)  # 1秒待つ
-    return False  # タイムアウト
-
-def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, verbose=True):
-    remote_file = safe_join_path(url_base, file_path)
-    cached_file = safe_join_path(cache_dir, file_path)
-    # ディレクトリを作っておく
-    os.makedirs(cached_file.rpartition("/")[0], exist_ok=True)
-    cached_file_size = get_filesize(cached_file)
-    if cached_file_size > 0:
-        return cached_file
-
-    # コマンド
-    if compressed == 'zst':
-        temp_file = cached_file.replace('npz', 'tmp')
-        if remote_file.startswith('https://') or remote_file.startswith('http://'):
-            cmd = f"wget -qO {temp_file}.zst {remote_file}.zst && zstd -dfq --rm {temp_file}.zst && mv {temp_file} {cached_file}"
-        else:
-            cmd = f"zstd -dfq {remote_file}.zst && mv {remote_file} {cached_file}"
-    else:
-        temp_file = cached_file.replace('npz', 'tmp')
-        if remote_file.startswith('https://') or remote_file.startswith('http://'):
-            cmd = f"wget -qO {temp_file} {remote_file} && mv {temp_file} {cached_file}"
-        else:
-            cmd = f"cp {remote_file} {cached_file}"
-    
-    if sync:
-        if cached_file_size == 0:
-            #verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
-            if wait_for_file(cached_file, 30):
-                return cached_file
-        touch(cached_file)
-        res=subprocess.call(cmd, shell=True)
-        cached_file_size = get_filesize(cached_file)
-        if cached_file_size == 0:
-            if verbose:
-                verbose_print(f'ダウンロード失敗 file={cached_file} by', cmd)
-            os.remove(cached_file)
-        return cached_file
-
-    if get_filesize(cached_file) == -1:
-        touch(cached_file)
-        #verbose_print('プレフェッチ', remote_file, cmd)
-        subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
-    return None
 
 
-# chunk file 
-
-def chunkseq_to_filename(chunkseq:int, prefix:str, file_ext:str):
-    dir = f"{(chunkseq//100):04d}"
-    return safe_join_path(dir, f"{prefix}_{(chunkseq%100):02d}.{file_ext}")
-
-def save_chunk_file(base_dir:str, chunk_file:str, chunks:List[np.ndarray]):
-    filepath = safe_join_path(base_dir, chunk_file)
-    _makedirs(filepath)
-    if filepath.endswith('.npz'):
-        np.savez(filepath, *chunks)
-
-def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
-    if base_dir=='':
-        filepath = chunk_file
-    else:
-        filepath = safe_join_path(base_dir, chunk_file)
-    try:
-        npz = np.load(filepath, allow_pickle=True)
-        chunks = [npz[n] for n in npz.files]
-        if subblocks > 1:
-            newchunks=[]
-            for chunk in chunks:
-                splits = np.array_split(chunk, subblocks)
-                newchunks.extend(splits)
-            return newchunks
-        return chunks
-    except BaseException as e:
-        verbose_print(f'チャンクファイルの破損 {filepath}: 原因 {e}')
-        return None
-
-def check_chunk_file(base_dir:str, chunk_file:str, checks: dict):
-    filepath = safe_join_path(base_dir, chunk_file)
-    if 'filesize' in checks:
-        if get_filesize(filepath) != checks['filesize']:
-            return False
-    if 'sha1' in checks:
-        if get_file_sha1(filepath) != checks['sha1']:
-            return False
-    return True
-
-def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
-    d = {}
-    for chunk_file in tqdm(chunk_files, desc='File validation.'):
-        if not load_chunk_file(base_dir, chunk_file):
-            return None
-        filepath = safe_join_path(base_dir, chunk_file)
-        checks = {'filesize': get_filesize(filepath), 'sha1': get_file_sha1(filepath)}
-        if not check_chunk_file(base_dir, chunk_file, checks):
-            verbose_print(f'broken chunk file {chunk_file}')
-            return None
-        d[chunk_file] = checks
-    return d
-
-def shuffle_chunk_files(store_path: str, files:List[str], random_seed=42):
-    for k in range(4):
-        random.shuffle(files)
-        for i in tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
-            chunks = load_chunk_file(store_path, files[i])
-            chunks2 = load_chunk_file(store_path, files[i+1])
-            length = len(chunks)
-            merged_chunks = chunks+chunks2
-            random.shuffle(merged_chunks)
-            save_chunk_file(store_path, files[i], merged_chunks[:length])
-            save_chunk_file(store_path, files[i+1], merged_chunks[length:])
-
-# parse urls
-
-def parse_url_list(url_list=[]):
-    if isinstance(url_list, str):
-        if os.path.exists(url_list):
-            with open(url_list) as f:
-                return [url.strip() for url in f.readlines() if url.strip() != '' and not url.startswith('#')]
-        return url_list.split('|')
-    return url_list
-
-def _convert_to_number(value):
-    """
-    文字列を可能ならば整数または浮動小数点数に変換する。
-    変換できない場合はそのままの文字列を返す。
-    """
-    lower_string = str(value).lower()
-    if lower_string == 'true':
-        return True
-    if lower_string == 'false':
-        return False
-    try:
-        return int(value)
-    except ValueError:
-        try:
-            return float(value)
-        except ValueError:
-            return str(value)
-
-def parse_url_args(url, args={}):
-    parsed_url = urlparse(url)
-    param_args = parse_qs(parsed_url.query)
-    param_args = {k: _convert_to_number(v[0]) for k, v in param_args.items()}
-    param_args['url_scheme'] = parsed_url.scheme
-    param_args['url_host'] = parsed_url.netloc
-    param_args['url_path'] = parsed_url.path
-    if parsed_url.username:
-        param_args['url_userame'] = parsed_url.username
-        param_args['url_password'] = parsed_url.password
-    if len(parsed_url.scheme):
-        if parsed_url.port:
-            param_args['url_port'] = parsed_url.port
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
-        else:
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-    else:
-        base_url = f"{parsed_url.path}"
-        base_dir = os.path.abspath(base_url)
-        if os.path.isdir(base_dir):
-            base_url = base_dir
-    args = args.copy()
-    args.update(param_args)
-    return safe_dir(base_url), args
-
-def basename_from_url(url, ext='', prefix=''):
-    if isinstance(url, (list, tuple)):
-        url = url[0]
-    _, _args = parse_url_args(url, {})
-    base = _args['url_path']
-    if '/' in base:
-        _, _, base = base.rpartition('/')
-    if ext:
-        return f'{prefix}{base}'
-    return base
 
