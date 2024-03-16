@@ -1,6 +1,7 @@
 from typing import List, Union
 import os
 import time
+import re
 import random
 from pathlib import Path
 
@@ -9,18 +10,43 @@ import hashlib
 import subprocess
 from urllib.parse import urlparse, parse_qs
 
-
 import numpy as np
 import gzip
 import pyzstd
 
 from tqdm import tqdm
 
-#import torch
-#from transformers import AutoTokenizer
-#from torch.utils.data import Dataset
+class DummyTqdm:
+    def update(self, n=1):
+        pass
+    def close(self):
+        pass
 
-from .commons import *
+def switch_tqdm(**kwargs):
+    from .adhocargs import AdhocArguments
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        enabled_tqdm = aargs['enabled_tqdm|=True']
+        if enabled_tqdm:
+            return tqdm
+        else:
+            DummyTqdm()
+
+
+
+
+def check_zstd_installed():
+    try:
+        # 'zstd --version' コマンドを実行してみる
+        result = subprocess.run(["zstd", "--version"], capture_output=True, text=True, check=True)
+        # コマンドの実行に成功した場合、zstd はインストールされている
+        return True, result.stdout
+    except subprocess.CalledProcessError as e:
+        # コマンドの実行に失敗した場合、zstd はインストールされていないか、別の問題がある
+        return False, e.stderr
+    except FileNotFoundError:
+        # zstd コマンドが見つからない場合
+        return False, "zstd command not found"
+
 
 # ファイルシステム
 
@@ -58,19 +84,20 @@ def get_filebase(filename):
 def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'
 
-
 ## file 
 
 def zopen(filepath, mode='rt'):
-    if filepath.endswith('.gz'):
-        return gzip.open(filepath, mode)
-    elif filepath.endswith('.zst'):
+    if filepath.endswith('.zst'):
         return pyzstd.open(filepath, mode)
+    elif filepath.endswith('.gz'):
+        return gzip.open(filepath, mode)
     else:
         return open(filepath, mode)
 
-import re
-fileline_pattern = re.compile(r"L(\d{4,})\D")
+
+## linenum
+
+fileline_pattern = re.compile(r"L(\d{3,})\D")
 
 def extract_linenum_from_filename(filepath):
     matched = fileline_pattern.search(filepath)
@@ -95,7 +122,6 @@ def get_linenum(filepath):
     ret = extract_linenum_from_filename(filepath)
     if ret is not None:
         return ret
-
     if filepath.endswith('.gz'):
         ret = subprocess.run(f"gzcat {filepath} | wc -l", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
     elif filepath.endswith('.zst'):
@@ -115,11 +141,6 @@ def get_linenum(filepath):
             line = f.readline()
     return c
 
-class DummyTqdm:
-    def update(self, n=1):
-        pass
-    def close(self):
-        pass
 
 def collator_none(s):
     return s
@@ -173,10 +194,9 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, template
             yield buffer
         pbar.close()
 
-def filelines(filename, N=-1):
+def filelines(filename, N=-1, tqdm = True):
     from tqdm import tqdm
     N = get_linenum(filename) if N==-1 else N
-    print('@', tqdm, N, type(N), filename)
     with tqdm(total=N, desc=filename) as pbar:
         with zopen(filename) as f:
             line = f.readline()
@@ -190,7 +210,7 @@ def filelines(filename, N=-1):
 
 ######## OLD?
 
-
+"""
 def parse_strip(s):
     return s.strip().replace('<nL>', '\n')
 
@@ -289,6 +309,7 @@ def iterate_line(filename, N=None, args={}):
             line = f.readline()
     if N:
         pbar.close()
+"""
 
 def _makedirs(path):
     dir, _,  file = path.rpartition("/")
@@ -568,59 +589,4 @@ def basename_from_url(url, ext='', prefix=''):
     if ext:
         return f'{prefix}{base}'
     return base
-
-'''
-def read_metadata(index_file_or_url, cache_dir=None):
-    if cache_dir is not None:
-        index_file = resolve_file(index_file_or_url, 'kogitune.json', cache_dir)
-    else:
-        index_file = index_file_or_url
-    if os.path.exists(index_file):
-        with open(index_file, "r") as f:
-            metadata = json.load(f)
-            return metadata
-    return {}
-
-def write_metadata(index_file, metadata):
-    with open(index_file, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-
-def find_better_prefix(metadata, args: dict):
-    if 'prefix' in args:
-        return args['prefix']
-    prefixes = metadata.get('prefixes', None)
-    if prefixes is None: # older version
-        return 'pretrain' if args.get('data_type', 'text') else 'train'
-    req_max_length = args['max_length']
-    selected_prefix = None
-    selected_max_length = 0
-    for prefix, config in prefixes.items():
-        if config['data_type'] == args['data_type']:
-            max_length = config.get('max_length', -1)
-            if req_max_length <= max_length and max_length > selected_max_length:
-                selected_max_length = max_length
-                selected_prefix = prefix
-    if not selected_prefix:
-        for prefix, config in prefixes.items():
-            if config['data_type'] == args['data_type']:
-                max_length = config.get('max_length', -1)
-                print(req_max_length, max_length, selected_max_length)
-                if max_length >= selected_max_length:
-                    selected_max_length = max_length
-                    selected_prefix = prefix
-        if selected_max_length > 0:
-            verbose_print(f"ブロック長が小さすぎます。max_length={selected_max_length}が適切です。")
-    return selected_prefix
-            
-def find_valid_prefix(metadata, train_prefix):
-    prefixes = metadata.get('prefixes', {})
-    if train_prefix.replace('train', 'valid') in prefixes:
-        return train_prefix.replace('train', 'valid')
-    if train_prefix.replace('train', 'dev') in prefixes:
-        return train_prefix.replace('train', 'dev')
-    return None
-
-'''         
-
 

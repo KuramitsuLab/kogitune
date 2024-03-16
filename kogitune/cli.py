@@ -3,7 +3,7 @@ from tqdm import tqdm
 
 from .commons import *
 from .adhocargs import adhoc_parse_arguments, AdhocArguments
-from .file_utils import basename_from_url
+from .fileutils import basename_from_url
 
 def main_maxmin(aargs=None):
     from .filters.cli import maxmin
@@ -115,7 +115,7 @@ def main_histogram(args):
     verbose_print(f"字句の出現頻度を'{output_file}'に保存しました。")
 
 def conv_txt_to_jsonl(file):
-    from .file_utils import zopen, filelines
+    from .fileutils import zopen, filelines
     import json
     newfile = file.replace('.txt', '.jsonl')
     with zopen(newfile, 'wt') as w:
@@ -130,7 +130,7 @@ def main_oldconv(args):
             conv_txt_to_jsonl(file)
 
 def main_linenum(args):
-    from file_utils import extract_linenum_from_filename, rename_with_linenum, get_linenum
+    from kogitune.fileutils import extract_linenum_from_filename, rename_with_linenum, get_linenum
     for file in args['files']:
         n = extract_linenum_from_filename()
         if n is None:

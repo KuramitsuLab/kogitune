@@ -1,4 +1,4 @@
-from kogitune.file_utils import zopen, filelines
+from kogitune.fileutils import zopen, filelines
 
 from .base import (
     TextFilter, 
