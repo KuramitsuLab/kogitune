@@ -233,7 +233,7 @@ class AdhocArguments(object):
                     return self.raise_error(default_key, key[2:])
                 return self.warn_unset_key(default_key, parse_argument_value(default_key, key[1:]))
             if self.parent and key in self.parent:
-                return self.parent._args[key]
+                return self.parent[key]
             if self._use_environ:
                     environ_key = key.upper()
                     if environ_key in os.environ:
