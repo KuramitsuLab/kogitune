@@ -40,7 +40,7 @@ class TimeoutStoppingCallback(transformers.TrainerCallback):
         remaining = self.estimated_end_time - current_time
         self.step_count += 1
         if self.max_time is not None:
-            interval = (current_time - self.start_time) / self.save_count
+            interval = (current_time - self.start_time) / self.step_count
             if remaining < (interval * 2):
                 verbose_print(f'残り時間 {format_unit(remaining, scale=60)} が少ないから緊急停止するよ')
                 control.should_save = True
