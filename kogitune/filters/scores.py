@@ -192,8 +192,8 @@ class MaxMinFilter(TextFilter):
                 #  minq=None, 
                 #  maxq=None, 
                  record_key = None,
-                 histogram_size = 0, 
-                 save_to=None,
+                 histogram_sample = 0, 
+                 histogram_save_to=None,
                  percentiles = DEFAULT_PERCENTILES,
                  **kwargs):
         """
@@ -203,7 +203,7 @@ class MaxMinFilter(TextFilter):
         :param minq: 最小値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
         :param maxq: 最大値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
         :param record_name: 評価値を記録するときのエントリー名
-        :param histogram_size: ヒストグラムを保存したいときのサンプル数
+        :param histogram_sample: ヒストグラムを保存したいときのサンプル数
         :param save_to: ヒストグラムの保存先
         """
         super().__init__(**kwargs)
@@ -214,11 +214,11 @@ class MaxMinFilter(TextFilter):
         # self.maxq = maxq
         self.record_key = record_key
         self.funcname = record_key or self.score_func.name()
-        self.histogram_size = histogram_size
-        self.save_to = save_to
-        if save_to is not None and histogram_size == 0:
-            histogram_size = 10000
-        if histogram_size > 0:
+        self.histogram_sample = histogram_sample
+        self.save_to = histogram_save_to
+        if self.save_to is not None and histogram_sample == 0:
+            self.histogram_sample = 10000
+        if self.histogram_sample > 0:
             self.values = []
             self.percentiles = percentiles
 
@@ -230,13 +230,13 @@ class MaxMinFilter(TextFilter):
         }
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
-        value = self.score_fn(text)
+        value = self.score_func(text)
         if self.record_key:
             record[self.record_key] = round(value,5)
-        if self.histogram_size > 0:
+        if self.histogram_sample > 0:
             self.values.append(value)
-            if len(self.values) == self.window_size:
-                _describe(self.values, self.funcname, self.percentiles)
+            if len(self.values) == self.histogram_sample:
+                _describe(self.values, self.funcname, self.percentiles, self.save_to)
         if (self.min_value and self.min_value > value):
             #record['drop'] = 'DROP[{self.funcname}:{value}>]\n{text}\n'
             return None
@@ -289,7 +289,9 @@ class MaxMinFilter(TextFilter):
 def _describe(values, funcname, percentiles=DEFAULT_PERCENTILES, filename=None):
     df = pd.DataFrame({funcname: values})
     print(df.describe(percentiles=percentiles))
-    if filename is not None:
+    if filename is None:
+        verbose_print(f'ヒストグラムの詳細を知りたいときは、histogram_save_to を設定しよう')
+    else:
         df.to_csv(f'{filename}.csv', index=None)
         try:
             import matplotlib.pyplot as plt

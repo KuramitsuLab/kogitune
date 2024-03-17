@@ -1,3 +1,4 @@
+from typing import List
 import urllib.parse
 
 from .base import *
@@ -7,7 +8,7 @@ from .scores import MaxMinFilter
 def urlencode(d:dict):
     return urllib.parse.urlencode(d)
 
-def encode_arguments(path:str, args:dict, keys:list):
+def encode_arguments_without(path:str, args:dict, keys:list):
     if isinstance(path, str):
         if isinstance(keys, str):
             keys = keys.split('|')
@@ -17,6 +18,17 @@ def encode_arguments(path:str, args:dict, keys:list):
         if len(args) > 0:
             return f'{path}?{urllib.parse.urlencode(args)}'
     return path
+
+def maxmin(score, **kwargs):
+    args = kwargs
+    if 'min' in args and 'min_value' not in args:
+        args['min_value'] = args.pop('min')
+    if 'max' in args and 'max_value' not in args:
+        args['max_value'] = args.pop('max')
+    score_path = encode_arguments_without(score, args.copy(), 
+                'min_value|max_value|record_key|histogram_sample|save_to|percentiles')
+    return MaxMinFilter(score_path=score_path, **args)
+
 
 def compose(*filters):
     if len(filters) == 1:
@@ -31,15 +43,6 @@ def choice(*filters):
 def each_line(*filters):
     return LineByLineFilter(*(generate_filter(e) for e in filters))
 
-def maxmin(score, **kwargs):
-    args = kwargs
-    if 'min' in args and 'min_value' not in args:
-        args['min_value'] = args.pop('min')
-    if 'max' in args and 'max_value' not in args:
-        args['max_value'] = args.pop('max')
-    score_path = encode_arguments(score, args.copy(), 
-                'min_value|max_value|record_key|histogram_sample|save_to|percentiles')
-    return MaxMinFilter(score_path=score_path, **args)
 
 def filter(name, **kwargs):
     ns = globals()
@@ -75,3 +78,4 @@ def generate_filter(expression):
 def load_filter(json_filename):
     with open(json_filename) as f:
         return generate_filter(json.load(f))
+

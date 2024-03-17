@@ -1,4 +1,4 @@
-from typing import Any, List, Union
+from typing import Any, List
 
 import os
 import random
@@ -13,22 +13,24 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhocargs import AdhocArguments, verbose_print, load_tokenizer
+from ..adhoc_args import AdhocArguments, verbose_print, configurable_tokenizer, parse_path_arguments
 from ..utils_file import *
+from ..utils_chunk import *
 from ..tokenizers import *
 
 from .gpus import *
+from .collators import TextBlockCollator, NumpyCollator, TensorCollator
 from .callbacks import TimeoutStoppingCallback
 
-from kogitune.stores.splitters import make_local_store
+from kogitune.stores import store_files
 
 # ChunkedDataset
 
-def url_to_hash(url):
-    return hashlib.md5(url.encode()).hexdigest()
+# def url_to_hash(url):
+#     return hashlib.md5(url.encode()).hexdigest()
 
 def local_cache_dir(cache_dir, url):
-    hash = url_to_hash(url)
+    hash = hashlib.md5(url.encode()).hexdigest()
     if hash in cache_dir:
         return cache_dir
     return safe_join_path(cache_dir, hash)
@@ -238,11 +240,11 @@ def prepare_dataset(url_list, max_length, cache_dir, aargs, tokenizer=None, pref
     global_args = {'datatype': datatype, 'split': split}
     datasets = []
     for url in url_list:
-        url, local_args = parse_url_args(url, global_args)
+        url, local_args = parse_path_arguments(url, include_urlinfo=True, global_args=global_args)
         url = safe_dir(url)
         if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
-            # tokenizer = prepare_tokenizer(tokenizer)
-            url = make_local_store(url, tokenizer, local_args)
+            tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+            url = store_files([url], tokenizer, **local_args)
         cache_dir = local_cache_dir(cache_dir, url)
         found = find_dataset_config(url, datatype, max_length, split, cache_dir)
         if found:
@@ -285,47 +287,6 @@ class Indexer(Dataset):
         random.seed(self.random_seed)
         random.shuffle(self.dataset.chunk_files)
 
-class TextBlockCollator(object):
-    def __init__(self, max_length, aargs):
-        self.max_length = max_length
-        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
-
-    def __call__(self, data):
-        return torch.tensor(data[:self.max_length].astype(np.int64), dtype=torch.long)
-
-class NumpyCollator(object):
-    def __init__(self, max_length, aargs):
-        self.max_length = max_length
-        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
-
-    def __call__(self, data):
-        return {
-            "input_ids": data,
-        }
-
-class TensorCollator(object):
-    def __init__(self, max_length, aargs):
-        self.max_length = max_length
-        self.is_seq2seq = aargs['datatype|data_type|=text'] == 'seq2seq'
-
-    def __call__(self, data):
-        if self.is_seq2seq:
-            version = data[0] % CHUNK_MAGIC
-            if version == 1:
-                index = (data[0] // CHUNK_MAGIC) + 1
-                inputs = data[1:index]
-                labels = data[index:]
-                return {
-                    "input_ids": torch.tensor(inputs.astype(np.int64), dtype=torch.long),
-                    "attention_mask": torch.ones(len(inputs), dtype=torch.long),
-                    "labels": torch.tensor(labels.astype(np.int64), dtype=torch.long),
-                }
-            else:
-                data = data[1:]
-        return {
-            "input_ids": torch.tensor(data.astype(np.int64), dtype=torch.long),
-            "attention_mask": torch.ones(len(data), dtype=torch.long),
-        }
 
 class MixierDataset(Dataset):
     def __init__(self, datasets: List[TokenDataset], collator_fn, batch_size=1024, random_seed=42):
@@ -444,37 +405,42 @@ def check_composer_args(aargs: None):
 
     return aargs
 
+def parse_url_list(url_list=[]):
+    if isinstance(url_list, str):
+        if url_list.endswith('.txt'):
+            with open(url_list) as f:
+                return [url.strip() for url in f.readlines() if url.strip() != '' and not url.startswith('#')]
+        return url_list.split('|')
+    return url_list
+
+
 class DatasetComposer():
-    def __init__(self, url_list:List[str],  
-                 collator_fn = None, tokenizer=None, 
-                 cleanup=False, prefetch = 1, **kwargs):
-        with AdhocArguments.from_main(**kwargs) as aargs:
-            # self.args = check_composer_args(aargs)
-            self.aargs = aargs
-            self.max_length = aargs['max_length|block_size|!512']
+    def __init__(self, collator_fn = None, cleanup=False, prefetch = 1, **kwargs):
+        self.aargs = aargs = AdhocArguments.from_main(**kwargs)
+        url_list = parse_url_list(aargs['url_list|files|!!url_listを指定してください'])
+        self.max_length = aargs['max_length|block_size|!512']
 
-            # キャッシュ
-            cache_dir = aargs['kg_cache_dir|cache_dir']
-            if cache_dir is None:
-                self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
-                self.cleanup = False if get_rank() > 0 else True
-            else:
-                self.cache_dir = safe_dir(cache_dir)
-                self.cleanup = False if get_rank() > 0 else cleanup
-            if os.path.isdir(self.cache_dir):
-                verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
-                self.cleanup = False
-            else:
-                os.makedirs(self.cache_dir, exist_ok=True)
+        # キャッシュ
+        cache_dir = aargs['kg_cache_dir|cache_dir']
+        if cache_dir is None:
+            self.cache_dir = safe_join_path('.', get_filename_by_pid('cache'))
+            self.cleanup = False if get_rank() > 0 else True
+        else:
+            self.cache_dir = safe_dir(cache_dir)
+            self.cleanup = False if get_rank() > 0 else cleanup
+        if os.path.isdir(self.cache_dir):
+            verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
+            self.cleanup = False
+        else:
+            os.makedirs(self.cache_dir, exist_ok=True)
 
-            url_list = parse_url_list(url_list)
-            self.tokenizer = tokenizer
-            self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, aargs, tokenizer, prefetch=prefetch)
-            self.train_dataset = None
-            if collator_fn:
-                self.collator_fn = collator_fn
-            else:
-                self.collator_fn = TextBlockCollator(self.max_length, self.aargs)
+        self.tokenizer = aargs['tokenizer_path|tokenizer']
+        self.datasets = prepare_dataset(url_list, self.max_length, self.cache_dir, aargs, self.tokenizer, prefetch=prefetch)
+        self.train_dataset = None
+        if collator_fn:
+            self.collator_fn = collator_fn
+        else:
+            self.collator_fn = TextBlockCollator(self.max_length, self.aargs)
 
     def with_format(self, type):
         if type == 'tensor' or type == 'torch':
@@ -526,6 +492,7 @@ class DatasetComposer():
                 verbose_print('Cleaned up', self.cache_dir)
             except:
                 pass
+        self.aargs.__exit__(exc_type, exc_value, traceback)
 
     def get_collator(self, model):
         from transformers import DataCollatorForLanguageModeling
@@ -556,7 +523,7 @@ class DatasetComposer():
                 do_eval=aargs['do_eval|=False'],
                 # evaluation_strategy='steps',
                 # eval_steps=50,
-                optim=aargs['optim|=adamw_torch_fused'],
+#                optim=aargs['optim|=adamw_torch_fused'],
                 num_train_epochs=aargs['num_train_epochs|=1'],
                 max_steps=aargs['max_steps|=-1'],
                 weight_decay=aargs['weight_decay|=0.1'],
@@ -566,8 +533,8 @@ class DatasetComposer():
                 dataloader_pin_memory=False,
                 save_steps=aargs['save_steps|=1000'],
                 save_total_limit=aargs['save_total_limit|=2'],
-    #            save_only_model=args['save_only_model|=False'],
-    #            neftune_noise_alpha=args['neftune_noise_alpha'],
+                save_only_model=aargs['save_only_model|=False'],
+                neftune_noise_alpha=aargs['neftune_noise_alpha'],
                 torch_compile=aargs['torch_compile|=False'],
                 bf16=bf16_enabled, 
                 fp16=fp16_enabled,

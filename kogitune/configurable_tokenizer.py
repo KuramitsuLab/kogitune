@@ -2,6 +2,8 @@ from transformers import AutoTokenizer
 from .adhocargs import AdhocArguments, parse_path_arguments
 import os
 
+os.environ['TOKENIZERS_PARALLELISM'] = 'true'
+
 DEFAULT_TOKENIZER = os.environ.get('DEFAULT_TOKENIZER', 'llm-jp/llm-jp-1.3b-v1.0')
 
 def configurable_tokenizer(tokenizer = None, akey='', **kwargs):

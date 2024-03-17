@@ -1,23 +1,20 @@
 from typing import List, Union
 import os
 import time
-import re
 import random
 from pathlib import Path
 
-import json
 import hashlib
 import subprocess
 
 import numpy as np
-import gzip
-import pyzstd
 
-from .adhocargs import AdhocArguments, verbose_print
+from .adhoc_args import verbose_print
 
-from utils_file import safe_dir, safe_join_path
-from kogitune.configurable_tqdm import configure_tqdm
+from .utils_file import safe_join_path
+from kogitune.configurable_tqdm import configurable_tqdm
 
+N_CHUNKS = 4096
 
 def safe_makedirs(path):
     dir, _,  file = path.rpartition("/")
@@ -86,7 +83,7 @@ def check_chunk_file(base_dir:str, chunk_file:str, checks: dict):
 
 def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
     d = {}
-    for chunk_file in configure_tqdm(chunk_files, desc='File validation.'):
+    for chunk_file in configurable_tqdm(chunk_files, desc='File validation.'):
         if not load_chunk_file(base_dir, chunk_file):
             return None
         filepath = safe_join_path(base_dir, chunk_file)
@@ -100,7 +97,7 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
 def shuffle_chunk_files(store_path: str, files:List[str], random_seed=42):
     for k in range(4):
         random.shuffle(files)
-        for i in configure_tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
+        for i in configurable_tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
             chunks = load_chunk_file(store_path, files[i])
             chunks2 = load_chunk_file(store_path, files[i+1])
             length = len(chunks)
@@ -128,7 +125,6 @@ def check_command_installed(command="zstd", verbose=False):
 check_command_installed('wget', verbose=True)
 check_command_installed('zstd', verbose=True)
 
-"""OLD?
 def compress_file(filename, compressed='zst', rm=False, sync=True):
     if filename.endswith(f'.{compressed}'):
         return filename
@@ -163,6 +159,7 @@ def uncompress_file(filename, compressed='zst', rm=False, sync=True):
         return unzstd_filename
     return filename
 
+"""OLD?
 def zstd_file(filename, rm=False, sync=True):
     if not os.path.exists(f'{filename}.zst'):
         if rm:

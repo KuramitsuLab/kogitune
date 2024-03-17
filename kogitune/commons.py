@@ -72,8 +72,6 @@ def getint_from_environ(key:str,
                   param_specified=param_specified)
 '''
 
-DEFAULT_MAX_LENGTH = 4096
-N_CHUNKS = 4096
 CHUNK_MAGIC = 8
 
 def format_unit(num: int, scale=1000)->str:

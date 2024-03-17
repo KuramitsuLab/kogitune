@@ -6,7 +6,7 @@ import re
 import inspect
 from urllib.parse import urlparse, parse_qs
 
-def parse_argument_value(value):
+def parse_argument_value(key:str, value:str):
     try:
         return int(value)
     except:
@@ -19,9 +19,11 @@ def parse_argument_value(value):
         return True
     if value.lower() == 'false':
         return False
+    if key.startswith('_list') and value.endsith('.txt'):
+        return load_text_list(value)
     return value
 
-def parse_path_arguments(url_or_filepath: str, include_urlinfo=False):
+def parse_path_arguments(url_or_filepath: str, include_urlinfo=False, global_args={}):
     """
     pathから引数を読み込む
     """
@@ -29,11 +31,11 @@ def parse_path_arguments(url_or_filepath: str, include_urlinfo=False):
         ## JSON形式であれば、最初のパラメータはパス名、残りは引数として解釈する。
         args = json.loads(url_or_filepath)
         first_key = list(args.keys())[0]
-        return args.pop(first_key), args
+        return args.pop(first_key), global_args | args
 
     parsed_url = urlparse(url_or_filepath)
     options = parse_qs(parsed_url.query)
-    args = {k: parse_argument_value(v[0]) for k, v in options.items()}
+    args = {k: parse_argument_value(k, v) for k, v in options.items()}
     if len(parsed_url.scheme):
         if parsed_url.port:
             url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
@@ -50,7 +52,7 @@ def parse_path_arguments(url_or_filepath: str, include_urlinfo=False):
         if parsed_url.port:
             args['port'] = parsed_url.port
         args['path'] = parsed_url.path
-    return url, args
+    return url, global_args | args
 
 _key_pattern = re.compile(r'^[A-Za-z0-9\.\-_]+\=')
 
@@ -59,7 +61,7 @@ def _parse_key_value(key, next_value, args):
         if key.startswith('--'):
             key = key[2:]
         key, _, value = key.partition('=')
-        return key, parse_argument_value(value)     
+        return key, parse_argument_value(key, value)     
     elif key.startswith('--'):
         key = key[2:]
         if next_value.startswith('--'):
@@ -70,7 +72,7 @@ def _parse_key_value(key, next_value, args):
             return key, True
         else:
             args['_'] = next_value
-            return key, parse_argument_value(next_value)
+            return key, parse_argument_value(key, next_value)
     else:
         if args.get('_') != key:
             files = args.get('files', [])
@@ -163,6 +165,10 @@ def load_config(config_file):
         return load_yaml(config_file)
     return {}
 
+def load_text_list(list_file):
+    with open(list_file) as f:
+        return [line.strip() for line in f.readlines() if line.strip() != '' and not line.startswith('#')]
+
 # main adhoc arguments
 
 main_aargs = None
@@ -187,10 +193,7 @@ class AdhocArguments(object):
     アドホックな引数パラメータ
     """
     def __init__(self, 
-                 args:dict, 
-                 parent=None,
-                 expand_config=None, 
-                 use_environ=True,
+                 args:dict, parent=None, expand_config='config', use_environ=True, 
                  face='🦊'):
         self._args = {}
         self._used_keys = set()
@@ -198,7 +201,7 @@ class AdhocArguments(object):
         self.face = face
         self.parent = parent
         if parent:
-            self._use_environ = parent._use_environ
+            self._use_environ = False
             self.face = parent.face
         for key, value in args.items():
             if key == expand_config:
@@ -211,25 +214,33 @@ class AdhocArguments(object):
             return f'{self._args}+{self.parent}'
         return repr(self._args)
 
-    def get(self, key, default_value=None):
-        keys = key.split('|')
+    def used(self, key):
+        self._used_keys.add(key)
+        if self.parent:
+            self.parent.used(key)
+
+    def get(self, keys, default_value=None):
+        keys = keys.split('|')
+        default_key = keys[0]
         for key in keys:
             if key in self._args:
-                self._used_keys.add(key)
+                self.used(key)
                 return self._args[key]
             if key.startswith('='):
-                return parse_argument_value(key[1:])
+                return parse_argument_value(default_key, key[1:])
             if key.startswith('!'):
-                return self.warn_unset_key(keys[0], parse_argument_value(key[1:]))
-            if self.parent and key in self.parent :
-                return self.parent[key]
+                if key.startswith('!!'):
+                    return self.raise_error(default_key, key[2:])
+                return self.warn_unset_key(default_key, parse_argument_value(default_key, key[1:]))
+            if self.parent and key in self.parent:
+                return self.parent._args[key]
             if self._use_environ:
-                environ_key = key.upper()
-                if environ_key in os.environ:
-                    value = parse_argument_value(os.environ[environ_key])
-                    self._used_keys.add(key)
-                    self._args[key] = value
-                    return value
+                    environ_key = key.upper()
+                    if environ_key in os.environ:
+                        value = parse_argument_value(key, os.environ[environ_key])
+                        self._args[key] = value
+                        self.used(key)
+                        return value
         return default_value
 
     def __getitem__(self, key):
@@ -238,10 +249,10 @@ class AdhocArguments(object):
     def __setitem__(self, key, value):
         self._args[key] = value
         # setattr(self, key, value)
-        self._used_keys.add(key)
+        self.used(key)
 
     def __contains__(self, key):
-        return key in self._args or (self._use_environ and key.upper() in os.environ)
+        return key in self._args or (self.parent and key in self.parent) or (self._use_environ and key.upper() in os.environ)
 
     def __enter__(self):
         return self
@@ -252,28 +263,33 @@ class AdhocArguments(object):
                 if key not in self._used_keys:
                     raise TypeError(f'{key} is an unused keyword')
 
-
     @classmethod
     def from_main(cls, **kwargs):
-        aargs = main_adhoc_arguments()
-        aargs = AdhocArguments({}, parent=aargs)
-        for key, value in kwargs.items():
-            aargs._args[key] = value
-        return aargs
+        if 'aargs' in kwargs and isinstance(kwargs['aargs'], AdhocArguments):
+            aargs = kwargs.pop('aargs')
+        else:
+            aargs = main_adhoc_arguments()
+        return AdhocArguments(kwargs, parent=aargs)
 
     def from_kwargs(self, **kwargs):
-        aargs = AdhocArguments({}, parent=self)
-        for key, value in kwargs.items():
-            aargs._args[key] = value
-        return aargs
+        return AdhocArguments(kwargs, parent=self)
 
+    def as_kwargs(self, **kwargs):
+        kwargs = kwargs.copy()
+        aargs = self
+        while aargs is not None:
+            for key, value in aargs._args.items():
+                if key not in kwargs:
+                    kwargs[key] = value
+            aargs = aargs.parent
+        return kwargs
 
     def update(self, otherdict:dict, overwrite=True, used=True):
         for key, value in otherdict.items():
             if overwrite or key not in self._args:
                 self._args[key] = value
                 if used:
-                    self._used_keys.add(key)
+                    self.used(key)
 
     def load_config(self, config_file, merge=True, overwrite=True):
         loaded_data = load_config(config_file)
@@ -343,7 +359,7 @@ class AdhocArguments(object):
                     show_notion = False
                 print(f'{key}: {repr(value)}')
         if not show_notion:
-            self.print(f'スペルミスがないか確認してください//Check if typos exist.')
+            self.print(f'スペルミスがないか確認して//Check if typos exist.')
 
     def save_as_json(self, file_path):
         directory = os.path.dirname(file_path)
@@ -353,14 +369,19 @@ class AdhocArguments(object):
         with open(file_path, 'w', encoding='utf-8') as w:
             print(json.dumps(self._args, ensure_ascii=False, indent=4), file=w)
 
-    def raise_files(self, msg='ファイルの指定が一つ以上必要です。'):
-        self.print(msg)
-        sys.exit(1)
-
     def raise_uninstalled_module(self, module_name):
         self.print(f'{module_name}がインストールされていません//Uninstalled {module_name}')
         print(f'pip3 install -U {module_name}')
         sys.exit(1)
+
+    def raise_error(self, key, desc):
+        if desc:
+            raise ValueError(desc)
+        raise TypeError(f'{key}の設定を忘れてます')
+
+    def warn_unset_key(self, key, value):
+        self.print(f'{key} を忘れずに。とりあえず {key}={value} で続けます //Please set {key}')
+        return value
 
     def raise_unset_key(self, key, desc_ja=None, desc_en=None):
         desc_ja = f' ({desc_ja})' if desc_ja else ''
@@ -368,9 +389,6 @@ class AdhocArguments(object):
         self.print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
         sys.exit(1)
 
-    def warn_unset_key(self, key, value):
-        self.print(f'{key}を忘れずに設定してください。とりあえず{value}にします。//Please set {key}')
-        return value
 
     def print(self, *args, **kwargs):
         print(self.face, *args, **kwargs)

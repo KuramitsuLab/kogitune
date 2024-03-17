@@ -1,16 +1,10 @@
 from typing import List, Union
 import os
-import time
 import re
-import random
-from pathlib import Path
 
 import json
-import hashlib
 import subprocess
-from urllib.parse import urlparse, parse_qs
 
-import numpy as np
 import gzip
 import pyzstd
 
@@ -19,13 +13,6 @@ from .adhoc_args import configurable_progress_bar, verbose_print
 # パス
 
 """
-def parse_url_list(url_list=[]):
-    if isinstance(url_list, str):
-        if os.path.exists(url_list):
-            with open(url_list) as f:
-                return [url.strip() for url in f.readlines() if url.strip() != '' and not url.startswith('#')]
-        return url_list.split('|')
-    return url_list
 
 def _convert_to_number(value):
     lower_string = str(value).lower()
