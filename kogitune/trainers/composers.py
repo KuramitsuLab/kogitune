@@ -511,8 +511,11 @@ class DatasetComposer():
             overwrite_output_dir = 'resume_from_checkpoint' not in aargs
             bf16_enabled = aargs[f'bf16|={bf16_is_available()}']
             fp16_enabled = False
-            if not bf16_enabled:
-                fp16_enabled=aargs[f'fp16|={torch.cuda.is_available()}']
+            optim='adamw'
+            if torch.cuda.is_available():
+                if not bf16_enabled:
+                    fp16_enabled=True
+                optim='adamw_torch_fused'
             train_args = TrainingArguments(
                 output_dir=aargs['output_dir|=output'],
                 overwrite_output_dir=aargs[f'overwrite_output_dir|={overwrite_output_dir}'],
@@ -523,7 +526,7 @@ class DatasetComposer():
                 do_eval=aargs['do_eval|=False'],
                 # evaluation_strategy='steps',
                 # eval_steps=50,
-#                optim=aargs['optim|=adamw_torch_fused'],
+                optim=aargs[f'optim|={optim}'],
                 num_train_epochs=aargs['num_train_epochs|=1'],
                 max_steps=aargs['max_steps|=-1'],
                 weight_decay=aargs['weight_decay|=0.1'],
