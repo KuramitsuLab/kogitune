@@ -14,7 +14,7 @@ import numpy as np
 import gzip
 import pyzstd
 
-from utils_tqdm import configure_progress_bar
+from .adhoc_args import configurable_progress_bar, verbose_print
 
 # パス
 
@@ -79,6 +79,11 @@ def basename_from_url(url, ext='', prefix=''):
 """
 
 # ファイルシステム
+
+def list_filenames(filenames) -> List[str]:
+    if isinstance(filenames, str):
+        filenames = filenames.split('|')
+    return filenames
 
 def safe_dir(dir):
     if dir.endswith('/'):
@@ -182,23 +187,27 @@ class _JSONTemplate(object):
     def __call__(self, s) -> str:
         return self.template.format(**json.loads(s))
 
-def _collator_none(s):
+def _reader_none(s):
     return s
 
-def _collator_strip(s):
+def _reader_strip(s):
     return s.strip()
 
-def _collator_json(s):
+def _reader_json(s):
+    return json.loads(s)['text']
+
+def _reader_jsonl(s):
     return json.loads(s)['text']
 
 def _find_reader_fn(reader_name):
     func = globals().get(f'_reader_{reader_name}')
     if func is None:
         patterns = [s.replace('_reader_', '') for s in globals() if s.startswith('_reader_')]
-        raise ValueError(f'_reader_{reader_name} is not found. Select pattern from {patterns}')
+        verbose_print(f'line_reader={reader_name}は未定義だから、stripを使うよ.')
+        return _reader_strip
     return func
 
-def configure_line_reader(**kwargs):
+def configurable_reader(**kwargs):
     from .adhocargs import AdhocArguments
     with AdhocArguments.from_main(**kwargs) as aargs:
         template = aargs['json_template']
@@ -208,12 +217,12 @@ def configure_line_reader(**kwargs):
         return _find_reader_fn(reader_name)
 
 def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_reader = 'strip'):
-    reader_fn = configure_line_reader(json_template=json_template, line_reader=line_reader)
+    reader_fn = configurable_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
-        pbar = configure_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
+        pbar = configurable_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         with zopen(filename) as f:
             line = f.readline()
             c=0
@@ -228,13 +237,13 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
             yield line
         pbar.close()
 
-def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip', tqdm = None):
-    reader_fn = configure_line_reader(json_template=json_template, line_reader=line_reader)
+def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip'):
+    reader_fn = configurable_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
-        pbar = configure_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
+        pbar = configurable_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         buffer=[]
         with zopen(filename) as f:
             line = f.readline()

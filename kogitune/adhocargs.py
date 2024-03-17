@@ -21,12 +21,27 @@ def parse_argument_value(value):
         return False
     return value
 
-def parse_path_arguments(url_or_filepath: str, include_url=True):
+def parse_path_arguments(url_or_filepath: str, include_urlinfo=False):
+    """
+    pathから引数を読み込む
+    """
+    if url_or_filepath.startswith('{') and url_or_filepath.startswith('}'):
+        ## JSON形式であれば、最初のパラメータはパス名、残りは引数として解釈する。
+        args = json.loads(url_or_filepath)
+        first_key = list(args.keys())[0]
+        return args.pop(first_key), args
+
     parsed_url = urlparse(url_or_filepath)
     options = parse_qs(parsed_url.query)
     args = {k: parse_argument_value(v[0]) for k, v in options.items()}
-    args['path'] = parsed_url.path
-    if include_url:
+    if len(parsed_url.scheme):
+        if parsed_url.port:
+            url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
+        else:
+            url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
+    else:
+        url = f"{parsed_url.path}"
+    if include_urlinfo:
         args['url_scheme'] = parsed_url.scheme
         args['url_host'] = parsed_url.netloc
         if parsed_url.username:
@@ -34,15 +49,8 @@ def parse_path_arguments(url_or_filepath: str, include_url=True):
             args['password'] = parsed_url.password
         if parsed_url.port:
             args['port'] = parsed_url.port
-    if len(parsed_url.scheme):
-        if parsed_url.port:
-            args['url'] = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
-        else:
-            args['url'] = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-    else:
-        args['url'] = f"{parsed_url.path}"
-    return args
-
+        args['path'] = parsed_url.path
+    return url, args
 
 _key_pattern = re.compile(r'^[A-Za-z0-9\.\-_]+\=')
 
@@ -172,7 +180,6 @@ def verbose_print(*args, **kwargs):
 
 
 # main
-
 
 
 class AdhocArguments(object):
@@ -428,21 +435,6 @@ def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
 ###
 
 
-DEFAULT_TOKENIZER = 'llm-jp/llm-jp-1.3b-v1.0'
-
-def load_tokenizer(tokenizer:str = None, **kwargs):
-    from transformers import AutoTokenizer
-    with AdhocArguments.from_main(**kwargs) as aargs:
-        tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|={DEFAULT_TOKENIZER}']
-        if isinstance(tokenizer, str):
-            local_args = aargs.get_subargs('tokenizer_*|trust_remote_code', exclude='tokenizer_path')
-            if 'trust_remote_code' not in local_args:
-                local_args['trust_remote_code'] = True
-            if 'use_fast' not in local_args:
-                local_args['use_fast'] = False
-            # AutoTokenizer.from_pretrained(tokenizer, legacy=legacy, trust_remote_code=True, use_fast=False)
-            return AutoTokenizer.from_pretrained(tokenizer, **local_args)
-        return tokenizer
 
 
 

@@ -6,9 +6,9 @@ except:
 
 from .adhocargs import AdhocArguments
 
-def configure_tqdm(iterable, desc=None, **kwargs):
+def configurable_tqdm(iterable, desc=None, **kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
-        enabled_tqdm = aargs['enabled_tqdm|=true']
+        enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(iterable, desc=desc)
         else:
@@ -27,7 +27,7 @@ class _DummyTqdm:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-def configure_progress_bar(desc=None, total=None, **kwargs):
+def configurable_progress_bar(desc=None, total=None, **kwargs):
     """
     from kogitune.utils_tqdm import progress_bar
 
@@ -36,7 +36,7 @@ def configure_progress_bar(desc=None, total=None, **kwargs):
             pbar.update()
     """
     with AdhocArguments.from_main(**kwargs) as aargs:
-        enabled_tqdm = aargs['enabled_tqdm|=true']
+        enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(desc=desc, total=total)
         else:

@@ -16,7 +16,7 @@ import pyzstd
 from .adhocargs import AdhocArguments, verbose_print
 
 from utils_file import safe_dir, safe_join_path
-from utils_tqdm import configure_tqdm
+from kogitune.configurable_tqdm import configure_tqdm
 
 
 def safe_makedirs(path):

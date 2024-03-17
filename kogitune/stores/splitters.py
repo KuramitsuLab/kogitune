@@ -5,7 +5,7 @@ from multiprocessing import Pool
 
 from transformers import AutoTokenizer
 
-from ..adhocargs import *
+from ..adhoc_args import configurable_tokenizer, configurable_tqdm
 from ..tokenizers import *
 from ..commons import *
 from ..utils_file import *
@@ -105,7 +105,6 @@ def report_split(logs, args):
     overlapped = logs['overlapped'] 
     max_cpt = logs.get('max_cpt',100)
     min_cpt = logs.get('min_cpt', 0)
-    block_size = args['block_size|max_length|=2048']
     args.print(f'訓練データセットの結果')
     print(f'文字数//chars {format_unit(chars, scale=1000)} トークン数//tokens {format_unit(tokens, scale=1000)} 適合率(cpt) {chars/tokens:.4f}')
     print(f'フィルタ//filtered {format_unit(filtered, scale=1000)}トークン {filtered*100/tokens:.2f}% 区間 [{min_cpt:.3f}, {max_cpt:.3f}]')
@@ -119,16 +118,16 @@ def report_split(logs, args):
 empty_tokens = []
 
 class TextBlockSpliter(object):
-    def __init__(self, tokenizer, args):
+    def __init__(self, tokenizer, aargs):
         self.tokenizer = tokenizer
         self.blocks = []
         self.extra_tokens=empty_tokens
-        self.block_size = args.get('max_length|block_size', 2048)
-        self.trancate_size = args.get('trancate|trancate_size', self.block_size // 8)
-        self.padding_size = args.get('padding|padding_size', self.block_size // 8)
-        self.max_tokens = args['max_tokens']
-        self.min_tokens = args['min_tokens|=2']
-        self.record = Recorder(args)
+        self.block_size = aargs.get('max_length|block_size', 2048)
+        self.trancate_size = aargs.get('trancate|trancate_size', self.block_size // 8)
+        self.padding_size = aargs.get('padding|padding_size', self.block_size // 8)
+        self.max_tokens = aargs['max_tokens']
+        self.min_tokens = aargs['min_tokens|=2']
+        self.record = Recorder(aargs)
 
     def encode(self, text, eos=True):
         if eos:
@@ -218,12 +217,19 @@ class TextBlockSpliter(object):
         logs['record'] = {}
         self.record.report_to(logs['record'])
 
+class TextPacker(TextBlockSpliter):
+    def __init__(self, tokenizer, aargs):
+        super().__init__(tokenizer, aargs)
+        self.trancate_size = 0
+        self.padding_size = 0
+
+
 class SectionSplitter(TextBlockSpliter):
-    def __init__(self, tokenizer, section_fn, args):
-        super().__init__(tokenizer, args)
-        self.section = args.get('section', 'doc')
+    def __init__(self, tokenizer, section_fn, aargs):
+        super().__init__(tokenizer, aargs)
+        self.section = aargs.get('section', 'doc')
         self.section_fn = section_fn
-        self.overlap_factor = args.get('overlap_factor|overlap', 0.25)
+        self.overlap_factor = aargs.get('overlap_factor|overlap', 0.25)
 
     def append_text(self, text:str):
         sections = self.section_fn(text)
@@ -244,16 +250,18 @@ class SectionSplitter(TextBlockSpliter):
             extra = self.try_trancate(extra)
         self.extra_tokens = extra
 
-def find_splitter(tokenizer, args):
-    data_type = args['datatype|data_type|=text']
+def find_splitter(tokenizer, aargs):
+    data_type = aargs['datatype|data_type|=text']
     if data_type == 'text':
-        section = args['section']
+        section = aargs['section']
         if section is None:
-            return TextBlockSpliter(tokenizer, args)
+            return TextBlockSpliter(tokenizer, aargs)
+        if section == 'pack':
+            return TextPacker(tokenizer, aargs)
         section_fn = find_section_fn(section)
         if section_fn is None:
-            return TextBlockSpliter(tokenizer, args)
-        return SectionSplitter(tokenizer, section_fn, args)
+            return TextBlockSpliter(tokenizer, aargs)
+        return SectionSplitter(tokenizer, section_fn, aargs)
     else: # ファインチューニング用
         # splitter = SimpleTextSplitter(tokenizer, args)
         raise NotImplementedError(f'datatype={data_type}')
@@ -269,31 +277,13 @@ def record_tokenizer(tokenizer: AutoTokenizer):
         hash=tokenizer_hash(tokenizer), 
         vocab_size=tokenizer.vocab_size)
 
-def split_to_store(filenames: List[str], args=None, **kwargs):
-    """
-    ファイルからローカルストアを構築する
-    :param filenames: ファイル名、もしくはファイル名のリスト
-    """
-    if isinstance(filenames, str):
-        filenames = filenames.split('|')
-    args = AdhocArguments.to_adhoc(args, **kwargs)
-
-    tokenizer = args.get('tokenizer|tokenizer_path', DEFAULT_TOKENIZER)
-    if isinstance(tokenizer, str):
-        tokenizer = load_tokenizer(tokenizer)
-
-    splitter = find_splitter(tokenizer, args)
-    logs = {}
-    splitter.report_to(logs)
-    args.verbose_print(logs)
-
-    store_path = args['store_path|store_dir|store']
+def get_store_path(filenames, tokenizer, aargs):
+    store_path = aargs['store_path|store_dir|store']
     if store_path is None:
         filebase = get_filebase(filenames[0])
         tokenizer_name = tokenizer_id(tokenizer)
         store_path=f'{tokenizer_name}/{filebase}'
-        args['store_path'] = store_path
-        args.print(f'保存先/Saving To.. {store_path}')
+        return store_path
     else:
         if '/' in store_path:
             filebase = store_path.replace('/', '_')
@@ -301,58 +291,75 @@ def split_to_store(filenames: List[str], args=None, **kwargs):
             filebase = store_path
             tokenizer_name = tokenizer_id(tokenizer)
             store_path=f'{tokenizer_name}/{filebase}'
-            args['store_path'] = store_path
-            args.print(f'保存先/Saving To.. {store_path}')
+            aargs['store_path'] = store_path
+            aargs.print(f'保存先/Saving To.. {store_path}')
 
-    store = DatasetStore(store_path, args)
 
-    num_workers = args['num_workers|=1']
-    N=args['head|N|=-1']
-    template = args['json_template|template|={text}']
-    if num_workers == 1:
-        for docs in read_multilines(filenames, N=N, bufsize=1024, template=template, tqdm=tqdm):
-            blocks = splitter(docs)
-            store.append(blocks)
+
+def configurable_store(filenames: List[str], tokenizer=None, **kwargs):
+    """
+    ファイルからローカルストアを構築する
+    :param filenames: ファイル名、もしくはファイル名のリスト
+    """
+    filenames = list_filenames(filenames)
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+        splitter = find_splitter(tokenizer, aargs)
+        logs = {}
         splitter.report_to(logs)
-    else:
-        pool = Pool(num_workers)
-        func_args = []
-        for i in range(num_workers):
-            func_args.append({
-                'record': Recorder(args, rank=i),
-                'extra_tokens': empty_tokens,
-                'docs': None,
-                'blocks': None,
-            })
-        for batch in read_multilines(filenames, N=N, template=template, bufsize=1024 * num_workers, tqdm=tqdm):
-            batch_size = len(batch) // num_workers
-            for i in range(num_workers):
-                func_args[i]['docs'] = batch[batch_size*i:batch_size*(i+1)]
-                func_args[i]['blocks'] = None
-            func_args = pool.map(splitter, func_args)
-            for i in range(num_workers):
-                store.append(func_args[i]['blocks'])
-        pool.close()
-        for a in func_args:
-            a['record'].report_to(logs['record'])
-    report_split(logs['record'], args)
-    store.save(filenames, tokenizer, logs=logs, skip_validation=False)
+        verbose_print(logs)
 
-def make_local_store(filename:str, tokenizer, args:dict):
-    if 'cache_dir' in args and 'store_path' not in args:
-        filebase = get_filebase(filename)
-        args['store_path'] = safe_join_path(args['cache_dir'], filebase)
-    args['tokenizer'] = tokenizer
-    split_to_store(filename, validation=args.get('validation', False), args=args)
-    return str(os.path.abspath(args['store_path']))
+        store_path = get_store_path(filenames, tokenizer, aargs)
+        aargs['store_path'] = store_path
+        verbose_print(f'保存先/Saving To.. {store_path}')
+
+        store = DatasetStore(store_path, aargs)
+
+        num_workers = aargs['num_workers|=1']
+        N=aargs['head|N|=-1']
+        if num_workers == 1:
+            for docs in read_multilines(filenames, N=N, bufsize=1024):
+                blocks = splitter(docs)
+                store.append(blocks)
+            splitter.report_to(logs)
+        else:
+            pool = Pool(num_workers)
+            func_args = []
+            for i in range(num_workers):
+                func_args.append({
+                    'record': Recorder(aargs, rank=i),
+                    'extra_tokens': empty_tokens,
+                    'docs': None,
+                    'blocks': None,
+                })
+            for batch in read_multilines(filenames, N=N, bufsize=1024 * num_workers):
+                batch_size = len(batch) // num_workers
+                for i in range(num_workers):
+                    func_args[i]['docs'] = batch[batch_size*i:batch_size*(i+1)]
+                    func_args[i]['blocks'] = None
+                func_args = pool.map(splitter, func_args)
+                for i in range(num_workers):
+                    store.append(func_args[i]['blocks'])
+            pool.close()
+            for a in func_args:
+                a['record'].report_to(logs['record'])
+        report_split(logs['record'], aargs)
+        store.save(filenames, tokenizer, logs=logs, skip_validation=False)
+
+# def make_local_store(filename:str, tokenizer, args:dict):
+#     if 'cache_dir' in args and 'store_path' not in args:
+#         filebase = get_filebase(filename)
+#         args['store_path'] = safe_join_path(args['cache_dir'], filebase)
+#     args['tokenizer'] = tokenizer
+#     configurable_store(filename, args=args)
+#     return str(os.path.abspath(args['store_path']))
 
 def make_histogram(tokenizer, store_path, chunk_files, verbose=True):
-    from tqdm import tqdm
     token_ids = list(range(0, tokenizer.vocab_size))
     vocabs = tokenizer.convert_ids_to_tokens(token_ids)
     counts = [0] * tokenizer.vocab_size
     csv_file = f'{store_path.replace("/", "_")}.csv'
-    for chunk_file in tqdm(chunk_files):
+    for chunk_file in configurable_tqdm(chunk_files):
         chunks = load_chunk_file(store_path, chunk_file)
         for chunk in chunks:
             for token_id in chunk:

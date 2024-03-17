@@ -1,9 +1,9 @@
 import os
 from tqdm import tqdm
 
-from .commons import *
-from .adhocargs import adhoc_parse_arguments, AdhocArguments
+from .adhocargs import adhoc_parse_arguments, AdhocArguments, verbose_print
 from .utils_file import basename_from_url
+from .configurable_tqdm import configure_tqdm
 
 def main_maxmin(aargs=None):
     from .filters.cli import maxmin
@@ -13,11 +13,11 @@ def main_maxmin(aargs=None):
     maxmin(url_list, aargs=aargs)
 
 
-def main_store(args=None):
+def main_store(aargs=None):
     from .stores import split_to_store
-    url_list = args['files']
+    url_list = aargs['files']
     if url_list is None or len(url_list) == 0:
-        args.raise_files('ファイルの指定が一つ以上必要です。')
+        aargs.raise_files('ファイルの指定が一つ以上必要です。')
     split_to_store(url_list, skip_validation=False, args=args)
 
 def main_head(args: AdhocArguments):
@@ -91,15 +91,14 @@ def main_histogram(args):
     if url_list is None or len(url_list) == 0:
         args.raise_files('データストアへのパスが一つ以上必要です。')
     
-    with DatasetComposer(url_list, args=args) as dc:
+    with DatasetComposer(url_list) as dc:
         dc.with_format("numpy")
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
         vocabs = tokenizer.convert_ids_to_tokens(token_ids)
         counts = [0] * tokenizer.vocab_size
-        # csv_file = f'{store_path.replace("/", "_")}.csv'
         ds = dc.get_train_dataset()
-        for i in tqdm(range(len(ds)), desc='counting tokens'):
+        for i in configure_tqdm(range(len(ds)), desc='counting tokens'):
             example = ds[i]
             for token_id in example['input_ids']:
                 counts[token_id] += 1
@@ -124,22 +123,22 @@ def conv_txt_to_jsonl(file):
             print(json.dumps({'text': line}, ensure_ascii=False), file=w)
     verbose_print(f'"{newfile}"へ変換しました。')
 
-def main_oldconv(args):
-    for file in args.files:
-        if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
-            conv_txt_to_jsonl(file)
-
 def main_linenum(args):
     from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
     for file in args['files']:
-        n = extract_linenum_from_filename()
+        n = extract_linenum_from_filename(file)
         if n is None:
             n = get_linenum(file)
             file = rename_with_linenum(file, n)
 
+# def main_oldconv(args):
+#     for file in args.files:
+#         if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
+#             conv_txt_to_jsonl(file)
 
-def main_update(args):
-    args.verbose_print('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
+
+def main_update(aargs):
+    aargs.verbose_print('KOGITUNEを最新版に更新します。\npip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
