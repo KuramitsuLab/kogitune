@@ -7,6 +7,11 @@ def update_cli(**kwargs):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
+def beta_cli(**kwargs):
+    verbose_print('KOGITUNEをベータ版に更新します。\npip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
+    os.system('pip3 uninstall -y kogitune')
+    os.system('pip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
+
 def countline_cli(**kwargs):
     from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
     with AdhocArguments.from_main(**kwargs) as aargs:
