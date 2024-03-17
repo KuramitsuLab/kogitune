@@ -1,35 +1,68 @@
 import os
-from tqdm import tqdm
 
-from .commons import *
-from .adhocargs import adhoc_parse_arguments, AdhocArguments
-from .file_utils import basename_from_url
+from .adhoc_args import adhoc_parse_arguments, AdhocArguments, verbose_print, configurable_tqdm
 
-def main_maxmin(aargs=None):
-    from .filters.cli import maxmin
-    url_list = aargs['files']
-    if url_list is None or len(url_list) == 0:
-        aargs.raise_files('ファイルの指定が一つ以上必要です。')
-    maxmin(url_list, aargs=aargs)
+def update_cli(**kwargs):
+    verbose_print('KOGITUNEを最新版に更新します。\npip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
+    os.system('pip3 uninstall -y kogitune')
+    os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
 
+def beta_cli(**kwargs):
+    verbose_print('KOGITUNEをベータ版に更新します。\npip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
+    os.system('pip3 uninstall -y kogitune')
+    os.system('pip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
 
-def main_store(args=None):
-    from .stores import split_to_store
-    url_list = args['files']
-    if url_list is None or len(url_list) == 0:
-        args.raise_files('ファイルの指定が一つ以上必要です。')
-    split_to_store(url_list, skip_validation=False, args=args)
+def countline_cli(**kwargs):
+    from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        for file in aargs['files']:
+            n = extract_linenum_from_filename(file)
+            if n is None:
+                n = get_linenum(file)
+                file = rename_with_linenum(file, n)
 
-def main_head(args: AdhocArguments):
+def maxmin_cli(**kwargs):
+    from kogitune.filters import maxmin
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        score_path = aargs['score|eval|!!scoreを設定してください']
+        output_path = aargs['output_file|output']
+        kwargs = aargs.as_kwargs(
+            record_key = aargs[f'record_key|=score'],
+            histogram_sample = aargs['histogram_sample|N|n|=10000'] # 大きさの調整
+        )
+        if 'score' in kwargs:
+            del kwargs['score']
+        text_filter = maxmin(score_path, **kwargs)
+        text_filter.from_jsonl(files, output_path=output_path, num_workers=1)
+
+def filter_cli(**kwargs):
+    from kogitune.filters import load_filter
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        filter_config = aargs['filter_config|!!filter_configを設定してください']
+        text_filter = load_filter(filter_config)
+        N=aargs['head|N|=-1']
+        num_workers=['num_workers|=1']
+        output_file = aargs['output_file|output']
+        if output_file is None:
+            aargs.verbose_print('output_fileの指定がないから、少しだけ処理して表示するよ')
+        text_filter.from_jsonl(files, N=N, output_path=output_file, num_workers=num_workers)
+
+## store 系
+
+def store_cli(**kwargs):
+    from .stores import store_files
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        store_files(files, skip_validation=False, aargs=aargs)
+
+def head_cli(**kwargs):
     from .trainers import DatasetComposer
-    url_list = args['files']
-    if url_list is None or len(url_list) == 0:
-        args.raise_files('データセットへのパスが一つ以上必要です。')
-    start = args['start|=0']
-    N = args['head|N|batch|=1024']
-
-    with DatasetComposer(url_list, args=args) as dc:
+    with DatasetComposer(**kwargs) as dc:
         dc.with_format('numpy')
+        start = dc.aargs['start|=0']
+        N = dc.aargs['head|N|batch|=1024']
         tokenizer = dc.get_tokenizer()
         ds = dc.get_train_dataset()
         for i in range(start, start+N):
@@ -40,31 +73,24 @@ def main_head(args: AdhocArguments):
                 print(f'labels[{i}]:', tokenizer.decode(example['labels']))
             print('---')
 
+
 FREEZE='''
 from datasets import load_from_disk
 ds = load_from_disk("{}")
 '''
 
-def main_freeze(aargs):
+def freeze_cli(**kwargs):
     import time
-    from tqdm import tqdm
     from datasets import Dataset
     from .trainers import DatasetComposer
-    url_list = aargs['files']
-    if url_list is None or len(url_list) == 0:
-        aargs.raise_files('データセットへのパスが一つ以上必要です。')
-    basename = basename_from_url(url_list)
-    if 'output_path' not in aargs:
-        aargs['output_path'] = f'freezed_{basename}'
-
     input_ids = []
     attention_mask = []
     labels=[]
     start = time.time()
-    with DatasetComposer(url_list, args=aargs, prefetch=0) as dc:
+    with DatasetComposer(prefetch=0, **kwargs) as dc:
         dc.with_format("tensor")
         ds = dc.get_train_dataset()
-        for i in tqdm(range(len(ds)), desc=basename):
+        for i in configurable_tqdm(range(len(ds))):
             example=ds[i]
             input_ids.append(example['input_ids'])
             if 'attention_mask' in example:
@@ -77,79 +103,54 @@ def main_freeze(aargs):
                 ds_dict = { "input_ids": input_ids, "attention_mask": attention_mask}
             else:
                 ds_dict = { "input_ids": input_ids}
-    aargs.print(f'ダウンロード時間: {time.time()-start} s')
-    ds = Dataset.from_dict(ds_dict).with_format("torch")
-    print(ds)
-    output_path = aargs['output_path']
-    ds.save_to_disk(output_path)
-    print(FREEZE.format(output_path))
+        verbose_print(f'ダウンロード時間: {time.time()-start} s')
+        ds = Dataset.from_dict(ds_dict).with_format("torch")
+        print(ds)
+        output_path = dc.aargs['output_path|!freezed_dataset']
+        ds.save_to_disk(output_path)
+        print(FREEZE.format(output_path))
 
-def main_histogram(args):
+def token_stat_cli(**kwargs):
     import pandas as pd
     from .trainers import DatasetComposer
-    url_list = args['files']
-    if url_list is None or len(url_list) == 0:
-        args.raise_files('データストアへのパスが一つ以上必要です。')
-    
-    with DatasetComposer(url_list, args=args) as dc:
+    with DatasetComposer(prefetch=0, **kwargs) as dc:
         dc.with_format("numpy")
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
         vocabs = tokenizer.convert_ids_to_tokens(token_ids)
         counts = [0] * tokenizer.vocab_size
-        # csv_file = f'{store_path.replace("/", "_")}.csv'
         ds = dc.get_train_dataset()
-        for i in tqdm(range(len(ds)), desc='counting tokens'):
+        for i in configurable_tqdm(range(len(ds)), desc='counting tokens'):
             example = ds[i]
             for token_id in example['input_ids']:
                 counts[token_id] += 1
             if 'labels' in example:
                 for token_id in example['labels']:
                     counts[token_id] += 1
-    df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
-    print(df['counts'].describe())
-    output_file = args['output_file|output_path']
-    if output_file is None:
-        output_file = basename_from_url(url_list, prefix='histogram_', ext='csv')
-    df.to_csv(args.output_file)
-    verbose_print(f"字句の出現頻度を'{output_file}'に保存しました。")
+        output_file = dc.aargs['output_file|output|=token_stat.csv']
+        df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
+        print(df['counts'].describe())
+        df.to_csv(output_file)
+        verbose_print(f"トークンの出現回数を output_file='{output_file}' に保存しました。ふむふむ")
 
-def conv_txt_to_jsonl(file):
-    from .file_utils import zopen, filelines
-    import json
-    newfile = file.replace('.txt', '.jsonl')
-    with zopen(newfile, 'wt') as w:
-        for line in filelines(file):
-            line = line.replace('<nL>', '\n')
-            print(json.dumps({'text': line}, ensure_ascii=False), file=w)
-    verbose_print(f'"{newfile}"へ変換しました。')
+def pretrain_cli(**kwargs):
+    import torch
+    torch.backends.cuda.matmul.allow_tf32=True
 
-def main_oldconv(args):
-    for file in args.files:
-        if file.endswith('.txt') or file.endswith('.txt.zst') or file.endswith('.txt.gz'):
-            conv_txt_to_jsonl(file)
-
-def main_linenum(args):
-    from file_utils import extract_linenum_from_filename, rename_with_linenum, get_linenum
-    for file in args['files']:
-        n = extract_linenum_from_filename()
-        if n is None:
-            n = get_linenum(file)
-            file = rename_with_linenum(file, n)
-
-
-def main_update(args):
-    args.verbose_print('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
-    os.system('pip3 uninstall -y kogitune')
-    os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
+    from kogitune.trainers import DatasetComposer
+    with DatasetComposer(**kwargs) as dc:
+        dc.train()
 
 
 def main():
     # メインのパーサーを作成
-    args = adhoc_parse_arguments(subcommands='maxmin|store|head|freeze|histogram|linenum|update')
-    main_func = args.find_function(args['subcommand'], prefix='main')
-    main_func(args)
-    args.check_unused()
+    namespace = globals()
+    subcommands = [name.replace('_cli', '') for name in namespace.keys() if name.endswith('_cli')]
+    aargs = adhoc_parse_arguments(subcommands=subcommands)
+    cmd = aargs['subcommand']
+    funcname = f'{cmd}_cli'
+    namespace[funcname]()
+    aargs.check_unused()
 
 if __name__ == '__main__':
     main()

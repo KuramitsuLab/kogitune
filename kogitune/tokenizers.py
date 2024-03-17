@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import os
 import re
@@ -6,9 +6,47 @@ import hashlib
 from collections import Counter
 import math
 
-import torch
-from transformers import AutoTokenizer, T5Tokenizer
+from transformers import AutoTokenizer
 from .commons import *
+
+
+
+def tokenizer_hash(tokenizer: AutoTokenizer):
+    ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
+    ws.sort()
+    allvoc = ''.join(w for _, w in ws)
+    #print(len(allvoc), allvoc[:100], allvoc[:100].encode())
+    return hashlib.md5(allvoc.encode()).hexdigest()
+
+def tokenizer_id(tokenizer: AutoTokenizer):
+    _, _, name_or_path = tokenizer.name_or_path.rpartition('/')
+    name_or_path=name_or_path.lower().replace('_', '-')
+    names = [name for name in name_or_path.split('-') if name.isalpha()]
+    if len(names) == 0:
+        names = name_or_path.split('-')[:1]
+    md5 = tokenizer_hash(tokenizer)
+    names.append(md5[:4])
+    return '-'.join(names)
+
+def is_special_token(w):
+    return w.startswith('<') and w.endswith('>') and not w.startswith('<0x')
+
+def tokenizer_special_tokens(tokenizer: AutoTokenizer):
+    ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
+    ws.sort()
+    return [(w, id) for id, w in ws if is_special_token(w)]
+
+def tokenizer_as_json(tokenizer: AutoTokenizer):
+    return dict(
+        name_or_path=tokenizer.name_or_path,
+        vocab_size=tokenizer.vocab_size,
+        special_tokens = tokenizer_special_tokens(tokenizer),
+        eos_token_id = tokenizer.eos_token_id,
+        pad_token_id = tokenizer.pad_token_id,
+        hash=tokenizer_hash(tokenizer), 
+    )
+
+"""
 
 DEFAULT_NL = '<nL>'
 DEFAULT_SEP = '<seP>'
@@ -178,25 +216,6 @@ def adapt_tokenizer(tokenizer: AutoTokenizer):
         return post_decode(s)
     tokenizer.decode = papertown_decode
 
-def tokenizer_hash(tokenizer: AutoTokenizer):
-    ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
-    ws.sort()
-    allvoc = ''.join(w for _, w in ws)
-    #print(len(allvoc), allvoc[:100], allvoc[:100].encode())
-    return hashlib.md5(allvoc.encode()).hexdigest()
-
-def tokenizer_id(tokenizer: AutoTokenizer):
-    _, _, name_or_path = tokenizer.name_or_path.rpartition('/')
-    name_or_path=name_or_path.lower().replace('_', '-')
-    names = [name for name in name_or_path.split('-') if name.isalpha()]
-    if len(names) == 0:
-        names = name_or_path.split('-')[:1]
-    md5 = tokenizer_hash(tokenizer)
-    names.append(md5[:4])
-    return '-'.join(names)
-
-os.environ['TOKENIZERS_PARALLELISM'] = 'true'
-
 def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, legacy=False, trust_remote_code=True, use_fast=False)
     #tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
@@ -205,6 +224,7 @@ def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
         if newline_token_id != tokenizer.unk_token_id:
             adapt_tokenizer(tokenizer)
     return tokenizer
+"""
 
 
 def calculate_entropy(tokens):

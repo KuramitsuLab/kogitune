@@ -4,12 +4,13 @@ import json
 import numpy as np
 
 from ..tokenizers import *
-from ..commons import *
-from ..file_utils import *
-from ..adhocargs import AdhocArguments
+from ..utils_file import *
+from ..utils_chunk import *
+from ..adhoc_args import AdhocArguments, verbose_print, configurable_tqdm, adhoc_log, get_adhoc_log
 
 ## meta
 
+DEFAULT_MAX_LENGTH = 4096
 N_CHUNKS = 4096
 
 class DatasetStore(object):
@@ -29,11 +30,10 @@ class DatasetStore(object):
         self.compressed = aargs.get("compressed", "zst")
         self.n_chunks = aargs.get("n_chunks", N_CHUNKS)
         self.max_length = 0
-        self.mix_length = DEFAULT_MAX_LENGTH*10
+        self.mix_length = DEFAULT_MAX_LENGTH * 10
         self.chunks = []
         self.n_items = 0
         self.checked_files = {}
-        self.logs = []
         self.load_config(append_mode=aargs['append_mode|append'])
 
     def load_config(self, append_mode=True):
@@ -70,7 +70,6 @@ class DatasetStore(object):
             self.n_items = len(self.chunk_files) * self.n_chunks
             self.max_length = config.get('max_length', self.max_length)
             self.mix_length = config.get('min_length', self.min_length)
-            self.logs = self.logs + config.get('logs', [])
         else:
             for file in chunk_files:
                 filepath = safe_join_path(self.store_path, file)
@@ -119,12 +118,12 @@ class DatasetStore(object):
             self.save_chunk()
 
     def check_files(self, skip_validation=True):
-        for chunk_file in tqdm(self.chunk_files, desc='File validation'):
+        for chunk_file in configurable_tqdm(self.chunk_files, desc='File validation'):
             if chunk_file not in self.checked_files:
                 filepath = safe_join_path(self.store_path, chunk_file)
                 checks = {
                     'filesize': get_filesize(filepath), 
-                    'sha1': get_file_sha1(filepath),
+                    'sha1': get_filesha1(filepath),
                 }
                 self.checked_files[chunk_file] = checks
             if not skip_validation:
@@ -137,21 +136,19 @@ class DatasetStore(object):
 
     def compress(self, compressed='zst'):
         if compressed:
-            for file in tqdm(self.chunk_files, desc='File compressed'):
+            for file in configurable_tqdm(self.chunk_files, desc='File compressed'):
                 filepath = safe_join_path(self.store_path, file)
                 compressed_file = f'{filepath}.{compressed}'
                 if not os.path.exists(compressed_file):
                     compress_file(filepath, compressed=compressed, rm=True)
 
-    def save(self, source, tokenizer, logs=None, skip_validation=True, compressed='zst'):
+    def save(self, tokenizer, skip_validation=True, compressed='zst'):
         fraction = 0 # 端数
         if len(self.chunks) > 0:
             fraction = len(self.chunks)
             self.save_chunk()
         self.check_files(skip_validation=skip_validation)
         self.compress(compressed=compressed)
-        if logs:
-            self.logs.append(logs)
         n_files = len(self.checked_files)
         if fraction > 0:
             n_items = (n_files-1) * self.n_chunks + fraction
@@ -159,7 +156,7 @@ class DatasetStore(object):
             n_items = n_files * self.n_chunks
         n_tokens = n_items * self.block_size
         config = dict(
-            source = source,
+#            source = source,
             datatype = self.data_type,
             split = self.split,
             prefix = self.prefix,
@@ -177,7 +174,7 @@ class DatasetStore(object):
             file_ext = self.file_ext,
             compressed=compressed,
             files = self.checked_files,
-            logs = self.logs,
+            logs = get_adhoc_log(),
         )
         with open(self.config_file, "w") as w:
             json.dump(config, w, indent=2)

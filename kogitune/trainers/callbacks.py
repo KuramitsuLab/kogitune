@@ -1,7 +1,7 @@
 from typing import Union
 import time
 import transformers
-from ..adhocargs import AdhocArguments, format_unit, verbose_print
+from ..adhoc_args import AdhocArguments, format_unit, verbose_print
 
 def parse_time_as_second(time:str):
     if isinstance(time, int):

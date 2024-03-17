@@ -1,16 +1,16 @@
-from kogitune.file_utils import zopen, filelines
+from kogitune.utils_file import zopen, filelines
 
 from .base import (
     TextFilter, 
     ComposeFilter, 
     ChoiceFilter,
-    ExtractFilter, 
+#    ExtractFilter, 
 )
 
 from .documents import (
     UnicodeNormalization, 
-    LineByLineFilter, DuplicatedLineFilter,
-    JSONConvertor, JSONTemplateConvertor,
+    LineByLineFilter, DuplicatedLine,
+#    JSONConvertor, JSONTemplateConvertor,
 )
 
 from .replace import (
@@ -35,3 +35,7 @@ from .lang_ja import (
     FootnoteFilter,
 )
 
+from .generators import (
+    load_filter, generate_filter, filter, maxmin, 
+    compose, choice, each_line, 
+)
