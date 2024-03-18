@@ -102,15 +102,19 @@ def format_unit(num: int, scale=1000)->str:
     elif scale == 60:
         if num < 1.0:
             return f"{num * 1000:.2f}ms"
-        if num < scale:
-            return f"{num:.2f}sec"
-        elif num < scale**2:
-            return f"{num / scale:.2f}min"
-        elif num < (scale**2)*24:
-            return f"{num /(scale**2):.2f}h"
-        else:
-            num2 = num % (scale**2)*24
-            return f"{num//(scale**2)*24}d {num2/(scale**2):.1f}h"
+        day = num // (3600*24)
+        num = num % (3600*24)
+        hour = num // 3600
+        num = num % 3600
+        min = num // 60
+        sec = num % 60
+        if day > 0:
+            return f"{day}d {hour}h {min}m {sec}s"
+        elif hour > 0:
+            return f"{hour}h {min}m {sec}s"
+        elif min > 0:
+            return f"{min}m {sec}s"
+        return f"{sec}s"
     else:
         if num < 1_000:
             return str(num)
