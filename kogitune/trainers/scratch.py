@@ -295,50 +295,21 @@ def new_Llama2(max_length=2048,
     print_model_structure(model)
     return model
 
-"""
-def new_TinyLlama(max_length=2048, n_dims=128, 
-                  n_heads=8, n_group_heads=4,
-                  n_layers=28, intermediate_size=4096, tokenizer=DEFAULT_TOKENIZER):
-    from transformers import AutoTokenizer, LlamaForCausalLM, LlamaConfig
-
-    if isinstance(tokenizer, str):
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer, legacy=False, trust_remote_code=True, use_fast=False)
-
-    config = LlamaConfig(
-        vocab_size = len(tokenizer),
-        pad_token_id = tokenizer.pad_token_id,
-        bos_token_id = tokenizer.eos_token_id,
-        eos_token_id = tokenizer.eos_token_id,
-        max_position_embeddings=max_length, #トークン数
-        hidden_size=n_dims * n_heads,
-        num_attention_heads = n_heads, #8
-        num_key_value_heads = n_group_heads,
-        num_hidden_layers = n_layers, #28
-        intermediate_size=intermediate_size,
-        rms_norm_eps=1e-5,
-    )
-
-    model = LlamaForCausalLM(config)
-    print_model(model)
-    return model
-"""
-
 def new_scratch_llm(**kwargs):
-    from ..adhocargs import AdhocArguments
-    from ..commons import load_tokenizer
+    from ..adhoc_args import AdhocArguments, configurable_tokenizer
     with AdhocArguments.from_main(**kwargs) as aargs:
-        tokenizer = load_tokenizer(aargs=aargs)
+        tokenizer = configurable_tokenizer()
 
         n_dims = aargs['scratch_dims|n_dims|=32']
         n_layers = aargs['scratch_layers|n_layers|=12']
-        n_heads = aargs['scratch_heads|n_heads|=8']
+        n_heads = aargs['scratch_heads|n_heads|=4']
         n_groups = aargs['scratch_head_groups|head_groups|n_groups']
         max_position_embeddings=aargs['max_position_embeddings|=2048']
-        intermediate_size = aargs['scratch_intermediate_size|intermediate_size|=1024']
+        intermediate_size = aargs['scratch_intermediate_size|intermediate_size|=512']
         model_arch = aargs['model_arch|model_type|=llama2'].lower()
 
         if model_arch == 'llama2':
-            rms_norm_eps=aargs['model_arch|model_type|=1e-6']
+            rms_norm_eps=aargs['rms_norm_eps|=1e-6']
             model = new_Llama2(max_length=max_position_embeddings, tokenizer=tokenizer,
                             n_dims=n_dims, n_heads=n_heads, n_groups=n_groups, 
                             n_layers=n_layers, 
@@ -348,7 +319,7 @@ def new_scratch_llm(**kwargs):
             model = new_Llama2(max_length=max_position_embeddings, tokenizer=tokenizer,
                             n_dims=n_dims, n_heads=n_heads, n_groups=n_groups, n_layers=n_layers, 
                             intermediate_size=intermediate_size)
-        
+
         output_path = aargs['scratch_output_path|=scratch']
 
         if output_path:

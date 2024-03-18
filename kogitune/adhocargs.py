@@ -35,7 +35,7 @@ def parse_path_arguments(url_or_filepath: str, include_urlinfo=False, global_arg
 
     parsed_url = urlparse(url_or_filepath)
     options = parse_qs(parsed_url.query)
-    args = {k: parse_argument_value(k, v) for k, v in options.items()}
+    args = {k: parse_argument_value(k, v[0]) for k, v in options.items()}
     if len(parsed_url.scheme):
         if parsed_url.port:
             url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"

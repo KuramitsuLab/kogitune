@@ -1,11 +1,10 @@
 
+from .adhocargs import AdhocArguments
+
 if 'get_ipython' in globals():
     from tqdm.notebook import tqdm
 else:
     from tqdm import tqdm
-
-from .adhocargs import AdhocArguments
-
 
 def configurable_tqdm(iterable, desc=None, **kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
