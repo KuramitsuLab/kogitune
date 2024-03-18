@@ -511,7 +511,7 @@ class DatasetComposer():
             overwrite_output_dir = 'resume_from_checkpoint' not in aargs
             bf16_enabled = aargs[f'bf16|={bf16_is_available()}']
             fp16_enabled = False
-            optim='adamw'
+            optim='adamw_torch'
             if torch.cuda.is_available():
                 if not bf16_enabled:
                     fp16_enabled=True
@@ -535,7 +535,7 @@ class DatasetComposer():
                 logging_steps=aargs['logging_steps|=10'],
                 dataloader_pin_memory=False,
                 save_steps=aargs['save_steps|=1000'],
-                save_total_limit=aargs['save_total_limit|=2'],
+                save_total_limit=aargs['save_total_limit|=5'],
                 save_only_model=aargs['save_only_model|=False'],
                 neftune_noise_alpha=aargs['neftune_noise_alpha'],
                 torch_compile=aargs['torch_compile|=False'],
@@ -577,6 +577,9 @@ class DatasetComposer():
                 )
             result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
             save_path = aargs['save_path|model_output_path']
+            if save_path is None and not os.path.exists('model'):
+                verbose_print('model/に保存するよ。save_pathで保存先を指定してね')
+                save_path = 'model'
             if save_path:
                 self.get_tokenizer().save_pretrained(save_path)
                 model.save_pretrained(save_path)
