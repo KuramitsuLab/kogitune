@@ -522,7 +522,7 @@ class DatasetComposer():
                 per_device_train_batch_size=aargs[f'per_device_train_batch_size|={device_batch_size}'],
                 gradient_accumulation_steps=aargs[f'gradient_accumulation_steps|={gas}'],
                 # per_device_eval_batch_size=64,
-                auto_find_batch_size=aargs['auto_find_batch_size|=True'],  # バッチサイズ自動
+                auto_find_batch_size=aargs['auto_find_batch_size|=False'],  # バッチサイズ自動
                 do_eval=aargs['do_eval|=False'],
                 # evaluation_strategy='steps',
                 # eval_steps=50,

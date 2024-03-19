@@ -48,7 +48,8 @@ def filter(name, **kwargs):
     ns = globals()
     if name in ns:
         return ns[name](**kwargs)
-    verbose_print(f'フィルタ {name}が見つからないよ！ このままではフィルタリングされないよ')
+    adhoc.print(f'フィルタ {name}が見つからないよ！ このままではフィルタリングされないよ')
+    # FIXME をセットすることで修正箇所を記録する
     kwargs['FIXME'] = True
     return TextFilter(filter=name, **kwargs)
 

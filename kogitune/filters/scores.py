@@ -68,7 +68,6 @@ class TokenizerCompression(MaxMinScoreFunction):
         self.chars_per_tokens = chars_per_tokens
         self.head = head
         self.length = length
-        self.zlib_fraction = zlib_fraction
 
     def as_json(self):
         return {
@@ -106,7 +105,7 @@ class TokenizerEntropy(MaxMinScoreFunction):
         トークンナイザーによるエントロピー評価関数を作る
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
         """
-        super().__init__(**kwargs)
+        super().__init__(tokenizer=None, **kwargs)
         self.tokenizer = configurable_tokenizer(tokenizer=tokenizer)
 
     def as_json(self):
@@ -200,8 +199,8 @@ class MaxMinFilter(TextFilter):
         評価関数フィルタを作る
         :param min_value: 許容される最小値 (inclusive)（省略した場合は全て許容される）
         :param max_value: 許容される最大値 (inclusive)（省略した場合は全て許容される）
-        :param minq: 最小値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
-        :param maxq: 最大値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
+        # :param minq: 最小値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
+        # :param maxq: 最大値のパーセンタイル（省略した場合は、パーセンタイル補正はしない）
         :param record_name: 評価値を記録するときのエントリー名
         :param histogram_sample: ヒストグラムを保存したいときのサンプル数
         :param save_to: ヒストグラムの保存先
