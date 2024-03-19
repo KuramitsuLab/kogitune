@@ -1,13 +1,9 @@
-import gc
 import torch
 torch.backends.cuda.matmul.allow_tf32=True
-from transformers import DataCollatorForLanguageModeling
-from transformers import Trainer, TrainingArguments
 
-import numpy as np
-from datasets import Dataset
+#from ..commons import *
 
-from ..commons import *
+from ..adhoc_args import AdhocArguments, format_unit, verbose_print, configurable_tokenizer, adhoc
 
 def count_parameters(model)->int:
     """
@@ -114,14 +110,6 @@ def print_gpu_utilization():
     except:
         pass
 
-def dummy_dataset(max_length, dataset_size=1024):
-    dummy_data = {
-        "input_ids": (np.arange(100, dataset_size*max_length+100) % 15000).reshape((dataset_size, max_length))
-    }
-    ds = Dataset.from_dict(dummy_data)
-    ds.set_format("pt")
-    return ds
-
 def print_summary(result, use_flash=False):
     m = result.metrics
     print(f"Time: {m['train_runtime']:.2f}  {format_unit(m['train_runtime'], scale=60)}", end=' ')
@@ -134,50 +122,7 @@ def print_summary(result, use_flash=False):
     print_gpu_utilization()
 
 
-def train_model(model, tokenizer, max_length, use_fp16=False, use_flash=False):
-
-    if use_flash:
-        from optimum.bettertransformer import BetterTransformer
-        model = BetterTransformer.transform(model)
-
-    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
-
-    args = TrainingArguments(
-        output_dir="./output",
-        overwrite_output_dir=True,
-        per_device_train_batch_size=128,
-        per_device_eval_batch_size=128,
-        auto_find_batch_size=True,  # バッチサイズ自動
-        do_eval=False,
-        logging_steps=1000,
-#        gradient_accumulation_steps=1,
-        num_train_epochs=1,
-        weight_decay=0.1,
-#        warmup_steps=1_000,
-        lr_scheduler_type="cosine",
-        learning_rate=5e-4, #TODO: 論文から探す
-#        save_steps=5_000,
-        fp16=use_fp16,
-    )
-
-    trainer = Trainer(
-        model=model,
-        args=args,
-        train_dataset=dummy_dataset(max_length),
-        data_collator=data_collator,
-    )
-    result = trainer.train()
-    print_summary(result, use_flash)
-    # モデルを保存 output_path に保存します
-    if use_flash:
-        model = BetterTransformer.reverse(model)
-    output_path='trained'
-    tokenizer.save_pretrained(output_path)
-    model.save_pretrained(output_path)
-    model.cpu()
-    gc.collect()
-    torch.cuda.empty_cache()
-    print_gpu_utilization()
+"""
 
 
 def new_T5(d_model=256, d_kv=32, d_ff=1024, n_head=6, n_layers=12, max_length=2048, tokenizer=DEFAULT_TOKENIZER):
@@ -294,37 +239,124 @@ def new_Llama2(max_length=2048,
     print_model(model)
     print_model_structure(model)
     return model
+"""
 
-def new_scratch_llm(**kwargs):
-    from ..adhoc_args import AdhocArguments, configurable_tokenizer
+### new version
+
+def configurable_config_kwargs(tokenizer, **kwargs):
+    from ..adhoc_args import AdhocArguments
     with AdhocArguments.from_main(**kwargs) as aargs:
-        tokenizer = configurable_tokenizer()
-
-        n_dims = aargs['scratch_dims|n_dims|=32']
-        n_layers = aargs['scratch_layers|n_layers|=12']
-        n_heads = aargs['scratch_heads|n_heads|=4']
-        n_groups = aargs['scratch_head_groups|head_groups|n_groups']
-        max_position_embeddings=aargs['max_position_embeddings|=2048']
-        intermediate_size = aargs['scratch_intermediate_size|intermediate_size|=512']
-        model_arch = aargs['model_arch|model_type|=llama2'].lower()
-
-        if model_arch == 'llama2':
-            rms_norm_eps=aargs['rms_norm_eps|=1e-6']
-            model = new_Llama2(max_length=max_position_embeddings, tokenizer=tokenizer,
-                            n_dims=n_dims, n_heads=n_heads, n_groups=n_groups, 
-                            n_layers=n_layers, 
-                            intermediate_size=intermediate_size, rms_norm_eps=rms_norm_eps)
+        aargs.used('model_type')
+        num_attention_heads = aargs['num_attention_heads|n_heads|=4']
+        if 'hidden_size' in kwargs:
+            hidden_size = aargs['intermediate_size|=1024']
         else:
-            aargs.print(f'Unknown model_arch: {model_arch}')
-            model = new_Llama2(max_length=max_position_embeddings, tokenizer=tokenizer,
-                            n_dims=n_dims, n_heads=n_heads, n_groups=n_groups, n_layers=n_layers, 
-                            intermediate_size=intermediate_size)
+            hidden_size = aargs['head_dim|n_dims|=32'] * num_attention_heads
+        config_kwargs = dict(
+            vocab_size = tokenizer.vocab_size,
+            pad_token_id = tokenizer.pad_token_id,
+            bos_token_id = tokenizer.bos_token_id,
+            eos_token_id = tokenizer.eos_token_id,
+            num_attention_heads = num_attention_heads,
+            hidden_size = hidden_size,
+            intermediate_size = aargs['intermediate_size|=512'],
+            num_hidden_layers = aargs['num_hidden_layers|n_layers|=12'],
+            num_key_value_heads = aargs['num_key_value_heads|group_heads|n_groups|=4'],
+            max_position_embeddings = aargs['max_position_embeddings|=2048'],
+        )
+        aargs.copy_to('num_key_value_heads|group_heads|n_groups', config_kwargs)
+        aargs.copy_to('hidden_act', config_kwargs)
+        aargs.copy_to('rms_norm_eps', config_kwargs)
+        aargs.copy_to('rope_theta', config_kwargs)
+        aargs.copy_to('tie_word_embeddings', config_kwargs)
+        aargs.copy_to('attention_dropout', config_kwargs)
+        aargs.copy_to('attention_bias', config_kwargs) # Gemma, Lamma
+        aargs.copy_to('sliding_window', config_kwargs) # Mistral
+        aargs.copy_to('partial_rotary_factor', config_kwargs) # StableLmConfig
+    print(config_kwargs)
+    return config_kwargs
 
-        output_path = aargs['scratch_output_path|=scratch']
+def generate_scratch_gpt2(**kwargs):
+    from transformers import GPT2LMHeadModel, GPT2Config
+    config = GPT2Config(
+        vocab_size = kwargs['vocab_size'],
+        bos_token_id = kwargs['bos_token_id'],
+        eos_token_id = kwargs['eos_token_id'],
+        pad_token_id = kwargs['pad_token_id'],
+        n_positions = kwargs['max_position_embeddings'],
+        n_ctx=kwargs['max_position_embeddings'],
+        n_embd=kwargs['hidden_size'],
+        n_head=kwargs['num_attention_heads'],
+        n_layer=kwargs['num_hidden_layers'],
+        n_inner=kwargs['intermediate_size'],
+    )
+    model = GPT2LMHeadModel(config)
+    print_model(model)
+    print_model_structure(model)
+    return model
 
-        if output_path:
-            tokenizer.save_pretrained(output_path)
-            model.save_pretrained(output_path)
 
-        return model
+def generate_scratch_gptneox(**kwargs):
+    from transformers import GPTNeoXForCausalLM, GPTNeoXConfig
+    config = GPTNeoXConfig(**kwargs)
+    model = GPTNeoXForCausalLM(config)
+    print_model(model)
+    print_model_structure(model)
+    return model
+
+def generate_scratch_llama2(**kwargs):
+    from transformers import LlamaForCausalLM, LlamaConfig
+    config = LlamaConfig(**kwargs)
+    model = LlamaForCausalLM(config)
+    print_model(model)
+    print_model_structure(model)
+    return model
+
+def generate_scratch_stablelm(**kwargs):
+    from transformers import StableLmForCausalLM, StableLmConfig
+    config = StableLmConfig(**kwargs)
+    model = StableLmForCausalLM(config)
+    print_model(model)
+    print_model_structure(model)
+    return model
+
+def generate_scratch_mistral(**kwargs):
+    from transformers import MistralForCausalLM, MistralConfig
+    config = MistralConfig(**kwargs)
+    model = MistralForCausalLM(config)
+    print_model(model)
+    print_model_structure(model)
+    return model
+
+def generate_scratch_gemma(**kwargs):
+    from transformers import GemmaForCausalLM, GemmaConfig
+    config = GemmaConfig(**kwargs)
+    model = GemmaForCausalLM(config)
+    print_model(model)
+    print_model_structure(model)
+    return model    
+
+
+def configurable_scratch(**kwargs):
+    tokenizer = configurable_tokenizer(tokenizer=kwargs.get('tokenizer'))
+    config_kwargs = configurable_config_kwargs(tokenizer, **kwargs)
+    model_type = kwargs.get('model_type', 'llama2')
+    adhoc.setlog('scratch', model_type=model_type, config=config_kwargs)
+
+    ns = globals()
+    name = f'generate_scratch_{model_type}'
+    if name in ns:
+        model = ns[name](**config_kwargs)
+    else:
+        required = [k.replace('generate_scratch_', '') for k, _ in ns.items() if k.startswith('generate_scratch_')]
+        adhoc.warn(f'モデル種類({model_type})が不明だよ. ', unknown=model_type, required=required)
+        adhoc.print('とりあえず、llama2で生成してみます')
+        model = generate_scratch_llama2(**config_kwargs)
+
+    output_path = kwargs.get('scratch_output_path', 'scratch')
+    if output_path:
+        tokenizer.save_pretrained(output_path)
+        model.save_pretrained(output_path)
+
+    return model
     

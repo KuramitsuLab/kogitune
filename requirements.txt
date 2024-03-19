@@ -1,6 +1,6 @@
 torch>=2.0.0
 sentencepiece
-transformers>=4.34.0
+transformers>=4.37.0
 tokenizers>=0.14.0
 datasets>=2.11.0
 pyzstd

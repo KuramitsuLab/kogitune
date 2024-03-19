@@ -247,6 +247,14 @@ class AdhocArguments(object):
                         return value
         return default_value
 
+    def copy_to(self, keys: str, newargs: dict):
+        keys = keys.split('|')
+        default_key = keys[0]
+        for key in keys:
+            if key in self:
+                newargs[default_key] = self[key]
+                return
+
     def __getitem__(self, key):
         return self.get(key, None)
 
@@ -287,6 +295,7 @@ class AdhocArguments(object):
                     kwargs[key] = value
             aargs = aargs.parent
         return kwargs
+
 
     def update(self, otherdict:dict, overwrite=True, used=True):
         for key, value in otherdict.items():
