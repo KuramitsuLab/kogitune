@@ -12,7 +12,7 @@ def beta_cli(**kwargs):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
 
-def countline_cli(**kwargs):
+def count_lines_cli(**kwargs):
     from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
     with AdhocArguments.from_main(**kwargs) as aargs:
         for file in aargs['files']:
@@ -133,11 +133,16 @@ def token_stat_cli(**kwargs):
         df.to_csv(output_file)
         verbose_print(f"トークンの出現回数を output_file='{output_file}' に保存しました。ふむふむ")
 
+def scratch_cli(**kwargs):
+    from kogitune.trainers.scratch import configurable_scratch
+    configurable_scratch(**kwargs)
+
+
 def pretrain_cli(**kwargs):
     import torch
     torch.backends.cuda.matmul.allow_tf32=True
-
     from kogitune.trainers import DatasetComposer
+
     with DatasetComposer(**kwargs) as dc:
         dc.train()
 

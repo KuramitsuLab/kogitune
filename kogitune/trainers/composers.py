@@ -13,7 +13,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhoc_args import AdhocArguments, verbose_print, configurable_tokenizer, parse_path_arguments
+from ..adhoc_args import AdhocArguments, verbose_print, configurable_tokenizer, parse_path_arguments, adhoc
 from ..utils_file import *
 from ..utils_chunk import *
 from ..tokenizers import *
@@ -516,7 +516,7 @@ class DatasetComposer():
                 if not bf16_enabled:
                     fp16_enabled=True
                 optim='adamw_torch_fused'
-            train_args = TrainingArguments(
+            train_args = dict(
                 output_dir=aargs['output_dir|=output'],
                 overwrite_output_dir=aargs[f'overwrite_output_dir|={overwrite_output_dir}'],
                 per_device_train_batch_size=aargs[f'per_device_train_batch_size|={device_batch_size}'],
@@ -542,11 +542,12 @@ class DatasetComposer():
                 bf16=bf16_enabled, 
                 fp16=fp16_enabled,
             )
-            return train_args
+            adhoc.setlog('train', trainer_args=train_args)
+            return TrainingArguments(**train_args)
     
     def train(self, model=None, **kwargs):
         from transformers import Trainer, AutoModelForCausalLM
-        from kogitune.trainers.scratch import new_scratch_llm, print_summary
+        from kogitune.trainers.scratch import configurable_scratch, print_summary
         with self.aargs.from_kwargs(**kwargs) as aargs:
             if model is None:
                 model_path = aargs['model_path|model']
@@ -554,7 +555,7 @@ class DatasetComposer():
                     self.aargs.raise_unset_key('model_path')
                 if model_path == 'scratch' and not os.path.exists('scratch'):
                     verbose_print('scratch モデルを生成しますよ')
-                    model = new_scratch_llm()
+                    model = configurable_scratch()
                 else:
                     model = AutoModelForCausalLM.from_pretrained(model_path)
             wandb = load_wandb(aargs)
@@ -576,9 +577,10 @@ class DatasetComposer():
                     args=self.get_train_args(),
                 )
             result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+            adhoc.setlog('train', trainer_result=result)
             save_path = aargs['save_path|model_output_path']
             if save_path is None and not os.path.exists('model'):
-                verbose_print('model/に保存するよ。save_pathで保存先を指定してね')
+                verbose_print('modelに保存するよ。save_pathで保存先を指定してね')
                 save_path = 'model'
             if save_path:
                 self.get_tokenizer().save_pretrained(save_path)
