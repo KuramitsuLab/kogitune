@@ -6,6 +6,19 @@ from .adhocargs import verbose_print as print
 _MAX_LIMIT = 1000000
 _MAIN_LOG = {}
 
+## ログセクション
+
+_SECTION = []
+
+def open_section(section: str):
+    _SECTION.append(section)
+
+def get_section():
+    return _SECTION[:-1] if len(_SECTION) > 0 else 'main'
+
+def close_section():
+    section = _SECTION.pop()
+
 def _check_logdata(data):
     if isinstance(data, (int, float, str, bool)) or data is None:
         return data
@@ -64,6 +77,17 @@ def _stringfy_kwargs(message=None, **kwargs):
         ss.append(f'{key}={value}')
     return ' '.join(ss)   
 
+def notice(message: str, **kwargs):
+    print(_stringfy_kwargs(message, **kwargs))
+    for key, value in kwargs.items():
+        log(get_section(), key, value)
+
+
+def fatal(message, **kwargs):
+    import sys
+    log('error', 'fatal', _stringfy_kwargs(message, **kwargs), verbose=True)
+    print('続けて実行できないので停止するよ')
+    sys.exit(1)
 
 def perror(message, **kwargs):
     log('error', 'error', _stringfy_kwargs(message, **kwargs), verbose=True)

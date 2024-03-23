@@ -1,6 +1,6 @@
 import os
 
-from .adhoc_args import adhoc_parse_arguments, AdhocArguments, verbose_print, configurable_tqdm
+from .adhoc_args import adhoc_parse_arguments, AdhocArguments, verbose_print, configurable_tqdm, adhoc
 
 def update_cli(**kwargs):
     verbose_print('KOGITUNEを最新版に更新します。\npip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
@@ -145,6 +145,29 @@ def pretrain_cli(**kwargs):
 
     with DatasetComposer(**kwargs) as dc:
         dc.train()
+
+def data_cli(**kwargs):
+    from kogitune.metrics import load_data
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        datalist = load_data(aargs)
+
+def test_model_cli(**kwargs):
+    from kogitune.metrics import load_model
+    IPSUM='Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
+
+    with AdhocArguments.from_main(**kwargs) as aargs:
+        model = load_model(aargs=aargs)
+        print(model)
+        prompt = aargs['test_prompt|prompt']
+        if prompt is None:
+            adhoc.print('test_prompt でプロンプトは変更できるよ')
+            prompt=IPSUM
+        output = model.generate_text(prompt)
+        adhoc.warn(f'test_prompt="{prompt}"\n===\n{output}\n')
+
+def chaineval_cli(**kwargs):
+    from kogitune.metrics import chain_eval
+    chain_eval(**kwargs)
 
 
 def main():

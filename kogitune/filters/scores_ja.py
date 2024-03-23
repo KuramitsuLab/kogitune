@@ -2,8 +2,7 @@ from typing import Any, List, Optional
 import re
 import os
 
-from .base import TextFilter
-from ..adhocargs import AdhocArguments
+from .base import TextFilter, ScoreFunction, compile_pattern_for_words
 
 pattern_hirakata = re.compile(r'[ぁ-んァ-ヶ]')
 pattern_japanese = re.compile(r'[ぁ-んァ-ヶー・\u4E00-\u9FFF\u3400-\u4DBF、。]')
@@ -33,53 +32,45 @@ def japanese_fraction(text: str) -> float:
     count_commons = count_japanese_characters(text)
     return  count_commons / len(text) if len(text) > 0 else 0.0
 
-def compile_words_pattern(words: List[str], prefix='', suffix=''):
-    if isinstance(words, str):
-        words = words.split('|')
+pattern_japanese_common_words = compile_pattern_for_words(
+    r'(ある|あり|いた|いて|お|か|く|けど|けれど|こと|これ|この|' + 
+    r'され|して|した|しな|する|すれ|せず|その|それ|そう|たい|たく|ため|' +
+    r'ついて|った|って|て|と|な|に|の|は|へ|ほど|まで|ます|ません|まし|' +
+    r'む|も|や|よ|ら|る|れな|わ|んだ|んで|を|が|だ|でき|です|でな|ば|。)'
+)
 
-    ws = []
-    for w in words:
-        if w.endswith('.txt') and os.path.isfile(w):
-            with open(w) as f:
-                ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
-        else:
-            ws.append(w)
-    ws = list(set(ws))
-    ws.sort()
-    pattern = '|'.join(re.escape(w) for w in ws)
-    return re.compile(f'{prefix}{pattern}{suffix}')
-
-pattern_japanese_common_words = re.compile(
-    r'(ある|あり|いた|いて|お|か|く|けど|けれど|こと|これ|この|'
-    r'され|して|した|しな|する|すれ|せず|その|それ|そう|たい|たく|ため|'
-    r'ついて|った|って|て|と|な|に|の|は|へ|ほど|まで|ます|ません|まし|'
-    r'む|も|や|よ|ら|る|れな|わ|んだ|んで|を|が|だ|でき|です|でな|ば|。)')
-
-class JapaneseWordCounter:
+class JapaneseWordCounter(ScoreFunction):
     """
     与えられたテキストに日本語単語が含まれるか判定する評価関数
     """
     def __init__(self, 
                  words: Optional[List[str]] = None, 
-                 unification=False, 
-                 ja_fraction=True, 
-                 length_fraction=False, aargs=None):
+                 unique=False, 
+                 japanese_fraction=False, 
+                 length_fraction=True, **kwargs):
         """
         与えられたテキストに日本語単語が含まれるか判定する評価関数を作る
         :param words: 日本語単語のリスト(省略した場合は助詞)
-        :param unification: 単一化
-        :param ja_fraction: 漢字/ひらがな/かたかな文字における比率
+        :param unique: 単一化
+        :param japanese_fraction: 漢字/ひらがな/かたかな文字における比率
         :param length_fraction: 全テキストにおける比率 
         """
-        aargs=AdhocArguments.to_adhoc(aargs)
-        words = words or aargs['words']
+        self.__init__(**kwargs)
         if words:
-            self.pattern = compile_words_pattern(words)
+            self.pattern = compile_pattern_for_words(words)
         else:
             self.pattern = pattern_japanese_common_words
-        self.unique = aargs[f'unification|={unification}']
-        self.ja_fraction = aargs[f'ja_fraction|={ja_fraction}']
-        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
+        self.unique = unique
+        self.length_fraction = length_fraction
+        self.japanese_fraction = japanese_fraction
+
+    def as_json(self):
+        return {
+            'score': self.name(),
+            'unique': self.unique,
+            'length_fraction': self.length_fraction,
+            'japanese_fraction': self.japanese_fraction,
+        }
 
     def __call__(self, text):
         ws = self.pattern.findall(text)
@@ -87,13 +78,12 @@ class JapaneseWordCounter:
         if self.length_fraction:
             length_count =len(text)
             return (word_count / length_count) if length_count > 0 else 0.0
-        elif self.ja_fraction:
+        elif self.japanese_fraction:
             ja_count = count_japanese_characters(text)
             return (word_count / ja_count) if ja_count > 0 else 0.0 
         return word_count
 
-
-pattern_wikipedia_footnote = compile_words_pattern([
+pattern_wikipedia_footnote = compile_pattern_for_words([
         "脚注",
         "関連項目",
         "日本国内の関連項目",
@@ -119,13 +109,13 @@ class FootnoteFilter(TextFilter):
     テキストから脚注を取り除くフィルター
     """
 
-    def __init__(self, footnote_words: List[str] = None):
+    def __init__(self, words: List[str] = None):
         """
         テキストから脚注を取り除くフィルターを作る
         :param footnote_words: 脚注の先頭(省略した場合は、Wikipedia 脚注)
         """
-        if isinstance(footnote_words, list):
-            self.pattern = compile_words_pattern(footnote_words)
+        if isinstance(words, list):
+            self.pattern = compile_pattern_for_words(words)
         else:
             self.pattern = pattern_wikipedia_footnote
 

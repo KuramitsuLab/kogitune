@@ -2,8 +2,8 @@ from typing import List
 import re
 import ast
 from kogitune.utils_file import filelines, zopen
-from .lang_ja import *
-from .replace import *
+from .scores_ja import *
+from .replaces import *
 
 single_pattern = re.compile(r'\'\'\'[\s\S]*?\'\'\'', re.DOTALL | re.MULTILINE)
 double_pattern = re.compile(r'"""[\s\S]*?"""', re.DOTALL | re.MULTILINE)

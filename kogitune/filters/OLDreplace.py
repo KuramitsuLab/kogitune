@@ -1,6 +1,7 @@
 from typing import List
 import re
 import regex
+from .base import TextFilter
 
 def RE(*patterns: List[str], flags=0):
     return regex.compile('|'.join(patterns), flags=flags)
@@ -462,7 +463,6 @@ close_pattern = RE(
     r'(\&[\#\w\d]+\;\s*)',
 )
 
-
 def replace_enclose(text, replaced='', code=False, max_allowed_num=0):
     """
     text中から()などを取り除く
@@ -637,6 +637,7 @@ def CCFilter(text):
     text = replace_bar(text)
     return cleanup(text)
 
+
 def find_replace_func(pattern:str):
     func = globals().get(f'replace_{pattern}')
     if func is None:
@@ -644,9 +645,13 @@ def find_replace_func(pattern:str):
         raise ValueError(f'replace_{pattern} is not found. Select pattern from {patterns}')
     return func
 
-class ReplacementFilter:
+
+
+
+class Replacement(TextFilter):
     """
     置き換えフィルター
+    :patterns: 'url:<URL>|date:<date>'
     """
 
     def __init__(self, patterns: List[str]):
@@ -656,11 +661,14 @@ class ReplacementFilter:
         """
         if isinstance(patterns,str):
             patterns = patterns.split('|')
-        self.replace_funcs = [find_replace_func(pattern) for pattern in patterns]
+        self.replace_funcs = []
+        for pattern in patterns:
+            pattern, _, w = pattern.partition(':')
+            self.replace_funcs.append((find_replace_func(pattern), w))
 
     def __call__(self, text):
-        for replace_fn in self.replace_funcs:
-            text = replace_fn(text)
+        for replace_fn, w in self.replace_funcs:
+            text = replace_fn(text, w)
             if text is None:
                 break
         return cleanup(text)

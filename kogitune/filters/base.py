@@ -1,10 +1,11 @@
-from typing import Optional
+from typing import Optional, List
 import json
-# import os
-from ..adhoc_args import adhoc #verbose_print, adhoc_log, save_adhoc_log
+import os
+import re
+
+from ..adhoc_args import AdhocArguments, adhoc
 from kogitune.utils_file import zopen, filelines, read_multilines, rename_with_linenum, list_filenames
 
-from tqdm import tqdm
 from multiprocess import Pool
 
 _dummy_record = {}
@@ -145,5 +146,39 @@ class ChoiceFilter(TextFilter):
 #         return text
 
 
-    
+class ScoreFunction(object):
+    def __init__(self, **kwargs):
+        if len(kwargs) > 0:
+            adhoc.print(f'Unused [{self.name()}]', kwargs)
+
+    def name(self):
+        return self.__class__.__name__
+
+    def as_json(self):
+        return None
+
+    def __repr__(self):
+        return json.dumps(self.as_json(), indent=2)
+
+    def __call__(self, text: str):
+        return len(text)
+
+def compile_pattern_for_words(words: List[str], prefix='', suffix=''):
+    if isinstance(words, str):
+        words = words.split('|')
+
+    ws = []
+    for w in words:
+        if w.endswith('.txt') and os.path.isfile(w):
+            with open(w) as f:
+                ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
+        else:
+            ws.append(w)
+    ws = list(set(ws))
+    ws.sort()
+    pattern = '|'.join(re.escape(w) for w in ws)
+    if len(prefix) > 0 or len(suffix) > 0:
+        re.compile(f'{prefix}({pattern}){suffix}')
+    return re.compile(pattern)
+
 
