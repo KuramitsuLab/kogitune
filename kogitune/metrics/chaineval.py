@@ -89,6 +89,7 @@ def chain_eval_with_aargs(aargs):
 
 
 def chain_eval(**kwargs):
+    import traceback
     with AdhocArguments.from_main(**kwargs) as aargs:
         models = aargs['files|model_list']
         if models:
@@ -99,6 +100,7 @@ def chain_eval(**kwargs):
                     chain_eval_with_aargs(aargs)
                 except BaseException as e:
                     adhoc.warn(f'{model_path}の評価に失敗したよ: {e}')
+                    traceback.print_exception(e)
                 adhoc.close_section()
         else:
             adhoc.open_section('chain_eval')
