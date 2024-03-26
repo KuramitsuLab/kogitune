@@ -281,7 +281,7 @@ def get_modeltag(aargs:AdhocArguments):
         return model_path
     else:
         if model_path.startswith('checkpoint-'):
-            checkpoint = model_path('checkpoint-', '')
+            checkpoint = model_path.replace('checkpoint-', '')
             modeltag = f'{modeltag}_cp{checkpoint}'
     return modeltag
 
