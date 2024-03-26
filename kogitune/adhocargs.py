@@ -295,14 +295,18 @@ class AdhocArguments(object):
         if exc_type is None:
             for key, value in self._args.items():
                 if key not in self._used_keys:
+                    print('@used_keys', self._used_keys)
                     raise TypeError(f'{key} is an unused keyword')
 
     @classmethod
-    def from_main(cls, **kwargs):
+    def from_main(cls, import_to_main=False, **kwargs):
         if 'aargs' in kwargs and isinstance(kwargs['aargs'], AdhocArguments):
             aargs = kwargs.pop('aargs')
         else:
             aargs = main_adhoc_arguments()
+            if import_to_main:
+                aargs.update(kwargs, used=False)
+                return aargs
         return AdhocArguments(kwargs, parent=aargs)
 
     def from_kwargs(self, **kwargs):

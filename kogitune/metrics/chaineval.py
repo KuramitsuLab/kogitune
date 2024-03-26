@@ -3,6 +3,7 @@ import time
 import getpass
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from filelock import FileLock
 
 from .local_utils import *
 
@@ -90,7 +91,7 @@ def chain_eval_with_aargs(aargs):
 
 def chain_eval(**kwargs):
     import traceback
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         models = aargs['files|model_list']
         if models:
             for i, model_path in enumerate(models, start=1):

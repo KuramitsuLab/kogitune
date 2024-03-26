@@ -14,7 +14,7 @@ def beta_cli(**kwargs):
 
 def count_lines_cli(**kwargs):
     from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         for file in aargs['files']:
             n = extract_linenum_from_filename(file)
             if n is None:
@@ -23,7 +23,7 @@ def count_lines_cli(**kwargs):
 
 def maxmin_cli(**kwargs):
     from kogitune.filters import maxmin
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
         score_path = aargs['score|eval|!!scoreを設定してください']
         output_path = aargs['output_file|output']
@@ -38,7 +38,7 @@ def maxmin_cli(**kwargs):
 
 def filter_cli(**kwargs):
     from kogitune.filters import load_filter
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
         filter_config = aargs['filter_config|!!filter_configを設定してください']
         text_filter = load_filter(filter_config)
@@ -53,7 +53,7 @@ def filter_cli(**kwargs):
 
 def store_cli(**kwargs):
     from .stores import store_files
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
         store_files(files, skip_validation=False, aargs=aargs)
 
@@ -148,14 +148,14 @@ def pretrain_cli(**kwargs):
 
 def data_cli(**kwargs):
     from kogitune.metrics import load_data
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         datalist = load_data(aargs)
 
 def test_model_cli(**kwargs):
     from kogitune.metrics import load_model
     IPSUM='Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
 
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
         model = load_model(aargs=aargs)
         print(model)
         prompt = aargs['test_prompt|prompt']
