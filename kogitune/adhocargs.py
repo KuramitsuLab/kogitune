@@ -178,6 +178,7 @@ def load_text_list(list_file):
 # main adhoc arguments
 
 main_aargs = None
+_PRINT_ONCE = set()
 
 def main_adhoc_arguments():
     global main_aargs
@@ -423,12 +424,19 @@ class AdhocArguments(object):
         self.print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
         sys.exit(1)
 
-
     def print(self, *args, **kwargs):
-        print(self.face, *args, **kwargs)
+        face = kwargs.pop('face') if 'face' in kwargs else self.face
+        if 'once' in kwargs:
+            once = kwargs.pop('once')
+            if once:
+                value = f'{args[0]}'
+                if value in _PRINT_ONCE:
+                    return
+                _PRINT_ONCE.add(value)
+        print(face, *args, **kwargs)
 
     def verbose_print(self, *args, **kwargs):
-        print(self.face, *args, **kwargs)
+        self.print(*args, **kwargs)
 
     @classmethod
     def to_adhoc(cls, aargs: dict=None, args=None, **kwargs):

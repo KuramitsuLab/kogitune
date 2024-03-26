@@ -83,9 +83,9 @@ class Model(object):
     
     def configure(self, template: TemplateProcessor, datalist:List[dict]):
         genargs = self.generator_args
-        if 'max_length' not in genargs and 'max_tokens' not in genargs:
+        if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
             max_new_tokens, max_length = template.calc_max_tokens(datalist)
-            adhoc.notice('max_tokens, max_lengthを算出しました.', max_new_tokens=max_new_tokens, max_length=max_length)
+            adhoc.notice('max_new_tokens, max_lengthを算出しました.', max_new_tokens=max_new_tokens, max_length=max_length)
             genargs['max_length'] = max_length
             genargs['max_new_tokens'] = max_new_tokens
         
@@ -264,8 +264,6 @@ class HFModel(Model):
                                         **self.generator_args)
         generated_texts_list = [item['generated_text'] for item in generated_texts]
         return generated_texts_list
-
-#mycmuj-mekjoJ-8xikwe
 
 def get_modeltag(aargs:AdhocArguments):
     model_path = aargs['model_path|!!model_pathを設定しましょ']

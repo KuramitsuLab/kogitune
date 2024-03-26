@@ -88,7 +88,7 @@ def load_data(aargs: AdhocArguments):
         aargs['datatag'] = dataset_name
 
     dumpdata = json.dumps(datalist[0], indent=4, ensure_ascii=False)
-    adhoc.print(f'データセット({dataset_path})は間違いありませんか？\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}')
+    adhoc.print(f'データセット({dataset_path})は間違いありませんか？\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=True)
     return datalist
 
 def _guess_uniquekey(datalist: List[dict]):

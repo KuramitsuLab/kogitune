@@ -57,6 +57,7 @@ class TemplateProcessor:
             adhoc.perror(f'テンプレートのキーがデータセットにないのが原因だよ')
 
     def calc_max_tokens(self, datalist:List[dict], extra_length=20):
+        import pandas as pd
         tokenizer = configurable_tokenizer()
         max_length=[]
         max_tokens=[]
@@ -65,6 +66,7 @@ class TemplateProcessor:
             output_length = len(tokenizer.encode(self.create_reference(data)))
             max_length.append(prompt_length+output_length)
             max_tokens.append(output_length)
+        print(pd.DataFrame({'max_new_tokens': max_tokens, 'max_length': max_length}).describe(percentiles=[.8, .9, .95]))
         return max(max_tokens) + extra_length, max(max_length) + extra_length
 
     # def extract(self, text:str) -> str:
