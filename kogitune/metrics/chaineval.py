@@ -85,19 +85,22 @@ def chain_eval_with_aargs(aargs):
             result['contact'] = getpass.getuser()
             save_score(score_file, result)
 
+
+
+
 def chain_eval(**kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
         models = aargs['files|model_list']
         if models:
             for i, model_path in enumerate(models, start=1):
                 aargs['model_path'] = model_path
-                adhoc.open_section(f'chaineval[{i}/{len(models)}]')
+                adhoc.open_section(f'chain_eval[{i}/{len(models)}]')
                 try:
                     chain_eval_with_aargs(aargs)
                 except BaseException as e:
                     adhoc.warn(f'{model_path}の評価に失敗したよ: {e}')
                 adhoc.close_section()
         else:
-            adhoc.open_section('chaineval')
+            adhoc.open_section('chain_eval')
             chain_eval_with_aargs(aargs)
             adhoc.close_section()
