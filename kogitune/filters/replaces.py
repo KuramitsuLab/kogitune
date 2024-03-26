@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 from .base import TextFilter
 from .replaces_utils import *
 from .replaces_code import *
@@ -75,6 +75,6 @@ class Replacement(TextFilter):
                 text = replace_fn(text, w)
             return replace_repeated(text)
 
-def replace(patterns: Union(str, List[str]), **kwargs):
+def replace(patterns: Union[str, List[str]], **kwargs):
     return Replacement(patterns)
 

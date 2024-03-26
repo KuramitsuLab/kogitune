@@ -15,12 +15,12 @@ def _requires_from_file(filename):
 
 setup(
     name="kogitune",
-    version="0.3.2024.3.19",
+    version="0.3.2024.3.24",
     license="Apache",
     author="Kimio Kuramitsu",
     description="The KOGItune 🦊 LLM Project",
     url="https://github.com/kuramitsulab/kogitune",
-    packages=["kogitune", 'kogitune.filters', 'kogitune.trainers', 'kogitune.stores'],
+    packages=["kogitune", 'kogitune.filters', 'kogitune.trainers', 'kogitune.stores', 'kogitune.metrics'],
     package_dir={"kogitune": "kogitune"},
     package_data={"kogitune": ["*/*"]},
     install_requires=_requires_from_file("requirements.txt"),

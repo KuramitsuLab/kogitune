@@ -27,19 +27,21 @@ def chain_eval_with_aargs(aargs):
 
     result_list = prepare_result(datalist, result_file, aargs)
     n = aargs['num_return_sequences|n|N|=1']
-    test_run = aargs['test_run|head']
+    test_run = aargs[f'test_run|head|={len(result_list)}']
 
     if needs_model_inference(result_list, n):
         model = load_model(aargs=aargs)
-        adhoc.notice(sec(result_file), '推論をはじめます', model=model, n=n)
+        model.configure(template, datalist)
 
-        if isinstance(test_run,int):
+        adhoc.notice('推論をはじめます', model=model, n=n, generator_args=model.generator_args)
+        if test_run < len(result_list):
             adhoc.print(f'とりあえず、先頭の{test_run}件のみ試してみます')
-            result_list = result_list[:test_run]
         
         elapsed_time = 0
         save_items = aargs[f'save_items|={len(result_list)//2}']
-        for i, record in enumerate(configurable_tqdm(result_list, desc=f'{model}')):
+        for i, record in enumerate(configurable_tqdm(result_list[:test_run], total=test_run, desc=f'{model}')):
+            if i >= test_run:
+                break
             source = datalist[i]
             if 'input' not in record:
                 record['input'] = template.create_prompt(source)
@@ -61,7 +63,7 @@ def chain_eval_with_aargs(aargs):
                 elapsed_time += record['time']
             if i % save_items == save_items-1:
                 save_result(result_file, result_list)
-        adhoc.notice(sec(result_file), 'お疲れ様！！ 推論終わりました', 
+        adhoc.notice('お疲れ様！！ 推論終わりました', 
                      total_time=elapsed_time, throughtput=elapsed_time/(len(datalist)*n))
         save_result(result_file, result_list)
     
@@ -87,11 +89,15 @@ def chain_eval(**kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
         models = aargs['files|model_list']
         if models:
-            for model_path in models:
+            for i, model_path in enumerate(models, start=1):
                 aargs['model_path'] = model_path
+                adhoc.open_section(f'chaineval[{i}/{len(models)}]')
                 try:
                     chain_eval_with_aargs(aargs)
                 except BaseException as e:
                     adhoc.warn(f'{model_path}の評価に失敗したよ: {e}')
+                adhoc.close_section()
         else:
+            adhoc.open_section('chaineval')
             chain_eval_with_aargs(aargs)
+            adhoc.close_section()

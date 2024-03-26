@@ -46,11 +46,11 @@ GENERATOR_ARGS = [
 ]
 
 def model_generator_args_from_path(model_path, aargs):
-    generator_args = {}
+    generator_args = aargs.get('generator_config|generator_kwargs|generator_args', {})
+    AdhocArguments.copy_keys_from_to(GENERATOR_ARGS, aargs, generator_args)    
     model_path, model_args = parse_path_arguments(model_path)
     AdhocArguments.move_keys_from_to(GENERATOR_ARGS, model_args, generator_args)
     return model_path, model_args, generator_args
-
 
 # =====================
 # Base Classes
@@ -83,11 +83,12 @@ class Model(object):
     
     def configure(self, template: TemplateProcessor, datalist:List[dict]):
         genargs = self.generator_args
-        if 'max_length' not in genargs and 'max_tokens' not in self.genargs:
-            max_tokens, max_length = template.calc_max_tokens(datalist)
-            adhoc.notice('max_tokens, max_lengthを算出しました.', max_tokens=max_tokens, max_tokens=max_length)
+        if 'max_length' not in genargs and 'max_tokens' not in genargs:
+            max_new_tokens, max_length = template.calc_max_tokens(datalist)
+            adhoc.notice('max_tokens, max_lengthを算出しました.', max_new_tokens=max_new_tokens, max_length=max_length)
             genargs['max_length'] = max_length
-            genargs['max_tokens'] = max_tokens
+            genargs['max_new_tokens'] = max_new_tokens
+        
 
 
 class TestModel(Model):
@@ -254,6 +255,8 @@ class HFModel(Model):
         # generated_ids = self.model.generate(input_ids, **self.model_args)
         # return self.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
         # ----------------------------------
+        if 'max_length' in self.generator_args and 'max_new_tokens' in self.generator_args:
+            del self.generator_args['max_length']
         generated_texts = self.generator(prompt, 
                                          ### ここは何を指定するのか？
                                         num_return_sequences = n,
@@ -261,6 +264,8 @@ class HFModel(Model):
                                         **self.generator_args)
         generated_texts_list = [item['generated_text'] for item in generated_texts]
         return generated_texts_list
+
+#mycmuj-mekjoJ-8xikwe
 
 def get_modeltag(aargs:AdhocArguments):
     modeltag = aargs['model_tag|modeltag']

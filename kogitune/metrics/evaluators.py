@@ -29,6 +29,8 @@ class Metric(object):
     def evaluate(self, result_list):
         scores = []
         for record in configurable_tqdm(result_list, desc=f'{self.name}'):
+            if 'outputs' not in record:
+                break
             if self.name not in record:
                 record[self.name] = self.eval_score(record)
             scores.append(record[self.name])

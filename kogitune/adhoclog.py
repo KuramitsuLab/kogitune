@@ -14,7 +14,7 @@ def open_section(section: str):
     _SECTION.append(section)
 
 def get_section():
-    return _SECTION[:-1] if len(_SECTION) > 0 else 'main'
+    return _SECTION[-1] if len(_SECTION) > 0 else 'main'
 
 def close_section():
     section = _SECTION.pop()
