@@ -4,6 +4,8 @@ import sys
 import json
 import re
 import inspect
+#import Levenshtein
+
 from urllib.parse import urlparse, parse_qs
 
 def parse_argument_value(key:str, value:str):
@@ -247,13 +249,32 @@ class AdhocArguments(object):
                         return value
         return default_value
 
-    def copy_to(self, keys: str, newargs: dict):
-        keys = keys.split('|')
-        default_key = keys[0]
-        for key in keys:
-            if key in self:
-                newargs[default_key] = self[key]
-                return
+    @classmethod
+    def copy_keys_from_to(cls, keys_list: List[str], src_args, dist_args: dict):
+        if isinstance(keys_list, str):
+            keys_list=[keys_list]
+        for keys in keys_list:
+            keys = keys.split('|')
+            default_key = keys[0]
+            for key in keys:
+                if key in src_args:
+                    dist_args[default_key] = src_args[key]
+                    break
+
+    @classmethod
+    def move_keys_from_to(cls, keys_list: List[str], src_args, dist_args: dict):
+        if isinstance(keys_list, str):
+            keys_list=[keys_list]
+        for keys in keys_list:
+            keys = keys.split('|')
+            default_key = keys[0]
+            for key in keys:
+                if key in src_args:
+                    dist_args[default_key] = src_args.pop(key)
+                    break
+
+    def copy_to(self, keys_list: List[str], newargs: dict):
+        AdhocArguments.copy_keys_from_to(keys_list, self, newargs)
 
     def __getitem__(self, key):
         return self.get(key, None)

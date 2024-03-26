@@ -4,6 +4,7 @@ import urllib.parse
 from .base import *
 from .documents import *
 from .scores import MaxMinFilter
+from .replaces import replace
 
 def urlencode(d:dict):
     return urllib.parse.urlencode(d)
@@ -74,6 +75,8 @@ def generate_filter(expression):
         if 'filter' in expression:
             name = expression.pop('filter')
             return filter(name, **expression)
+        if 'replace' in expression:
+            return replace(expression.pop('replace'), **expression)
     return TextFilter(unknown_expression=f'{expression}')
 
 def load_filter(json_filename):

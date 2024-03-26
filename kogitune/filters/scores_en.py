@@ -1,8 +1,7 @@
 from typing import Any, List
 import re
-import os
 from collections import Counter
-from ..adhocargs import AdhocArguments
+from .base import ScoreFunction, compile_pattern_for_words
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...
@@ -26,34 +25,65 @@ def contains_english(text: str) -> bool:
 
 def alpha_fraction(text: str) -> float:
     """
-    頻出英単語の比率を算出する
+    英文字の比率を算出する
     """
     alphas = len([c for c in text if 'A' <= c <= 'z'])
     count = len(text)
     return alphas / count if count > 0 else 0.0 
 
-class EnglishWordCounter(object):
+class AlphaFraction(ScoreFunction):
+    """
+    英文字の比率を算出する
+    この関数は役に立ちます。
+    """
+
+    def __init__(self, **kwargs):
+        """
+        英文字の比率を算出する
+        """
+        super().__init__(**kwargs)
+
+    def as_json(self):
+        return {'score': self.name()}
+
+    def __call__(self, text: str):
+        return alpha_fraction(text)
+
+class EnglishWordCounter(ScoreFunction):
     """
     与えられたテキストに英単語(欧文単語)が含まれるか判定する評価関数
     """
-    def __init__(self, pattern=None, unification=False, 
-                 alpha_fraction=True, length_fraction=False, aargs=None):
+    def __init__(self, 
+                 words=None, unique=False, 
+                 alpha_fraction=False, 
+                 length_fraction=True, **kwargs):
         """
         与えられたテキストに英単語が含まれるか判定する評価関数を作る
         :param words: 英単語のリスト(省略した場合は GPT-4による頻出英単語)
-        :param unification: 単一化
+        :param unique: 単一化
         :param alpha_fraction: 英文字における比率
         :param length_fraction: 全テキストにおける比率 
         """
-        aargs=AdhocArguments.to_adhoc(aargs)
-        self.pattern = pattern or pattern_english_common_words
-        self.unique = aargs[f'unification|={unification}']
-        self.alpha_fraction = aargs[f'alpha_fraction|={alpha_fraction}']
-        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
+        super().__init__(**kwargs)
+        if words:
+            self.pattern = compile_pattern_for_words(words, prefix=r'\b', suffix=r'\b')
+        else:
+            self.pattern = pattern_english_common_words
+        self.unique = unique
+        self.alpha_fraction = alpha_fraction
+        self.length_fraction = length_fraction
+
+    def as_json(self):
+        return {
+            'score': self.name(),
+            'unique': self.unique,
+            'alpha_fraction': self.alpha_fraction,
+            'length_fraction': self.length_fraction,
+        }
 
     def __call__(self, text):
         ws = self.pattern.findall(text)
-        word_count = len(set(ws)) if self.unique else len(ws)
+        word_count = len(set(ws)) if self.unique_word else len(ws)
         if self.length_fraction:
             length_count =len(text)
             return word_count / length_count if length_count > 0 else 0.0
@@ -62,22 +92,30 @@ class EnglishWordCounter(object):
             return word_count / alpha_count if alpha_count > 0 else 0.0 
         return word_count
 
-# 空白の前がアルファベットであればカウントしない
-pattern_whitespace = re.compile(r'[^A-Za-z\,][\s　]+')
+# 空白の前が空白であればウントしない
+pattern_whitespace = re.compile(r'[^\s　][\s　]+')
 
-class WhitespaceCounter(object):
+class WhitespaceCounter(ScoreFunction):
     """
-    与えられたテキストの空白文字を数える。ただし、空白の前がアルファベットであればカウントしません。
+    与えられたテキストの空白文字を数える。
+    ただし、空白の前が空白であればカウントしません。
     """
-    def __init__(self, length_fraction=False, aargs=None):
+    def __init__(self, length_fraction=False, **kwargs):
         """
         与えられたテキストの空白文字を数える評価関数を作る
         :param length_fraction: 全テキストにおける比率 
         """
-        aargs=AdhocArguments.to_adhoc(aargs)
-        self.length_fraction = aargs[f'length_fraction|={length_fraction}']
+        super().__init__(**kwargs)
+        self.length_fraction = length_fraction
+
+    def as_json(self):
+        return {
+            'score': self.name(),
+            'length_fraction': self.length_fraction,
+        }
 
     def __call__(self, text):
+
         ws = pattern_whitespace.findall(text)
         whitespace_count = len(ws)
         if self.length_fraction:

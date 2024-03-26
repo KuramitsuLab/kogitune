@@ -6,11 +6,11 @@ if 'get_ipython' in globals():
 else:
     from tqdm import tqdm
 
-def configurable_tqdm(iterable, desc=None, **kwargs):
+def configurable_tqdm(iterable, desc=None, total=None, **kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
-            return tqdm(iterable, desc=desc)
+            return tqdm(iterable, desc=desc, total=total)
         else:
             return iterable
 

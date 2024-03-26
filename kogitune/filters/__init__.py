@@ -13,7 +13,7 @@ from .documents import (
 #    JSONConvertor, JSONTemplateConvertor,
 )
 
-from .replace import (
+from .replaces import (
     ReplacementFilter
 )
 
@@ -22,13 +22,13 @@ from .scores import (
     TokenizerCompression, TokenizerEntropy, ZLibCompression
 )
 
-from .lang_en import (
+from .scores_en import (
     contains_english, 
     EnglishWordCounter,
     WhitespaceCounter,
 )
 
-from .lang_ja import (
+from .scores_ja import (
     contains_japanese, 
     japanese_fraction,
     JapaneseWordCounter, 

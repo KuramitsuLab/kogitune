@@ -98,12 +98,25 @@ def safe_new_file(filebase, ext, max=1000):
     return filename
 '''
 
+def basename(path:str, skip_dot=False):
+    if '?' in path:
+        path, _, _ = path.partition('?')
+    if '/' in path:
+        _, _, path = path.rpartition('/')
+    if '\\' in path:
+        _, _, path = path.rpartition('\\')
+    if not skip_dot and '.' in path:
+        path, _, _ = path.partition('.')
+    return path
+
+"""
 def get_filebase(filename):
     filebase = filename
     if '/' in filebase:
         _, _, filebase = filebase.rpartition('/')
     filebase, _, _ = filebase.partition('.')
     return filebase
+"""
 
 def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'

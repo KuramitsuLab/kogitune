@@ -467,6 +467,7 @@ class DatasetComposer():
             resume_step = get_trained_global_step(resume_path)
             if resume_step == 0:
                 verbose_print(f'チェックポイント {resume_path} が見つかりません')
+                self.aargs['resume_from_checkpoint']=False
             if resume_step > 0:
                 verbose_print(f'チェックポイント step={resume_step} から再開します。')
                 self.train_dataset.skip(resume_step * batch_size)
@@ -527,11 +528,15 @@ class DatasetComposer():
                 # evaluation_strategy='steps',
                 # eval_steps=50,
                 optim=aargs[f'optim|={optim}'],
+                learning_rate=aargs['learning_rate|=4e-4'], 
+                weight_decay=aargs['weight_decay|=0.1'],
+                adam_beta1=aargs['adam_beta1|=0.9'],
+                adam_beta2=aargs['adam_beta2|=0.999'],
+                adam_epsilon=aargs['adam_epsilon|=1e-8'],
+                max_grad_norm=aargs['max_grad_norm|=1.0'],
                 num_train_epochs=aargs['num_train_epochs|=2'],
                 max_steps=aargs['max_steps|=-1'],
-                weight_decay=aargs['weight_decay|=0.1'],
                 lr_scheduler_type=aargs['lr_scheduler_type|=cosine'],
-                learning_rate=aargs['learning_rate|=4e-4'], 
                 logging_steps=aargs['logging_steps|=10'],
                 dataloader_pin_memory=False,
                 save_steps=aargs['save_steps|=1000'],
