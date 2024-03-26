@@ -15,7 +15,7 @@ def _requires_from_file(filename):
 
 setup(
     name="kogitune",
-    version="0.3.2024.3.24",
+    version="0.3.1.2024.3.26",
     license="Apache",
     author="Kimio Kuramitsu",
     description="The KOGItune 🦊 LLM Project",
