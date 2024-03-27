@@ -71,6 +71,12 @@ def transform_data(datalist: List[dict], aargs: AdhocArguments = None, transform
                 else:
                     data[key] = data[format]
 
+def filter_datatag(name):
+    if name.startswith('openai_'):
+        name = name[len('openai_'):]
+    return name
+
+
 def load_data(aargs: AdhocArguments):
     dataset_path = aargs['dataset_path|dataset|!!datasetの設定がないよ']
     if '.json' in dataset_path:
@@ -85,10 +91,10 @@ def load_data(aargs: AdhocArguments):
     transform_data(datalist, aargs)
 
     if 'datatag' not in aargs:
-        aargs['datatag'] = dataset_name
+        aargs['datatag'] = filter_datatag(dataset_name)
 
     dumpdata = json.dumps(datalist[0], indent=4, ensure_ascii=False)
-    adhoc.print(f'データセット({dataset_path})は間違いありませんか？\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=True)
+    adhoc.print(f'データセット({dataset_path})を確認しておいてね\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=True)
     return datalist
 
 def _guess_uniquekey(datalist: List[dict]):
@@ -97,16 +103,18 @@ def _guess_uniquekey(datalist: List[dict]):
             return key
     return None
 
-def prepare_result(datalist:List[dict], result_file, aargs):
+def prepare_result(result_file:str, datalist:List[dict], aargs):
     if result_file:
         if os.path.exists(result_file):
             with zopen(result_file, 'rt') as f:
                 result_list = [json.loads(line) for line in f]
-            if len(result_list) == len(datalist):
+            if datalist is None or len(result_list) == len(datalist):
                 adhoc.warn(f'ファイル {result_file}に追記するよ')
                 return result_list
             adhoc.warn(f'ファイル {result_file}の一致しないから上書きするよ')
         else:
+            if datalist is None:
+                raise FileNotFoundError(result_file)
             adhoc.print(f'新しく保存するよ.. {result_file}')
 
     unique_key = aargs['unique_key|unique_id']

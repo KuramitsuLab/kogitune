@@ -26,21 +26,21 @@ class Metric(object):
     def eval_score(self, record:dict)->float:
         return 0.0
 
-    def evaluate(self, result_list):
+    def evaluate(self, result_list, force_eval=False):
         scores = []
         for record in configurable_tqdm(result_list, desc=f'{self.name}'):
             if 'outputs' not in record:
                 break
-            if self.name not in record:
+            if force_eval or self.name not in record:
                 record[self.name] = self.eval_score(record)
             scores.append(record[self.name])
         if len(scores) == 0:
             adhoc.warn(f'{self.name} スコアが一つもないよ')
             return None
         scores = np.array(scores)
-        np.set_printoptions(precision=2)
-        print(scores, scores.mean(), scores.min(), scores.max())
-        return {'metric': self.name, 'mean': scores.mean(), 'scores': list(scores)}
+        # np.set_printoptions(precision=2)
+        # print(scores, scores.mean(), scores.min(), scores.max())
+        return {'metric': self.name, 'mean': scores.mean(), 'scores': list(round(v, 3) for v in scores)}
             
 class metric_exact_match(Metric):
     """
@@ -75,6 +75,10 @@ def humaneval_extract(prompt, generated_text):
         stop_index = generated_text.find(seq)
         if stop_index != -1 and stop_index < min_stop_index:
             min_stop_index = stop_index
+    print('--')
+    print(generated_text[:min_stop_index])
+    print('--')
+
     return prompt + "\n" + generated_text[:min_stop_index]
 
 
@@ -186,7 +190,7 @@ class F1Evaluator(Evaluator):
 
 #######################
 
-def evaluate_metric(result_list, metric_path):
+def evaluate_metric(result_list, metric_path, force_eval=False):
     metric_name, metric_args = parse_path_arguments(metric_path)
     name = metric_name.replace('@', '_at_')
     name = f'metric_{name}'
@@ -194,5 +198,5 @@ def evaluate_metric(result_list, metric_path):
         adhoc.warn(f'{metric_name}が見つかりません')
         return None
     metric = globals()[name](**metric_args)
-    return metric.evaluate(result_list)
+    return metric.evaluate(result_list, force_eval=force_eval)
     

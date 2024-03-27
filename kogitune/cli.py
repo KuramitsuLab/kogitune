@@ -169,6 +169,9 @@ def chain_eval_cli(**kwargs):
     from kogitune.metrics import chain_eval
     chain_eval(**kwargs)
 
+def eval_only_cli(**kwargs):
+    from kogitune.metrics import eval_only
+    eval_only(**kwargs)
 
 def main():
     # メインのパーサーを作成

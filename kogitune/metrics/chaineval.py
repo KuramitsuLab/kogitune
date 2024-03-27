@@ -24,9 +24,9 @@ def chain_eval_with_aargs(aargs):
     modeltag = get_modeltag(aargs)
     result_file = aargs['result_file|output_file']
     if result_file is None:
-        result_file = f'{datatag}_{modeltag}.jsonl'
+        result_file = f'{datatag}__{modeltag}.jsonl'
 
-    result_list = prepare_result(datalist, result_file, aargs)
+    result_list = prepare_result(result_file, datalist, aargs)
     n = aargs['num_return_sequences|n|N|=1']
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
@@ -74,7 +74,6 @@ def chain_eval_with_aargs(aargs):
         return
     if isinstance(metric_list, str):
         metric_list = metric_list.split('|')
-    score_file = aargs['score_file|score_output_file|=score.jsonl']
     for metric_path in metric_list:
         result = evaluate_metric(result_list, metric_path)
         if result:
@@ -84,10 +83,8 @@ def chain_eval_with_aargs(aargs):
             result['datatag'] = datatag
             result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
             result['contact'] = getpass.getuser()
+            score_file = aargs['score_file|score_output_file|=score.jsonl']
             save_score(score_file, result)
-
-
-
 
 def chain_eval(**kwargs):
     import traceback
@@ -107,3 +104,44 @@ def chain_eval(**kwargs):
             adhoc.open_section('chain_eval')
             chain_eval_with_aargs(aargs)
             adhoc.close_section()
+
+def eval_only_with_args(aargs):
+    result_file = aargs['result_file|!result_fileが必要だよ']
+    result_list = prepare_result(result_file, None, aargs)
+    
+    ## モデル評価を行います。
+    metric_list = aargs['metric_list|metrics|metric']
+    if metric_list is None:
+        return
+    if isinstance(metric_list, str):
+        metric_list = metric_list.split('|')
+    for metric_path in metric_list:
+        result = evaluate_metric(result_list, metric_path, aargs['force_eval|force|=False'])
+        if result:
+            save_result(result_file, result_list)
+            print(result)
+            if '__' in result_file:
+                datatag, __, modeltag = result_file.replace('.jsonl', '').partition('__')
+                result['modeltag'] = modeltag
+                result['datatag'] = datatag
+                result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
+                result['contact'] = getpass.getuser()
+                score_file = aargs['score_file|score_output_file|=score.jsonl']
+                save_score(score_file, result)
+
+
+
+def eval_only(**kwargs):
+    import traceback
+    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+        result_files = aargs['files|!!ファイルをちょうだいね']
+        for i, result_file in enumerate(result_files):
+            adhoc.open_section('eval')
+            aargs['result_file'] = result_file
+            try:
+                eval_only_with_args(aargs)
+            except BaseException as e:
+                adhoc.warn(f'{result_file}の評価に失敗したよ: {e}')
+                traceback.print_exception(e)
+            adhoc.close_section()
+ 

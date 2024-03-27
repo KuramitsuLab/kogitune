@@ -15,6 +15,6 @@ def configurable_tokenizer(tokenizer = None, akey='', **kwargs):
                 local_args['trust_remote_code'] = True
             if 'use_fast' not in local_args:
                 local_args['use_fast'] = False
-            # AutoTokenizer.from_pretrained(tokenizer, legacy=legacy, trust_remote_code=True, use_fast=False)
             tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
+    #print('@', tokenizer)
     return tokenizer

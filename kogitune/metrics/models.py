@@ -257,10 +257,13 @@ class HFModel(Model):
         # ----------------------------------
         if 'max_length' in self.generator_args and 'max_new_tokens' in self.generator_args:
             del self.generator_args['max_length']
+        if 'return_full_text' not in self.generator_args:
+            self.generator_args['return_full_text'] = False
+        if 'pad_token_id' not in self.generator_args:
+            self.generator_args['pad_token_id'] = self.generator.tokenizer.eos_token_id
         generated_texts = self.generator(prompt, 
                                          ### ここは何を指定するのか？
                                         num_return_sequences = n,
-                                        pad_token_id=self.generator.tokenizer.eos_token_id,
                                         **self.generator_args)
         generated_texts_list = [item['generated_text'] for item in generated_texts]
         return generated_texts_list

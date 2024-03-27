@@ -4,6 +4,12 @@ import sys
 import json
 import re
 import inspect
+try:
+    from termcolor import colored
+except:
+    def colored(text, color):
+        return text
+
 #import Levenshtein
 
 from urllib.parse import urlparse, parse_qs
@@ -437,7 +443,11 @@ class AdhocArguments(object):
                 if value in _PRINT_ONCE:
                     return
                 _PRINT_ONCE.add(value)
-        print(face, *args, **kwargs)
+        sep = kwargs.get('sep', ' ')
+        text = sep.join(f'{v}' for v in args)
+        if 'color' in kwargs:
+            text = colored(text, kwargs.pop('color'))
+        print(f'{face}{text}', **kwargs)
 
     def verbose_print(self, *args, **kwargs):
         self.print(*args, **kwargs)
