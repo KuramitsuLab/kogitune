@@ -172,9 +172,41 @@ class BedrockModel(Model):
 
 ## HF
 
+dtype_mapping = {
+    "float": torch.float,
+    "float32": torch.float32,
+    "float64": torch.float64,
+    "double": torch.double,
+    "float16": torch.float16,
+    "half": torch.half,
+    "bfloat16": torch.bfloat16,
+    "int": torch.int,
+    "int32": torch.int32,
+    "int64": torch.int64,
+    "long": torch.long,
+    "int16": torch.int16,
+    "short": torch.short,
+    "int8": torch.int8,
+    "uint8": torch.uint8,
+    "bool": torch.bool,
+}
+
+def get_dtype_from_string(dtype):
+    if isinstance(dtype, str):
+        if dtype in dtype_mapping:
+            return dtype_mapping.get(dtype)
+        raise ValueError(f'unknown {dtype} dtype in PyTorch')
+    return dtype
+
+def check_model_args(model_args: dict):
+    if 'pytorch_dtype' in model_args:
+        model_args['pytorch_dtype']=get_dtype_from_string(model_args['pytorch_dtype'])
+    return model_args
+
 def load_hfmodel(model_path, model_args):
     from transformers import AutoModelForCausalLM
     try:
+        model_args = check_model_args(model_args)
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_args)
         return model
     except BaseException as e:

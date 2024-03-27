@@ -75,10 +75,6 @@ def humaneval_extract(prompt, generated_text):
         stop_index = generated_text.find(seq)
         if stop_index != -1 and stop_index < min_stop_index:
             min_stop_index = stop_index
-    print('--')
-    print(generated_text[:min_stop_index])
-    print('--')
-
     return prompt + "\n" + generated_text[:min_stop_index]
 
 

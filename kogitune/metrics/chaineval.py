@@ -16,7 +16,7 @@ from .evaluators import evaluate_metric
 def sec(result_file):
     return result_file.replace('.jsonl', '')
 
-def chain_eval_with_aargs(aargs):
+def generate_with_args(aargs):
     datalist = load_data(aargs)
     template = load_template(datalist, aargs)
 
@@ -31,15 +31,16 @@ def chain_eval_with_aargs(aargs):
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
     if needs_model_inference(result_list, n):
+        adhoc.open_section('generation')
         model = load_model(aargs=aargs)
         model.configure(template, datalist)
 
-        adhoc.notice('推論をはじめます', model=model, n=n, generator_args=model.generator_args)
+        adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
         if test_run < len(result_list):
             adhoc.print(f'とりあえず、先頭の{test_run}件のみ試してみます')
         
         elapsed_time = 0
-        save_items = aargs[f'save_items|={len(result_list)//2}']
+        save_items = aargs[f'save_items|={len(result_list)//4}']
         for i, record in enumerate(configurable_tqdm(result_list[:test_run], total=test_run, desc=f'{model}')):
             if i >= test_run:
                 break
@@ -64,84 +65,74 @@ def chain_eval_with_aargs(aargs):
                 elapsed_time += record['time']
             if i % save_items == save_items-1:
                 save_result(result_file, result_list)
-        adhoc.notice('お疲れ様！！ 推論終わりました', 
-                     total_time=elapsed_time, throughtput=elapsed_time/(len(datalist)*n))
+        adhoc.notice('お疲れ様！！ 生成終わりました', 
+                     total_time=round(elapsed_time,3),
+                     throughtput=round(elapsed_time/(test_run*n),3))
         save_result(result_file, result_list)
-    
-    ## モデル評価を行います。
+        adhoc.close_section()
+    return result_file, result_list
+
+def get_metric_list(aargs):
     metric_list = aargs['metric_list|metrics|metric']
     if metric_list is None:
-        return
+        return None
     if isinstance(metric_list, str):
         metric_list = metric_list.split('|')
-    for metric_path in metric_list:
-        result = evaluate_metric(result_list, metric_path)
-        if result:
-            save_result(result_file, result_list)
-            print(result)
-            result['modeltag'] = modeltag
-            result['datatag'] = datatag
-            result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
-            result['contact'] = getpass.getuser()
-            score_file = aargs['score_file|score_output_file|=score.jsonl']
-            save_score(score_file, result)
+    return metric_list
 
-def chain_eval(**kwargs):
-    import traceback
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
-        models = aargs['files|model_list']
-        if models:
-            for i, model_path in enumerate(models, start=1):
-                aargs['model_path'] = model_path
-                adhoc.open_section(f'chain_eval[{i}/{len(models)}]')
-                try:
-                    chain_eval_with_aargs(aargs)
-                except BaseException as e:
-                    adhoc.warn(f'{model_path}の評価に失敗したよ: {e}')
-                    traceback.print_exception(e)
-                adhoc.close_section()
-        else:
-            adhoc.open_section('chain_eval')
-            chain_eval_with_aargs(aargs)
-            adhoc.close_section()
-
-def eval_only_with_args(aargs):
-    result_file = aargs['result_file|!result_fileが必要だよ']
-    result_list = prepare_result(result_file, None, aargs)
-    
-    ## モデル評価を行います。
-    metric_list = aargs['metric_list|metrics|metric']
-    if metric_list is None:
-        return
-    if isinstance(metric_list, str):
-        metric_list = metric_list.split('|')
+def eval_with_args(result_file, result_list, metric_list, aargs):
+    adhoc.open_section('eval')
     for metric_path in metric_list:
-        result = evaluate_metric(result_list, metric_path, aargs['force_eval|force|=False'])
+        result = evaluate_metric(result_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
             save_result(result_file, result_list)
             print(result)
             if '__' in result_file:
-                datatag, __, modeltag = result_file.replace('.jsonl', '').partition('__')
+                datatag, _, modeltag = result_file.replace('.jsonl', '').partition('__')
                 result['modeltag'] = modeltag
                 result['datatag'] = datatag
                 result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
                 result['contact'] = getpass.getuser()
                 score_file = aargs['score_file|score_output_file|=score.jsonl']
                 save_score(score_file, result)
+    adhoc.close_section()
 
+def check_eval_only(aargs):
+    files = aargs['files']
+    metric_list = get_metric_list(aargs)
+    if files is None or metric_list is None:
+        return None, metric_list 
+    for file in files:
+        if not file.endswith('.jsonl') or '__' not in file:
+            return None, metric_list
+    return files, metric_list
 
-
-def eval_only(**kwargs):
+def chain_eval(**kwargs):
     import traceback
     with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
-        result_files = aargs['files|!!ファイルをちょうだいね']
-        for i, result_file in enumerate(result_files):
-            adhoc.open_section('eval')
-            aargs['result_file'] = result_file
-            try:
-                eval_only_with_args(aargs)
-            except BaseException as e:
-                adhoc.warn(f'{result_file}の評価に失敗したよ: {e}')
-                traceback.print_exception(e)
-            adhoc.close_section()
- 
+        result_files, metric_list = check_eval_only(aargs)
+        if result_files:
+            metric_list = get_metric_list(aargs)
+            for i, result_file in enumerate(result_files):
+                try:
+                    result_list = prepare_result(result_file, None, aargs)
+                    eval_with_args(result_file, result_list, metric_list, aargs)
+                except BaseException as e:
+                    adhoc.warn(f'{result_file}の評価に失敗したよ: {e}')
+                    traceback.print_exception(e)
+            return
+        models = aargs['files|model_list']
+        if models:
+            for i, model_path in enumerate(models, start=1):
+                try:
+                    aargs['model_path'] = model_path
+                    result_file, result_list = generate_with_args(aargs)
+                    if metric_list:
+                        eval_with_args(result_file, result_list, metric_list, aargs)
+                except BaseException as e:
+                    adhoc.warn(f'{model_path}の生成・評価に失敗したよ: {e}')
+                    traceback.print_exception(e)
+        else:
+            result_file, result_list = generate_with_args(aargs)
+            if metric_list:
+                eval_with_args(result_file, result_list, metric_list, aargs)
