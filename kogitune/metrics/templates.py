@@ -8,8 +8,6 @@ class TemplateProcessor:
     def __init__(self, prompt, reference, **kwargs):
         self.prompt = prompt
         self.reference = reference
-        # self.begin = begin
-        # self.end = end
         self.options = kwargs
 
     def create_prompt(self, data:dict):

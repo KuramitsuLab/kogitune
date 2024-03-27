@@ -4,6 +4,12 @@ import sys
 import json
 import re
 import inspect
+try:
+    from termcolor import colored
+except:
+    def colored(text, color):
+        return text
+
 #import Levenshtein
 
 from urllib.parse import urlparse, parse_qs
@@ -295,14 +301,18 @@ class AdhocArguments(object):
         if exc_type is None:
             for key, value in self._args.items():
                 if key not in self._used_keys:
+                    print('@used_keys', self._used_keys)
                     raise TypeError(f'{key} is an unused keyword')
 
     @classmethod
-    def from_main(cls, **kwargs):
+    def from_main(cls, import_to_main=False, **kwargs):
         if 'aargs' in kwargs and isinstance(kwargs['aargs'], AdhocArguments):
             aargs = kwargs.pop('aargs')
         else:
             aargs = main_adhoc_arguments()
+            if import_to_main:
+                aargs.update(kwargs, used=False)
+                return aargs
         return AdhocArguments(kwargs, parent=aargs)
 
     def from_kwargs(self, **kwargs):
@@ -433,7 +443,11 @@ class AdhocArguments(object):
                 if value in _PRINT_ONCE:
                     return
                 _PRINT_ONCE.add(value)
-        print(face, *args, **kwargs)
+        sep = kwargs.get('sep', ' ')
+        text = sep.join(f'{v}' for v in args)
+        if 'color' in kwargs:
+            text = colored(text, kwargs.pop('color'))
+        print(f'{face}{text}', **kwargs)
 
     def verbose_print(self, *args, **kwargs):
         self.print(*args, **kwargs)
