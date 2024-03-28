@@ -243,17 +243,18 @@ def new_Llama2(max_length=2048,
 
 ### new version
 
-def configurable_config_kwargs(tokenizer, **kwargs):
+def extract_scratch_config(tokenizer, **kwargs):
     from ..adhoc_args import AdhocArguments
     with AdhocArguments.from_main(**kwargs) as aargs:
         aargs.used('model_type')
         num_attention_heads = aargs['num_attention_heads|n_heads|=4']
         if 'hidden_size' in kwargs:
-            hidden_size = aargs['intermediate_size|=1024']
+            hidden_size = aargs['hidden_size|=1024']
         else:
             hidden_size = aargs['head_dim|n_dims|=32'] * num_attention_heads
-        config_kwargs = dict(
-            vocab_size = tokenizer.vocab_size,
+        scratch_config = dict(
+            model_type = aargs['model_type|=llama2'],
+            vocab_size = aargs[f'vocab_size|={tokenizer.vocab_size}'],
             pad_token_id = tokenizer.pad_token_id,
             bos_token_id = tokenizer.bos_token_id,
             eos_token_id = tokenizer.eos_token_id,
@@ -261,20 +262,24 @@ def configurable_config_kwargs(tokenizer, **kwargs):
             hidden_size = hidden_size,
             intermediate_size = aargs['intermediate_size|=512'],
             num_hidden_layers = aargs['num_hidden_layers|n_layers|=12'],
-            num_key_value_heads = aargs['num_key_value_heads|group_heads|n_groups|=4'],
-            max_position_embeddings = aargs['max_position_embeddings|=2048'],
+            num_key_value_heads = aargs['num_key_value_heads|head_groups|n_groups|=4'],
+            max_position_embeddings = aargs['max_position_embeddings|=4096'],
         )
-        aargs.copy_to('num_key_value_heads|group_heads|n_groups', config_kwargs)
-        aargs.copy_to('hidden_act', config_kwargs)
-        aargs.copy_to('rms_norm_eps', config_kwargs)
-        aargs.copy_to('rope_theta', config_kwargs)
-        aargs.copy_to('tie_word_embeddings', config_kwargs)
-        aargs.copy_to('attention_dropout', config_kwargs)
-        aargs.copy_to('attention_bias', config_kwargs) # Gemma, Lamma
-        aargs.copy_to('sliding_window', config_kwargs) # Mistral
-        aargs.copy_to('partial_rotary_factor', config_kwargs) # StableLmConfig
-    print(config_kwargs)
-    return config_kwargs
+        scratch_config_base = aargs['scratch_config|scratch_kwargs']
+        if scratch_config_base:
+            scratch_config_base.update(scratch_config)
+            scratch_config = scratch_config_base
+        aargs.copy_to('num_key_value_heads|group_heads|n_groups', scratch_config)
+        aargs.copy_to('hidden_act', scratch_config)
+        aargs.copy_to('rms_norm_eps', scratch_config)
+        aargs.copy_to('rope_theta', scratch_config)
+        aargs.copy_to('tie_word_embeddings', scratch_config)
+        aargs.copy_to('attention_dropout', scratch_config)
+        aargs.copy_to('attention_bias', scratch_config) # Gemma, Lamma
+        aargs.copy_to('sliding_window', scratch_config) # Mistral
+        aargs.copy_to('partial_rotary_factor', scratch_config) # StableLmConfig
+        #scratch_config['torch_dtype'] = torch.float16
+    return scratch_config
 
 def generate_scratch_gpt2(**kwargs):
     from transformers import GPT2LMHeadModel, GPT2Config
@@ -338,25 +343,31 @@ def generate_scratch_gemma(**kwargs):
 
 
 def configurable_scratch(**kwargs):
+    from transformers import AutoModelForCausalLM
     tokenizer = configurable_tokenizer(tokenizer=kwargs.get('tokenizer'))
-    config_kwargs = configurable_config_kwargs(tokenizer, **kwargs)
-    model_type = kwargs.get('model_type', 'llama2')
-    adhoc.setlog('scratch', model_type=model_type, config=config_kwargs)
+    scratch_config = extract_scratch_config(tokenizer, **kwargs)
+    model_type = scratch_config.get('model_type', 'llama2')
+    adhoc.open_section('scratch')
+    adhoc.notice('新しいLLMを生成しています', scratch_config=scratch_config)
 
     ns = globals()
     name = f'generate_scratch_{model_type}'
     if name in ns:
-        model = ns[name](**config_kwargs)
+        model = ns[name](**scratch_config)
     else:
         required = [k.replace('generate_scratch_', '') for k, _ in ns.items() if k.startswith('generate_scratch_')]
-        adhoc.warn(f'モデル種類({model_type})が不明だよ. ', unknown=model_type, required=required)
-        adhoc.print('とりあえず、llama2で生成してみます')
-        model = generate_scratch_llama2(**config_kwargs)
+        adhoc.warn(f'model_type={model_type}は知らないよ', 
+                   unknown_model_type=model_type, 
+                   required_model_type=required, default_model_type='llama2')
+        model = generate_scratch_llama2(**scratch_config)
 
     output_path = kwargs.get('scratch_output_path', 'scratch')
     if output_path:
         tokenizer.save_pretrained(output_path)
         model.save_pretrained(output_path)
-
+        ## なんか馬鹿らしいコードだけど、float16に変換　サイズが半分になる
+        model = AutoModelForCausalLM.from_pretrained(output_path, torch_dtype=torch.float16)
+        model.save_pretrained(output_path)
+    adhoc.close_section()
     return model
     

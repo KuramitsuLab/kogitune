@@ -69,6 +69,12 @@ def setlog(section:str, **kwargs):
     for key, value in kwargs.items():
         log(section, key, value)
 
+def setlog2(**kwargs):
+    section = get_section()
+    for key, value in kwargs.items():
+        log(section, key, value)
+
+
 def _stringfy_kwargs(message=None, **kwargs):
     ss = []
     if message:
