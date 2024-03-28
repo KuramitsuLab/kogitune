@@ -25,12 +25,15 @@ class TemplateProcessor:
             return f'{prompt}\n{reference}'
         return f'{prompt}{reference}'
 
-    def create_instruction(self, data):
-        prompt = self.prompt.format(**data)
-        reference = self.reference.format(**data)
-        if not prompt.endswith('\n'):
-            return f'{prompt}\n{reference}'
-        return f'{prompt}{reference}'
+    def load_sample(self, datalist, sample_list):
+        assert len(datalist) == len(sample_list)
+        for i in range(len(datalist)):
+            source = datalist[i]
+            sample = sample_list[i]
+            if 'input' not in sample:
+                sample['input'] = self.create_prompt(source)
+            if 'reference' not in sample:
+                sample['reference'] = self.create_reference(source)
 
     def test_template(self, record, verbose=True):
         try:
