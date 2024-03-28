@@ -199,8 +199,10 @@ def get_dtype_from_string(dtype):
     return dtype
 
 def check_model_args(model_args: dict):
-    if 'pytorch_dtype' in model_args:
-        model_args['pytorch_dtype']=get_dtype_from_string(model_args['pytorch_dtype'])
+    if 'torch_dtype' in model_args:
+        model_args['torch_dtype']=get_dtype_from_string(model_args['torch_dtype'])
+    if 'device_map' not in model_args and torch.cuda.is_available():
+        model_args['device_map']='auto'
     return model_args
 
 def load_hfmodel(model_path, model_args):
