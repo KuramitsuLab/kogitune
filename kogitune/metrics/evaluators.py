@@ -40,7 +40,12 @@ class Metric(object):
         scores = np.array(scores)
         # np.set_printoptions(precision=2)
         # print(scores, scores.mean(), scores.min(), scores.max())
-        return {'metric': self.name, 'mean': scores.mean(), 'scores': list(round(v, 3) for v in scores)}
+        return {
+                'model': '', 
+                'data': '', 
+                'metric': self.name, 
+                'mean': round(scores.mean(), 4), 
+                'scores': list(round(v, 3) for v in scores)}
             
 class metric_exact_match(Metric):
     """

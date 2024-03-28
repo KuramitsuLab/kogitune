@@ -1,5 +1,4 @@
 from typing import List
-import time
 import getpass
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -27,6 +26,11 @@ def generate_with_args(aargs):
         result_file = f'{datatag}__{modeltag}.jsonl'
 
     result_list = prepare_result(result_file, datalist, aargs)
+    if 'input' not in result_list[0]:
+        template.load_sample(datalist, result_list)
+
+    save_result(result_file, result_list)      
+
     n = aargs['num_return_sequences|n|N|=1']
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
@@ -37,37 +41,18 @@ def generate_with_args(aargs):
 
         adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
         if test_run < len(result_list):
-            adhoc.print(f'とりあえず、先頭の{test_run}件のみ試してみます')
-        
-        elapsed_time = 0
-        save_items = aargs[f'save_items|={len(result_list)//4}']
-        for i, record in enumerate(configurable_tqdm(result_list[:test_run], total=test_run, desc=f'{model}')):
-            if i >= test_run:
-                break
-            source = datalist[i]
-            if 'input' not in record:
-                record['input'] = template.create_prompt(source)
-            if 'reference' not in record:
-                record['reference'] = template.create_reference(source)
-            if 'outputs' not in record:
-                start_time = time.time()
-                record['outputs'] = model.generate_list(record['input'], n=n)
-                record['time'] = (time.time() - start_time) / n
-            else:
-                remaining_n = n - len(record['outputs'])
-                if remaining_n > 0:
-                    start_time = time.time()
-                    record['outputs'].append(model.generate_list(record['input'], n=remaining_n))
-                    record['time'] = (time.time() - start_time) / remaining_n
-            if 'output' not in record:
-                record['output'] = record['outputs'][0]
-            if 'time' in record:
-                elapsed_time += record['time']
-            if i % save_items == save_items-1:
-                save_result(result_file, result_list)
-        adhoc.notice('お疲れ様！！ 生成終わりました', 
-                     total_time=round(elapsed_time,3),
-                     throughtput=round(elapsed_time/(test_run*n),3))
+            adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')
+        sample_list = [sample for sample in result_list[:test_run] if 'outputs' not in sample]
+        def saving():
+            save_result(result_file, result_list)      
+        elapsed_time = model.generate_streaming(sample_list, 
+                                                n=n, 
+                                                saving_func=saving, 
+                                                batch_size=aargs['eval_batch_size|batch_size|=2'])
+        if len(sample_list) > 0:
+            adhoc.notice('お疲れ様！！ 生成終わりました', 
+                        total_time=round(elapsed_time,3),
+                        throughtput=round(elapsed_time/len(sample_list),3))
         save_result(result_file, result_list)
         adhoc.close_section()
     return result_file, result_list
@@ -86,15 +71,17 @@ def eval_with_args(result_file, result_list, metric_list, aargs):
         result = evaluate_metric(result_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
             save_result(result_file, result_list)
-            print(result)
             if '__' in result_file:
                 datatag, _, modeltag = result_file.replace('.jsonl', '').partition('__')
-                result['modeltag'] = modeltag
-                result['datatag'] = datatag
+                result['model'] = modeltag
+                result['data'] = datatag
+                print(result)
                 result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
                 result['contact'] = getpass.getuser()
-                score_file = aargs['score_file|score_output_file|=score.jsonl']
+                score_file = aargs['score_file|=score.jsonl']
                 save_score(score_file, result)
+            else:
+                print(result)
     adhoc.close_section()
 
 def check_eval_only(aargs):

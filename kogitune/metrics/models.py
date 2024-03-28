@@ -69,18 +69,6 @@ class Model(object):
     def __repr__(self):
         return self.model_path
 
-    def generate_list(self, prompt: str, n=1) -> List[str]:
-        return [self.generate_text(prompt) for _ in range(n)]
-
-    def generate(self, prompt: str):
-        start = time.time()
-        output = self.generate_text(prompt)
-        return dict(
-            prompt=prompt,
-            output=output,
-            elapsed_time= time.time() - start
-        )
-    
     def configure(self, template: TemplateProcessor, datalist:List[dict]):
         genargs = self.generator_args
         if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
@@ -88,7 +76,24 @@ class Model(object):
             adhoc.notice('max_new_tokens, max_lengthを算出しました.', max_new_tokens=max_new_tokens, max_length=max_length)
             genargs['max_length'] = max_length
             genargs['max_new_tokens'] = max_new_tokens
-        
+
+    def generate_list(self, prompt: str, n=1) -> List[str]:
+        return [self.generate_text(prompt) for _ in range(n)]
+
+    def generate_streaming(self, sample_list:List[dict], n=1, saving_func=None, batch_size=1):
+        elapsed_time = 0
+        saved_time = time.time()
+        for sample in configurable_tqdm(sample_list, desc=f'{self}'):
+            start_time = time.time()
+            sample['outputs'] = self.generate_list(sample['input'], n=n)
+            sample['output'] = sample['outputs'][0]
+            end_time = time.time()
+            sample['time'] = round(end_time - start_time, 3)
+            elapsed_time += sample['time']
+            if saving_func and end_time - saved_time > 60 * 5:
+                saved_time = end_time
+                saving_func()
+        return elapsed_time
 
 
 class TestModel(Model):
@@ -263,6 +268,17 @@ def get_generator_kwargs(aargs: AdhocArguments):
         kwargs["max_new_tokens"] = aargs['max_new_tokens|max_tokens|=512']
     return kwargs
 
+# define data streamer
+
+## 私は現在、データセットとバッチ処理でゼロショットテキスト分類器パイプラインを使用しています。
+# 「GPUでパイプラインを順番に使用しているようです。効率を最大化するために、データセットを使用してください」という警告は、
+# 私のループの反復ごとに表示されます。
+# 私はデータセットを使用しており、バッチ処理しています。この警告がバグなのか、それとも本当の問題を診断するのに十分な説明的ではないのかはわかりません。
+## https://github.com/huggingface/transformers/issues/22387
+
+def data_stream(sample_list: List[str], desc=None):
+    for sample in configurable_tqdm(sample_list, desc=desc):
+        yield sample['input']
 
 class HFModel(Model):
     def __init__(self, model_path, aargs):
@@ -278,6 +294,12 @@ class HFModel(Model):
             tokenizer=self.tokenizer,
             use_auth_token=aargs['hf_token'],
         )
+        if 'max_length' in generator_args and 'max_new_tokens' in generator_args:
+            del generator_args['max_length']
+        if 'return_full_text' not in generator_args:
+            generator_args['return_full_text'] = False
+        if 'pad_token_id' not in generator_args:
+            generator_args['pad_token_id'] = self.tokenizer.eos_token_id
         self.generator_args = generator_args
 
     def generate_text(self, prompt: str) -> List[str]:
@@ -289,18 +311,33 @@ class HFModel(Model):
         # generated_ids = self.model.generate(input_ids, **self.model_args)
         # return self.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
         # ----------------------------------
-        if 'max_length' in self.generator_args and 'max_new_tokens' in self.generator_args:
-            del self.generator_args['max_length']
-        if 'return_full_text' not in self.generator_args:
-            self.generator_args['return_full_text'] = False
-        if 'pad_token_id' not in self.generator_args:
-            self.generator_args['pad_token_id'] = self.generator.tokenizer.eos_token_id
         generated_texts = self.generator(prompt, 
                                          ### ここは何を指定するのか？
                                         num_return_sequences = n,
                                         **self.generator_args)
         generated_texts_list = [item['generated_text'] for item in generated_texts]
         return generated_texts_list
+
+    def generate_streaming(self, sample_list: List[dict], n=1, saving_func=None, batch_size=1) -> List[str]:
+        elapsed_time = 0
+        saved_time = time.time()
+        outputs = self.generator(data_stream(sample_list, desc=f'{self}'), 
+                        num_return_sequences = n, batch_size=batch_size,
+                        **self.generator_args)
+        start_time = time.time()
+        for i, results in enumerate(outputs):
+            sample = sample_list[i]
+            sample['outputs'] = [item['generated_text'] for item in results]
+            sample['output'] = sample['outputs'][0]
+            end_time = time.time()
+            sample['time'] = round((end_time - start_time)/batch_size, 3)
+            elapsed_time += (end_time - start_time)
+            if saving_func and end_time - saved_time > 300:
+                saved_time = end_time
+                saving_func()
+            start_time = time.time()
+        return elapsed_time
+
 
 def get_modeltag(aargs:AdhocArguments):
     model_path = aargs['model_path|!!model_pathを設定しましょ']
