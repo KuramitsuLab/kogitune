@@ -7,6 +7,10 @@ pattern = regex.compile(r'\[(?:[^\[\]]+|(?R))*\]')
 def find_nested_brackets(s):
     return regex.findall(pattern, s)
 
+def contains_da_notion(text):
+    matches = find_nested_brackets(s)
+    return len(matches) > 0
+
 # 使用例
 def da(s, random_seed=None, random_choice=True, mapped=None):
     mapped = mapped or {}
@@ -40,7 +44,7 @@ def da(s, random_seed=None, random_choice=True, mapped=None):
         s = s.replace(match, inner)
     return s
 
-s = "This is [a simple|an] example, [SEP] but [here [is [a|an] nested] [simple|small] example] for you."
-s = "This is [@(1)|1.|[1]] example, [SEP] but [here [is [a|an] nested] [@(2)|2.|[2]] example] for you."
+# s = "This is [a simple|an] example, [SEP] but [here [is [a|an] nested] [simple|small] example] for you."
+# s = "This is [@(1)|1.|[1]] example, [SEP] but [here [is [a|an] nested] [@(2)|2.|[2]] example] for you."
 
-print(da(s))
+# print(da(s))

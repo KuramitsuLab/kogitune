@@ -3,7 +3,7 @@ import os, time
 import torch
 import json
 from .local_utils import *
-from .templates import TemplateProcessor
+from ..datasets.templates import TemplateProcessor
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 
@@ -72,10 +72,9 @@ class Model(object):
     def configure(self, template: TemplateProcessor, datalist:List[dict]):
         genargs = self.generator_args
         if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
-            max_new_tokens, max_length = template.calc_max_tokens(datalist)
-            adhoc.notice('max_new_tokens, max_lengthを算出しました.', max_new_tokens=max_new_tokens, max_length=max_length)
-            genargs['max_length'] = max_length
+            max_new_tokens = template.calc_length(datalist, return_max_new_tokens=True)
             genargs['max_new_tokens'] = max_new_tokens
+            adhoc.notice(f'max_new_tokens={max_new_tokens}を設定したよ')
 
     def generate_list(self, prompt: str, n=1) -> List[str]:
         return [self.generate_text(prompt) for _ in range(n)]

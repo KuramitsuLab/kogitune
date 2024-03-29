@@ -522,6 +522,15 @@ class AdhocArguments(object):
         aargs.update(dict(kwargs))
         return aargs
 
+    @classmethod
+    def pop_from_kwargs(cls, key:str, kwargs:dict, default_value=None):
+        for key in key.split('|'):
+            if key in kwargs:
+                value = kwargs.pop(key)
+                return value
+        return default_value
+
+
 
 def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
                           requires:Optional[List[str]]=None,

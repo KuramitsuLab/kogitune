@@ -165,9 +165,14 @@ def test_model_cli(**kwargs):
         output = model.generate_text(prompt)
         adhoc.warn(f'test_prompt="{prompt}"\n===\n{output}\n')
 
+def finetune_cli(**kwargs):
+    from kogitune.trainers import finetune_cli
+    finetune_cli(**kwargs)
+
+
 def chain_eval_cli(**kwargs):
-    from kogitune.metrics import chain_eval
-    chain_eval(**kwargs)
+    from kogitune.metrics import chain_eval_cli
+    chain_eval_cli(**kwargs)
 
 
 def main():

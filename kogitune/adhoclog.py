@@ -19,6 +19,21 @@ def get_section():
 def close_section():
     section = _SECTION.pop()
 
+class Section(object):
+    def __init__(self, section: str):
+        global _SECTION
+        self.section = _SECTION.copy()
+        _SECTION.append(section)
+        
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        global _SECTION
+        if exc_type is not None:
+            pass
+        _SECTION = self.section
+
 def _check_logdata(data):
     if isinstance(data, (int, float, str, bool)) or data is None:
         return data

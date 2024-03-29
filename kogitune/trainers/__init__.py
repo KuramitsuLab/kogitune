@@ -3,6 +3,9 @@ from .composers import (
     DatasetComposer
 )
 
+
+from .finetune import finetune_cli
+
 # from .old_composers import (
 #     DataComposer,
 # )
