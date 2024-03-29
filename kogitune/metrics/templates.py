@@ -4,26 +4,24 @@ from .local_utils import *
 
 # パターンに一致するすべての部分を検索
 
+SEC_IN = '### instruction\n'
+SEC_OUT = '\n### output\n'
+
 class TemplateProcessor:
     def __init__(self, prompt, reference, **kwargs):
         self.prompt = prompt
         self.reference = reference
+        self.SEC_IN = SEC_IN
+        self.SEC_OUT = SEC_OUT
         self.options = kwargs
 
-    def create_prompt(self, data:dict):
-        prompt = self.prompt.format(**data)
+    def create_prompt(self, sample:dict):
+        prompt = self.prompt.format(**sample)
         return prompt
     
-    def create_reference(self, data:dict):
-        reference = self.reference.format(**data)
+    def create_reference(self, sample:dict):
+        reference = self.reference.format(**sample)
         return reference
-
-    def create_instruction(self, data):
-        prompt = self.prompt.format(**data)
-        reference = self.reference.format(**data)
-        if not prompt.endswith('\n'):
-            return f'{prompt}\n{reference}'
-        return f'{prompt}{reference}'
 
     def load_sample(self, datalist, sample_list):
         assert len(datalist) == len(sample_list)
@@ -35,19 +33,30 @@ class TemplateProcessor:
             if 'reference' not in sample:
                 sample['reference'] = self.create_reference(source)
 
-    def test_template(self, record, verbose=True):
+    def create_instruction(self, sample:dict):
+        prompt = self.prompt.format(**sample)
+        reference = self.reference.format(**sample)
+        return f'{self.SEC_IN}{prompt}{self.SEC_OUT}{reference}'
+
+    def formatting_for_trainer(self, dataset):
+        output_texts = []
+        for sample in dataset:
+            output_texts.append(self.create_instruction(sample))
+        return output_texts
+
+    def test_template(self, sample:dict, verbose=True):
         try:
-            prompt = self.create_prompt(record)
+            prompt = self.create_prompt(sample)
         except KeyError as e:
             self.report_KeyError(e)
             adhoc.fatal('データセットとプロンプトテンプレートが一致しないよ')
         try:
-            reference = self.create_reference(record)
+            reference = self.create_reference(sample)
         except KeyError as e:
             self.report_KeyError(e)
             adhoc.fatal('データセットと参照テンプレートが一致しないよ')
         if verbose:
-            adhoc.print(f'プロンプトを確認してね\n{prompt}\n===\n{reference}')
+            adhoc.print(f'プロンプトを確認してね\n{prompt}\n（期待される出力）\n{reference}')
  
     def report_KeyError(self, e):
         try:
@@ -69,6 +78,7 @@ class TemplateProcessor:
             max_tokens.append(output_length)
         print(pd.DataFrame({'max_new_tokens': max_tokens, 'max_length': max_length}).describe(percentiles=[.8, .9, .95]))
         return max(max_tokens) + extra_length, max(max_length) + extra_length
+
 
     # def extract(self, text:str) -> str:
     #     if isinstance(text, list):
@@ -96,17 +106,25 @@ def has_schema(data: dict, keys:str):
     return True
 
 def guess_template(data: dict, aargs):
-    IN = aargs['instruction_section|=### Instruction\n']
-    OUT = aargs['output_section|=### Output\n']
     if has_schema(data, 'prompt|test|entry_point'):
         return {
             "prompt": "{prompt}",
-            "reference": "\n{test}\ncheck({entry_point})\n",
+            "reference": "\n{test}\n\ncheck({entry_point})\n",
+        }
+    if has_schema(data, 'instruction|input|output'):
+        return {
+            "prompt": "{instruction}\n{input}",
+            "reference": "{output}\n",
         }
     if has_schema(data, 'question|choice0|choice1|choice2|choice3|choice4|label'):
         return {
-            "prompt": IN + "{question}\n選択肢: (0) {choice0} (1) {choice1} (2) {choice2} (3) {choice3} (4) {choice4}\n" + OUT,
+            "prompt": "{question}\n選択肢: (0) {choice0} (1) {choice1} (2) {choice2} (3) {choice3} (4) {choice4}\n",
             "reference": "{label}",
+        }
+    if has_schema(data, 'in|out'):
+        return {
+            "prompt": "{in}",
+            "reference": "{out}\n",
         }
     return None
 

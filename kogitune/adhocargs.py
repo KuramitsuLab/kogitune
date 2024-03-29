@@ -4,13 +4,21 @@ import sys
 import json
 import re
 import inspect
+
 try:
     from termcolor import colored
 except:
     def colored(text, color):
         return text
 
-#import Levenshtein
+try:
+    from Levenshtein import distance
+except:
+    ## 編集距離が使えない時の簡便な距離
+    def distance(text, text2):
+        a = set(list(text))
+        b = set(list(text2))
+        return len(a.difference(b))+len(b.difference(a))
 
 from urllib.parse import urlparse, parse_qs
 
@@ -196,7 +204,16 @@ def verbose_print(*args, **kwargs):
     aargs = main_adhoc_arguments()
     aargs.verbose_print(*args, **kwargs)
 
-
+def find_key(dic, given_key, max_distance=1):
+    key_map = {}
+    for key in dic.keys():
+        if key not in key_map:
+            key_map[key] = distance(key, given_key)
+    keys = sorted([(dis, k) for k, dis in key_map.items() if dis <= max_distance])
+    if len(keys) > 0:
+        #print(keys)
+        return keys[0][1]
+    return None
 
 # main
 
@@ -206,7 +223,9 @@ class AdhocArguments(object):
     アドホックな引数パラメータ
     """
     def __init__(self, 
-                 args:dict, parent=None, expand_config='config', use_environ=True, 
+                 args:dict, parent=None, 
+                 expand_config='config', 
+                 use_environ=True, 
                  face='🦊'):
         self._args = {}
         self._used_keys = set()
@@ -239,22 +258,45 @@ class AdhocArguments(object):
             if key in self._args:
                 self.used(key)
                 return self._args[key]
-            if key.startswith('='):
-                return parse_argument_value(default_key, key[1:])
-            if key.startswith('!'):
-                if key.startswith('!!'):
-                    return self.raise_error(default_key, key[2:])
-                return self.warn_unset_key(default_key, parse_argument_value(default_key, key[1:]))
+            if key.startswith('=') or key.startswith('!'):
+                return self.key_not_found(default_key, default_value, text=key)
             if self.parent and key in self.parent:
                 return self.parent[key]
             if self._use_environ:
-                    environ_key = key.upper()
-                    if environ_key in os.environ:
-                        value = parse_argument_value(key, os.environ[environ_key])
-                        self._args[key] = value
-                        self.used(key)
-                        return value
+                if key in os.environ:
+                    return self.get_found(key, os.environ[key])
+                elif key.upper() in os.environ:
+                    return self.get_found(key, os.environ[key.upper()])
+            simkey = find_key(self, key)
+            if simkey is not None:
+                self.print(f'タイポ？ {simkey}は{key}だよね？違ったらごめんね', color='red', once=True)
+                return self.get(simkey, default_value)
         return default_value
+    
+    def get_found(self, key: str, string_value: str):
+        value = parse_argument_value(key, string_value)
+        self._args[key] = value
+        self.used(key)
+        return value
+
+    def key_not_found(self, default_key, default_value, text=''):
+        if text.startswith('='):
+            return parse_argument_value(default_key, text[1:])
+        elif text.startswith('!!'):
+            return self.raise_key_error(default_key, text[2:])
+        elif text.startswith('!'):
+            default_value = parse_argument_value(default_key, text[1:])
+            return self.warn_key_error(default_key, default_value)
+        return default_value
+
+    def raise_key_error(self, key, desc):
+        if desc:
+            raise ValueError(desc)
+        raise TypeError(f'{key}の設定を忘れてます')
+
+    def warn_key_error(self, key, value):
+        self.print(f'{key} を忘れずに。とりあえず {key}={value} で続けます')
+        return value
 
     @classmethod
     def copy_keys_from_to(cls, keys_list: List[str], src_args, dist_args: dict):
@@ -293,6 +335,22 @@ class AdhocArguments(object):
 
     def __contains__(self, key):
         return key in self._args or (self.parent and key in self.parent) or (self._use_environ and key.upper() in os.environ)
+
+    def as_dict(self):
+        dic = {}
+        if self.parent is not None:
+            dic.update(self.parent.items())
+        else:
+            if self._use_environ:
+                dic.update({k:v for k,v in os.environ.items() if k.islower()})
+            dic.update(self._args)
+        return dic
+
+    def keys(self):
+        return self.as_dict().keys()
+
+    def items(self):
+        return self.as_dict().items()
 
     def __enter__(self):
         return self
@@ -507,10 +565,6 @@ def adhoc_parse_arguments(subcommands:Optional[List[str]]=None,
 
 ###
 ###
-
-
-
-
 
 if __name__ == '__main__':
     aargs = adhoc_parse_arguments()
