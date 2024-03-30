@@ -6,9 +6,11 @@ os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
 DEFAULT_TOKENIZER = os.environ.get('DEFAULT_TOKENIZER', 'llm-jp/llm-jp-1.3b-v1.0')
 
-def configurable_tokenizer(tokenizer = None, akey='', **kwargs):
+    
+
+def configurable_tokenizer(tokenizer = None, **kwargs):
     with AdhocArguments.from_main(**kwargs) as aargs:
-        tokenizer = tokenizer or aargs[f'{akey}tokenizer_path|{akey}tokenizer|tokenizer_path|tokenizer|model_path|={DEFAULT_TOKENIZER}']
+        tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|model_path|={DEFAULT_TOKENIZER}']
         if isinstance(tokenizer, str):
             tokenizer, local_args = parse_path_arguments(tokenizer)
             if 'trust_remote_code' not in local_args:

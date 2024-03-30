@@ -3,10 +3,7 @@ import json
 
 from .adhocargs import verbose_print as print
 
-_MAX_LIMIT = 1000000
-_MAIN_LOG = {}
-
-## ログセクション
+## ログ用のセクション
 
 _SECTION = []
 
@@ -33,6 +30,11 @@ class Section(object):
         if exc_type is not None:
             pass
         _SECTION = self.section
+
+# ログ本体
+
+_MAX_LIMIT = 1000000
+_MAIN_LOG = {}
 
 def _check_logdata(data):
     if isinstance(data, (int, float, str, bool)) or data is None:
