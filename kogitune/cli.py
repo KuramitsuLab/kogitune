@@ -165,6 +165,11 @@ def test_model_cli(**kwargs):
         output = model.generate_text(prompt)
         adhoc.warn(f'test_prompt="{prompt}"\n===\n{output}\n')
 
+def convert_dataset_cli(**kwargs):
+    from kogitune.datasets.convertors import convert_dataset_cli
+    convert_dataset_cli(**kwargs)
+
+
 def finetune_cli(**kwargs):
     from kogitune.trainers import finetune_cli
     finetune_cli(**kwargs)

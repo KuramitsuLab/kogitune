@@ -177,17 +177,17 @@ def has_schema(data: dict, keys:str):
     return True
 
 def guess_template(sample: dict):
-    if has_schema(sample, 'prompt|test|entry_point'):
-        # HumanEval
-        return {
-            "prompt": "{prompt}",
-            "reference": "\n{test}\n\ncheck({entry_point})\n",
-        }
     if has_schema(sample, 'instruction|input|output'):
         # Alpaca形式
         return {
             "prompt": "{instruction}\n{input}",
             "reference": "{output}",
+        }
+    if has_schema(sample, 'prompt|test|entry_point'):
+        # HumanEval
+        return {
+            "prompt": "{prompt}",
+            "reference": "\n{test}\n\ncheck({entry_point})\n",
         }
     if has_schema(sample, 'question|choice0|choice1|choice2|choice3|choice4|label'):
         # JCommonSenseQA
@@ -224,4 +224,5 @@ def load_template(**kwargs):
             adhoc.fatal('templateの指定がないよ！このあと、何も出力されないよ')
         template = TemplateProcessor(**template_args)
     return template
-    
+
+
