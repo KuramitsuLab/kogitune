@@ -8,62 +8,7 @@ import subprocess
 import gzip
 import pyzstd
 
-from .adhoc_args import configurable_progress_bar, verbose_print
-
-# パス
-
-"""
-
-def _convert_to_number(value):
-    lower_string = str(value).lower()
-    if lower_string == 'true':
-        return True
-    if lower_string == 'false':
-        return False
-    try:
-        return int(value)
-    except ValueError:
-        try:
-            return float(value)
-        except ValueError:
-            return str(value)
-
-def parse_url_args(url, args={}):
-    parsed_url = urlparse(url)
-    param_args = parse_qs(parsed_url.query)
-    param_args = {k: _convert_to_number(v[0]) for k, v in param_args.items()}
-    param_args['url_scheme'] = parsed_url.scheme
-    param_args['url_host'] = parsed_url.netloc
-    param_args['url_path'] = parsed_url.path
-    if parsed_url.username:
-        param_args['url_userame'] = parsed_url.username
-        param_args['url_password'] = parsed_url.password
-    if len(parsed_url.scheme):
-        if parsed_url.port:
-            param_args['url_port'] = parsed_url.port
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}:{parsed_url.port}{parsed_url.path}"
-        else:
-            base_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-    else:
-        base_url = f"{parsed_url.path}"
-        base_dir = os.path.abspath(base_url)
-        if os.path.isdir(base_dir):
-            base_url = base_dir
-    args = args.copy()
-    args.update(param_args)
-    return safe_dir(base_url), args
-
-def basename_from_url(url, ext='', prefix=''):
-    if isinstance(url, (list, tuple)):
-        url = url[0]
-    _, _args = parse_url_args(url, {})
-    base = _args['url_path']
-    if '/' in base:
-        _, _, base = base.rpartition('/')
-    if ext:
-        return f'{prefix}{base}'
-    return base
-"""
+import kogitune.adhocs as adhoc
 
 # ファイルシステム
 
@@ -203,13 +148,12 @@ def _find_reader_fn(reader_name):
     func = globals().get(f'_reader_{reader_name}')
     if func is None:
         patterns = [s.replace('_reader_', '') for s in globals() if s.startswith('_reader_')]
-        verbose_print(f'line_reader={reader_name}は未定義だから、stripを使うよ.')
+        adhoc.print(f'line_reader={reader_name}は未定義だから、stripを使うよ.')
         return _reader_strip
     return func
 
 def configurable_reader(**kwargs):
-    from .adhocargs import AdhocArguments
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         template = aargs['json_template']
         if template:
             return _JSONTemplate(template)
@@ -222,7 +166,7 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
-        pbar = configurable_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
+        pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         with zopen(filename) as f:
             line = f.readline()
             c=0
@@ -243,7 +187,7 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_tem
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
-        pbar = configurable_progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
+        pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         buffer=[]
         with zopen(filename) as f:
             line = f.readline()
@@ -260,111 +204,4 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_tem
                 line = f.readline()
             yield buffer
         pbar.close()
-
-
-######## OLD?
-
-"""
-def parse_strip(s):
-    return s.strip().replace('<nL>', '\n')
-
-def parse_jsonl(line):
-    d = json.loads(line)
-    if 'out' in d:
-        return d['in'], d['out']
-    return d['text']
-
-def file_iterator(filename, N=None, args={}):
-    if N == -1:
-        N = get_linenum(filename)
-    if N:
-        from tqdm import tqdm
-        pbar = tqdm(total=N, desc=filename)
-    parse_fn = parse_strip
-    if '.json' in filename:
-        parse_fn = parse_jsonl
-    c=0
-    with zopen(filename) as f:
-        line = f.readline()
-        while line:
-            c+=1
-            if N: 
-                pbar.update()
-                if c > N: break
-            yield parse_fn(line)
-            line = f.readline()
-    if N:
-        pbar.close()
-
-def parse_strip_nl(line):
-    return line.strip().replace('<nL>', '\n')
-
-def parse_static_text(line):
-    d = json.loads(line)
-    return d['text']
-
-class parse_text:
-    def __init__(self, key='text'):
-        self.key = key
-    def __call__(self, line):
-        d = json.loads(line)
-        return d[self.key]
-
-class parse_seq2seq:
-    def __init__(self, keyin, keyout):
-        self.keyin = keyin
-        self.keyout = keyout
-    def __call__(self, line):
-        d = json.loads(line)
-        return d[self.keyin], d[self.keyout]
-
-
-def detect_datatype(filename:str, args: dict):
-    if '.json' in filename:
-        with zopen(filename) as f:
-            line = f.readline()
-            d = json.loads(line)
-            key = get_dict_multi_keys(args, 'column|columns|content', None)
-            if key:
-                keys = key.split(',')
-                if len(keys) == 2 and keys[0] in d and keys[1] in d:
-                    args['parse_fn'] = parse_seq2seq(keys[0], keys[1])
-                    return 'seq2seq'
-                if keys[0] in d:
-                    args['parse_fn'] = parse_text(key[0])
-                    return 'text'
-            if 'in' in d and 'out' in d:
-                args['parse_fn'] = parse_seq2seq('in', 'out')
-                return 'seq2seq'
-            if 'text' in d:
-                args['parse_fn'] = parse_static_text
-                return 'text'
-            raise ValueError('🦊 どのデータ列を使うつもりなのかな？', d)
-    args['data_type'] = 'text'
-    args['parse_fn'] = parse_strip_nl
-    return args['data_type']
-
-def iterate_line(filename, N=None, args={}):
-    if N == -1:
-        N = get_linenum(filename)
-    if N:
-        from tqdm import tqdm
-        pbar = tqdm(total=N, desc=filename)
-    parse_fn = args['parse_fn']
-    c=0
-    with zopen(filename) as f:
-        line = f.readline()
-        while line:
-            c+=1
-            if N: 
-                pbar.update()
-                if c > N: break
-            yield parse_fn(line)
-            line = f.readline()
-    if N:
-        pbar.close()
-"""
-
-
-
 

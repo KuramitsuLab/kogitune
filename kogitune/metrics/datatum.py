@@ -2,7 +2,7 @@ from typing import List
 import os
 import json
 
-from .local_utils import *
+from .commons import *
 
 def load_testdata(dataset_path: str, aargs):
     datalist = []
@@ -46,7 +46,7 @@ def load_hfdataset(dataset_path:str, aargs):
         dataset_name = f'{dataset_name}_{name}'
     return dataset_name, datalist
 
-def transform_data(datalist: List[dict], aargs: AdhocArguments = None, transform: str=None):
+def transform_data(datalist: List[dict], aargs = None, transform: str=None):
     """
     transform='key1=key2|key2'
     """
@@ -76,8 +76,7 @@ def filter_datatag(name):
         name = name[len('openai_'):]
     return name
 
-
-def load_data(aargs: AdhocArguments):
+def load_data(aargs: adhoc.Arguments):
     dataset_path = aargs['dataset_path|dataset|!!datasetの設定がないよ']
     if '.json' in dataset_path:
         dataset_name, datalist = load_jsonl(dataset_path, aargs)

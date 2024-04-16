@@ -1,9 +1,7 @@
 import torch
 torch.backends.cuda.matmul.allow_tf32=True
 
-#from ..commons import *
-
-from ..adhoc_args import AdhocArguments, format_unit, verbose_print, configurable_tokenizer, adhoc
+import kogitune.adhocs as adhoc
 
 def count_parameters(model)->int:
     """
@@ -18,35 +16,43 @@ def count_parameters(model)->int:
 def print_model(model):
     n_parameters=count_parameters(model)
     config = model.config
-    print(f'Parameters: {n_parameters} {format_unit(n_parameters)}', end=' ')
+    adhoc.p(flush=True)
+    adhoc.p(f'Parameters: {n_parameters} {adhoc.format_unit(n_parameters)}', end=' ')
     if hasattr(config, 'max_position_embeddings'):
-        print(f"max_length: {config.max_position_embeddings}", end=' ')
+        adhoc.p(f"max_length: {config.max_position_embeddings}", end=' ')
     elif hasattr(config, "n_positions"):
-        print(f"max_length: {config.n_positions}", end=' ')
-    print(f"vocab_size: {config.vocab_size}")
+        adhoc.p(f"max_length: {config.n_positions}", end=' ')
+    adhoc.p(f"vocab_size: {config.vocab_size}")
 
     if hasattr(config, 'd_kv'):  # T5
-        print(f"d_model: {model.config.d_model}", end=' ')
-        print(f"d_kv: {model.config.d_kv}", end=' ')
-        print(f"d_ff: {model.config.d_ff}", end=' ')
-        print(f"num_heads: {model.config.num_heads}", end=' ')
-        print(f"num_layers: {model.config.num_layers}+{model.config.num_decoder_layers}")
-        print(config)
+        adhoc.p(f"d_model: {model.config.d_model}", end=' ')
+        adhoc.p(f"d_kv: {model.config.d_kv}", end=' ')
+        adhoc.p(f"d_ff: {model.config.d_ff}", end=' ')
+        adhoc.p(f"num_heads: {model.config.num_heads}", end=' ')
+        adhoc.p(f"num_layers: {model.config.num_layers}+{model.config.num_decoder_layers}")
+        adhoc.p(config)
     elif hasattr(config, 'n_embd'): #GPT-2
-        print(f"hidden_size: {config.n_embd}", end=' ')
-        print(f"intermediate_size: {config.n_inner}", end=' ')
-        print(f"n_dims: {config.n_embd//config.n_head}", end=' ')
-        print(f"n_heads: {config.n_head}", end=' ')
-        print(f"n_layers: {config.n_layer}")
-        print(config)
+        adhoc.p(f"hidden_size: {config.n_embd}", end=' ')
+        adhoc.p(f"intermediate_size: {config.n_inner}", end=' ')
+        adhoc.p(f"n_dims: {config.n_embd//config.n_head}", end=' ')
+        adhoc.p(f"n_heads: {config.n_head}", end=' ')
+        adhoc.p(f"n_layers: {config.n_layer}")
+        adhoc.p(config)
     elif hasattr(config, 'hidden_size'): #GPT-NeoX
-        print(f"hidden_size: {config.hidden_size}", end=' ')
-        print(f"intermediate_size: {config.intermediate_size}", end=' ')
-        print(f"n_dims: {config.hidden_size//model.config.num_attention_heads}", end=' ')
-        print(f"n_heads: {config.num_attention_heads}", end=' ')
-        print(f"n_layers: {config.num_hidden_layers}")
+        adhoc.p(f"hidden_size: {config.hidden_size}", end=' ')
+        adhoc.p(f"intermediate_size: {config.intermediate_size}", end=' ')
+        adhoc.p(f"n_dims: {config.hidden_size//model.config.num_attention_heads}", end=' ')
+        adhoc.p(f"n_heads: {config.num_attention_heads}", end=' ')
+        adhoc.p(f"n_layers: {config.num_hidden_layers}")
     else:
-        print(config)
+        adhoc.p(config)
+
+def is_integer(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
 
 def print_model_structure(model):
     num_dict={}
@@ -59,13 +65,6 @@ def print_model_structure(model):
         "mlp",
         "self_attn",
     ]
-    def is_integer(s):
-        try:
-            int(s)
-            return True
-        except ValueError:
-            return False
-
     name_set=[]
     for original_name in num_dict:
         name=original_name.split(".")
@@ -74,7 +73,7 @@ def print_model_structure(model):
         name_set.append(".".join(name))
 
     #主要なレイヤーグループの表示
-    #print(set(name_set))
+    adhoc.p(set(name_set))
 
     #パラメータ数の計算
     name_group_dict={}
@@ -97,7 +96,7 @@ def print_model_structure(model):
     df=pd.DataFrame.from_dict(name_group_dict,orient="index")
     df.columns=["params"]
     df["ratio"]=df["params"]/all_params*100
-    print(df)
+    adhoc.p(df)
 
 
 def print_gpu_utilization():
@@ -106,17 +105,17 @@ def print_gpu_utilization():
         nvmlInit()
         handle = nvmlDeviceGetHandleByIndex(0)
         info = nvmlDeviceGetMemoryInfo(handle)
-        print(f"GPU memory occupied: {format_unit(info.used, scale=1024)}iB.")
+        print(f"GPU memory occupied: {adhoc.format_unit(info.used, scale=1024)}iB.")
     except:
         pass
 
 def print_summary(result, use_flash=False):
     m = result.metrics
-    print(f"Time: {m['train_runtime']:.2f}  {format_unit(m['train_runtime'], scale=60)}", end=' ')
+    print(f"Time: {m['train_runtime']:.2f}  {adhoc.format_unit(m['train_runtime'], scale=60)}", end=' ')
     print(f"Samples/second: {m['train_samples_per_second']:.2f} FlashAttn={use_flash}")
     print(f"Global step: {result.global_step} batch_size: {1024//result.global_step}", end=' ')
     if 'total_flos' in m:
-        print(f"FLOS: {m['total_flos']} {format_unit(m['total_flos'])} Loss: {m['train_loss']:.5f}")
+        print(f"FLOS: {m['total_flos']} {adhoc.format_unit(m['total_flos'])} Loss: {m['train_loss']:.5f}")
     else:
         print(f"Loss: {m['train_loss']:.5f}")
     print_gpu_utilization()
@@ -124,8 +123,7 @@ def print_summary(result, use_flash=False):
 ### new version
 
 def extract_scratch_config(tokenizer, **kwargs):
-    from ..adhoc_args import AdhocArguments
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         aargs.used('model_type')
         num_attention_heads = aargs['num_attention_heads|n_heads|=4']
         if 'hidden_size' in kwargs:
@@ -149,16 +147,14 @@ def extract_scratch_config(tokenizer, **kwargs):
         if scratch_config_base:
             scratch_config_base.update(scratch_config)
             scratch_config = scratch_config_base
-        aargs.copy_to('num_key_value_heads|group_heads|n_groups', scratch_config)
-        aargs.copy_to('hidden_act', scratch_config)
-        aargs.copy_to('rms_norm_eps', scratch_config)
-        aargs.copy_to('rope_theta', scratch_config)
-        aargs.copy_to('tie_word_embeddings', scratch_config)
-        aargs.copy_to('attention_dropout', scratch_config)
-        aargs.copy_to('attention_bias', scratch_config) # Gemma, Lamma
-        aargs.copy_to('sliding_window', scratch_config) # Mistral
-        aargs.copy_to('partial_rotary_factor', scratch_config) # StableLmConfig
-        #scratch_config['torch_dtype'] = torch.float16
+        adhoc.copy_dict_keys(aargs, scratch_config,
+                      'num_key_value_heads|group_heads|n_groups',
+                      'hidden_act', 'rms_norm_eps'
+                      'rope_theta', 'tie_word_embeddings', 
+                      'attention_dropout', 
+                      'attention_bias', 
+                      'sliding_window', 
+                      'partial_rotary_factor')
     return scratch_config
 
 def generate_scratch_gpt2(**kwargs):
@@ -207,6 +203,7 @@ def generate_scratch_stablelm(**kwargs):
 
 def generate_scratch_mistral(**kwargs):
     from transformers import MistralForCausalLM, MistralConfig
+    adhoc.check_kwargs(kwargs, MistralConfig)
     config = MistralConfig(**kwargs)
     model = MistralForCausalLM(config)
     print_model(model)
@@ -221,13 +218,17 @@ def generate_scratch_gemma(**kwargs):
     print_model_structure(model)
     return model    
 
+def reduce_model_using_float16(model_path):
+    from transformers import AutoModelForCausalLM
+    ## なんか馬鹿らしいコードだけど、float16に変換　サイズが半分になる
+    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)
+    model.save_pretrained(model_path)
 
-def configurable_scratch(**kwargs):
-    with adhoc.Section('scratch'):
-        tokenizer = configurable_tokenizer(tokenizer=kwargs.get('tokenizer'))
-        scratch_config = extract_scratch_config(tokenizer, **kwargs)
+def generate_scratch(tokenizer=None, **kwargs):
+    with adhoc.from_kwargs(open_section='scratch', **kwargs) as aargs:
+        tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
+        scratch_config = extract_scratch_config(tokenizer)
         model_type = scratch_config.get('model_type', 'llama2')
-        adhoc.open_section('scratch')
         adhoc.notice('新しいLLMを生成しています', scratch_config=scratch_config)
 
         ns = globals()
@@ -240,18 +241,13 @@ def configurable_scratch(**kwargs):
                     unknown_model_type=model_type, 
                     required_model_type=required, default_model_type='llama2')
             model = generate_scratch_llama2(**scratch_config)
-
-        output_path = kwargs.get('scratch_output_path', 'scratch')
+        output_path = aargs.get('scratch_output_path', 'scratch')
         if output_path:
             tokenizer.save_pretrained(output_path)
             model.save_pretrained(output_path)
             reduce_model_using_float16(output_path)
+        
     return model
 
-def reduce_model_using_float16(model_path):
-    from transformers import AutoModelForCausalLM
-    ## なんか馬鹿らしいコードだけど、float16に変換　サイズが半分になる
-    model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)
-    model.save_pretrained(model_path)
 
 

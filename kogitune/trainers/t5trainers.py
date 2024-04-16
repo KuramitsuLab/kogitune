@@ -1,7 +1,7 @@
 import numpy as np
 import torch 
 
-from ..tokenizers import find_extra_ids, find_newline_token_id, load_tokenizer
+from ..stores.tokenizers import find_extra_ids, find_newline_token_id, load_tokenizer
 from .old_composers import DataComposer, CHUNK_MAGIC
 from transformers import DataCollatorForSeq2Seq
 

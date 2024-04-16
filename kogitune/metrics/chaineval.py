@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from filelock import FileLock
 
-from .local_utils import *
+from .commons import *
 
 from .datatum import load_data, prepare_result, needs_model_inference, save_score, save_result
 from ..datasets import load_template
@@ -35,7 +35,7 @@ def generate_with_args(aargs):
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
     if needs_model_inference(result_list, n):
-        with adhoc.Section('generation'):
+        with adhoc.open_section('generation'):
             model = load_model(aargs=aargs)
             model.configure(template, datalist)
 
@@ -95,7 +95,7 @@ def check_eval_only(aargs):
 
 def chain_eval_cli(**kwargs):
     import traceback
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         result_files, metric_list = check_eval_only(aargs)
         if result_files:
             metric_list = get_metric_list(aargs)

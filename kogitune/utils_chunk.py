@@ -9,10 +9,7 @@ import subprocess
 
 import numpy as np
 
-from .adhoc_args import verbose_print
-
-from .utils_file import safe_join_path
-from kogitune.configurable_tqdm import configurable_tqdm
+import kogitune.adhocs as adhoc
 
 N_CHUNKS = 4096
 
@@ -49,7 +46,7 @@ def load_chunk_file(base_dir:str, chunk_file:str=None, subblocks=1):
             return newchunks
         return chunks
     except BaseException as e:
-        verbose_print(f'チャンクファイルの破損 {filepath}: 原因 {e}')
+        adhoc.print(f'チャンクファイルの破損 {filepath}: 原因 {e}')
         return None
 
 def get_filesha1(filepath: str):
@@ -83,13 +80,13 @@ def check_chunk_file(base_dir:str, chunk_file:str, checks: dict):
 
 def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
     d = {}
-    for chunk_file in configurable_tqdm(chunk_files, desc='File validation.'):
+    for chunk_file in adhoc.tqdm(chunk_files, desc='File validation.'):
         if not load_chunk_file(base_dir, chunk_file):
             return None
         filepath = safe_join_path(base_dir, chunk_file)
         checks = {'filesize': get_filesize(filepath), 'sha1': get_filesha1(filepath)}
         if not check_chunk_file(base_dir, chunk_file, checks):
-            verbose_print(f'broken chunk file {chunk_file}')
+            adhoc.print(f'broken chunk file {chunk_file}')
             return None
         d[chunk_file] = checks
     return d
@@ -97,7 +94,7 @@ def make_chunk_filelist(base_dir:str, chunk_files:List[str]):
 def shuffle_chunk_files(store_path: str, files:List[str], random_seed=42):
     for k in range(4):
         random.shuffle(files)
-        for i in configurable_tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
+        for i in adhoc.tqdm(range(0, len(files)-1, 2), desc=f'turn {k}'):
             chunks = load_chunk_file(store_path, files[i])
             chunks2 = load_chunk_file(store_path, files[i+1])
             length = len(chunks)
@@ -115,11 +112,11 @@ def check_command_installed(command="zstd", verbose=False):
     except subprocess.CalledProcessError as e:
         # コマンドの実行に失敗した場合、command はインストールされていないか、別の問題がある
         if verbose:
-            verbose_print(f'{command}コマンドが使えないよ！ 詳細: {e.stderr}')
+            adhoc.print(f'{command}コマンドが使えないよ！ 詳細: {e.stderr}')
         return False
     except FileNotFoundError:
         if verbose:
-            verbose_print(f'{command}コマンドがないよ！')
+            adhoc.print(f'{command}コマンドがないよ！')
         return False
 
 check_command_installed('wget', verbose=True)
@@ -201,7 +198,7 @@ def wait_for_file(file_path, timeout=60):
     end_time = start_time + timeout
     while time.time() < end_time:
         if get_filesize(file_path) > 0:
-            verbose_print(f'{time.time()-start_time:.2f}秒, 待ちました')
+            adhoc.print(f'{time.time()-start_time:.2f}秒, 待ちました')
             return True  # ファイルが見つかった
         time.sleep(0.5)  # 1秒待つ
     return False  # タイムアウト
@@ -231,7 +228,7 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
     
     if sync:
         if cached_file_size == 0:
-            #verbose_print('ダウンロード中 最大30秒待ちます.', remote_file)
+            #adhoc.print('ダウンロード中 最大30秒待ちます.', remote_file)
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)
@@ -239,12 +236,12 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
             if verbose:
-                verbose_print(f'ダウンロード失敗 file={cached_file} by', cmd)
+                adhoc.print(f'ダウンロード失敗 file={cached_file} by', cmd)
             os.remove(cached_file)
         return cached_file
 
     if get_filesize(cached_file) == -1:
         touch(cached_file)
-        #verbose_print('プレフェッチ', remote_file, cmd)
+        #adhoc.print('プレフェッチ', remote_file, cmd)
         subprocess.call(f"{cmd} &", shell=True, stderr=subprocess.DEVNULL)
     return None

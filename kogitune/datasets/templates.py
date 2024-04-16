@@ -1,6 +1,6 @@
 import re
 
-from .local_commons import *
+from .commons import *
 from .da import da
 import numpy as np
 import datasets
@@ -111,7 +111,7 @@ class TemplateProcessor:
 
     def calc_length(self, dataset:List[dict], tokenizer=None, return_max_new_tokens=False, q=95):
         import pandas as pd
-        tokenizer = tokenizer or configurable_tokenizer()
+        tokenizer = tokenizer or adhoc.load_tokenizer()
         total=[]
         prompt=[]
         output=[]
@@ -203,13 +203,12 @@ def guess_template(sample: dict):
         }
     return None
 
-def load_template(**kwargs):
+def load_template(sample=None, **kwargs):
     """
     テンプレートエンジンをロードする
     :args sample: sampleを渡せば、推論してくれる。
     """
-    sample = AdhocArguments.pop_from_kwargs('sample', kwargs)
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         template_args = aargs['template_config|template_args|template']
         if template_args is None:
             template_args = dict(
@@ -223,6 +222,8 @@ def load_template(**kwargs):
         if template_args is None:
             adhoc.fatal('templateの指定がないよ！このあと、何も出力されないよ')
         template = TemplateProcessor(**template_args)
+        if sample:
+            template.test_template(sample)
     return template
 
 

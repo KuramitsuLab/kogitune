@@ -1,7 +1,7 @@
 from typing import Any, List
 import re
 from collections import Counter
-from .base import ScoreFunction, compile_pattern_for_words
+from .commons import ScoreFunction, compile_pattern_for_words
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...

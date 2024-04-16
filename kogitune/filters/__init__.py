@@ -1,6 +1,6 @@
 from kogitune.utils_file import zopen, filelines
 
-from .base import (
+from .commons import (
     TextFilter, 
     ComposeFilter, 
     ChoiceFilter,
@@ -14,12 +14,16 @@ from .documents import (
 )
 
 from .replaces import (
-    ReplacementFilter
+    ReplacementFilter,
+    ReplacementFilter as Replacement, 
+    replace,
 )
 
 from .scores import (
     MaxMinFilter, 
-    TokenizerCompression, TokenizerEntropy, ZLibCompression
+    TokenizerCompression, 
+    TokenizerEntropy, 
+    ZLibCompression
 )
 
 from .scores_en import (
@@ -36,6 +40,6 @@ from .scores_ja import (
 )
 
 from .generators import (
-    load_filter, generate_filter, filter, maxmin, 
+    load_filter, generate_filter, maxmin, 
     compose, choice, each_line, 
 )

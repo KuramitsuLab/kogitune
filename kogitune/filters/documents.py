@@ -1,39 +1,12 @@
 from typing import Optional
 import unicodedata
-from .base import TextFilter
-
-"""OLD
-class JSONConvertor(TextFilter):
-    def __init__(self, target='text', **kwargs):
-        super().__init__(**kwargs)
-        self.target = target
-
-    def as_json(self):
-        return {'filter': self.name(), 'target': self.target}
-
-    def __call__(self, text: str, record: dict) -> Optional[str]:
-        return json.loads(text)[self.target]
-
-class JSONTemplateConvertor(TextFilter):
-    def __init__(self, json_template:str='{text}', **kwargs):
-        super().__init__(**kwargs)
-        self.template = json_template
-
-    def as_json(self):
-        return {'filter': self.name(), 'json_template': self.template}
-
-    def __call__(self, text: str, record: dict) -> Optional[str]:
-        return self.template.format(**json.loads(text))
-"""
+from .commons import TextFilter
 
 class UnicodeNormalization(TextFilter):
 
     def __init__(self, form = 'NFKC', verbose=0):
         super().__init__(verbose=verbose)
         self.form = form
-
-    def as_json(self):
-        return {'filter': self.name(), 'form': self.form}
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         return unicodedata.normalize(self.form, text)
@@ -49,9 +22,6 @@ class DuplicatedLine(TextFilter):
         """
         super().__init__(**kwargs)
         self.prefix_length = prefix_length
-
-    def as_json(self):
-        return {'filter': self.name(), 'prefix_length': self.prefix_length}
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         lines = ['']
@@ -82,14 +52,11 @@ class LineByLineFilter(TextFilter):
         :param sep: セパレータの調整
         """
         super().__init__(*filters)
-        self.sep = separator
-
-    def as_json(self):
-        return ['each_line'] + [e.as_json() for e in self.filters]
+        self.separator = separator
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         lines = []
-        for line in text.split(self.sep):
+        for line in text.split(self.separator):
             for f in self.filters:
                 line = f(line, record)
                 if line is None:
@@ -100,7 +67,7 @@ class LineByLineFilter(TextFilter):
                 lines.append('')
         if len(lines) == 0:
             return None
-        return self.sep.join(lines)
+        return self.separator.join(lines)
 
 
 

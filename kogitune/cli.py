@@ -1,20 +1,19 @@
 import os
-
-from .adhoc_args import adhoc_parse_arguments, AdhocArguments, verbose_print, configurable_tqdm, adhoc
+import kogitune.adhocs as adhoc
 
 def update_cli(**kwargs):
-    verbose_print('KOGITUNEを最新版に更新します。\npip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
+    adhoc.print('KOGITUNEを最新版に更新します。\npip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
-    os.system('pip3 install -U git+https://github.com/kuramitsulab/kogitune.git')
+    os.system('pip3 install -U -q git+https://github.com/kuramitsulab/kogitune.git')
 
 def beta_cli(**kwargs):
-    verbose_print('KOGITUNEをベータ版に更新します。\npip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
+    adhoc.print('KOGITUNEをベータ版に更新します。\npip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
-    os.system('pip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
+    os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
 
 def count_lines_cli(**kwargs):
     from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         for file in aargs['files']:
             n = extract_linenum_from_filename(file)
             if n is None:
@@ -23,37 +22,36 @@ def count_lines_cli(**kwargs):
 
 def maxmin_cli(**kwargs):
     from kogitune.filters import maxmin
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
-        score_path = aargs['score|eval|!!scoreを設定してください']
+        score_path = aargs['score_path|score|eval|!!scoreを設定してください']
         output_path = aargs['output_file|output']
-        kwargs = aargs.as_kwargs(
-            record_key = aargs[f'record_key|=score'],
-            histogram_sample = aargs['histogram_sample|N|n|=10000'] # 大きさの調整
-        )
-        if 'score' in kwargs:
-            del kwargs['score']
+        kwargs = aargs.as_dict()
+        if 'record_key' not in kwargs:
+            kwargs['record_key'] = 'score'
+        if 'histogram_sample' not in kwargs:
+            kwargs['histogram_sample'] = 10000  # 大きさの調整
+        # if 'score' in kwargs:
+        #     del kwargs['score']
         text_filter = maxmin(score_path, **kwargs)
         text_filter.from_jsonl(files, output_path=output_path, num_workers=1)
 
 def filter_cli(**kwargs):
     from kogitune.filters import load_filter
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
         filter_config = aargs['filter_config|!!filter_configを設定してください']
         text_filter = load_filter(filter_config)
-        N=aargs['head|N|=-1']
-        num_workers=['num_workers|=1']
-        output_file = aargs['output_file|output']
+        output_file = aargs['output_file']
         if output_file is None:
-            aargs.verbose_print('output_fileの指定がないから、少しだけ処理して表示するよ')
-        text_filter.from_jsonl(files, N=N, output_path=output_file, num_workers=num_workers)
+            adhoc.notice('output_fileの指定がないから、少しだけ処理して表示するよ')
+        text_filter.from_jsonl(files, output_path=output_file)
 
 ## store 系
 
 def store_cli(**kwargs):
     from .stores import store_files
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
         store_files(files, skip_validation=False, aargs=aargs)
 
@@ -90,7 +88,7 @@ def freeze_cli(**kwargs):
     with DatasetComposer(prefetch=0, **kwargs) as dc:
         dc.with_format("tensor")
         ds = dc.get_train_dataset()
-        for i in configurable_tqdm(range(len(ds))):
+        for i in adhoc.tqdm(range(len(ds))):
             example=ds[i]
             input_ids.append(example['input_ids'])
             if 'attention_mask' in example:
@@ -103,7 +101,7 @@ def freeze_cli(**kwargs):
                 ds_dict = { "input_ids": input_ids, "attention_mask": attention_mask}
             else:
                 ds_dict = { "input_ids": input_ids}
-        verbose_print(f'ダウンロード時間: {time.time()-start} s')
+        adhoc.print(f'ダウンロード時間: {time.time()-start} s')
         ds = Dataset.from_dict(ds_dict).with_format("torch")
         print(ds)
         output_path = dc.aargs['output_path|!freezed_dataset']
@@ -120,7 +118,7 @@ def token_stat_cli(**kwargs):
         vocabs = tokenizer.convert_ids_to_tokens(token_ids)
         counts = [0] * tokenizer.vocab_size
         ds = dc.get_train_dataset()
-        for i in configurable_tqdm(range(len(ds)), desc='counting tokens'):
+        for i in adhoc.tqdm(range(len(ds)), desc='counting tokens'):
             example = ds[i]
             for token_id in example['input_ids']:
                 counts[token_id] += 1
@@ -131,11 +129,11 @@ def token_stat_cli(**kwargs):
         df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
         print(df['counts'].describe())
         df.to_csv(output_file)
-        verbose_print(f"トークンの出現回数を output_file='{output_file}' に保存しました。ふむふむ")
+        adhoc.print(f"トークンの出現回数を output_file='{output_file}' に保存しました。ふむふむ")
 
 def scratch_cli(**kwargs):
-    from kogitune.trainers.scratch import configurable_scratch
-    configurable_scratch(**kwargs)
+    from kogitune.trainers.scratch import generate_scratch
+    generate_scratch(**kwargs)
 
 
 def pretrain_cli(**kwargs):
@@ -148,14 +146,14 @@ def pretrain_cli(**kwargs):
 
 def data_cli(**kwargs):
     from kogitune.metrics import load_data
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         datalist = load_data(aargs)
 
 def test_model_cli(**kwargs):
     from kogitune.metrics import load_model
     IPSUM='Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
 
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         model = load_model(aargs=aargs)
         print(model)
         prompt = aargs['test_prompt|prompt']
@@ -184,11 +182,10 @@ def main():
     # メインのパーサーを作成
     namespace = globals()
     subcommands = [name.replace('_cli', '') for name in namespace.keys() if name.endswith('_cli')]
-    aargs = adhoc_parse_arguments(subcommands=subcommands)
-    cmd = aargs['subcommand']
-    funcname = f'{cmd}_cli'
-    namespace[funcname]()
-    aargs.check_unused()
+    with adhoc.parse_main_args(subcommands=subcommands) as aargs:
+        cmd = aargs['subcommand']
+        funcname = f'{cmd}_cli'
+        namespace[funcname]()
 
 if __name__ == '__main__':
     main()

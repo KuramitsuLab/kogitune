@@ -2,7 +2,7 @@ from typing import List
 import os, time
 import torch
 import json
-from .local_utils import *
+from .commons import *
 from ..datasets.templates import TemplateProcessor
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
@@ -82,7 +82,7 @@ class Model(object):
     def generate_streaming(self, sample_list:List[dict], n=1, saving_func=None, batch_size=1):
         elapsed_time = 0
         saved_time = time.time()
-        for sample in configurable_tqdm(sample_list, desc=f'{self}'):
+        for sample in adhoc.tqdm(sample_list, desc=f'{self}'):
             start_time = time.time()
             sample['outputs'] = self.generate_list(sample['input'], n=n)
             sample['output'] = sample['outputs'][0]
@@ -254,7 +254,7 @@ def load_model_generator_args(model_path, aargs):
         model = load_hfmodel(model_path, model_args)
     return model, generator_args
 
-def get_generator_kwargs(aargs: AdhocArguments):
+def get_generator_kwargs(aargs: adhoc.Arguments):
     kwargs = dict(
         do_sample = aargs['do_sample=|True'],
         temperature = aargs['temperature|=0.2'],
@@ -276,14 +276,14 @@ def get_generator_kwargs(aargs: AdhocArguments):
 ## https://github.com/huggingface/transformers/issues/22387
 
 def data_stream(sample_list: List[str], desc=None):
-    for sample in configurable_tqdm(sample_list, desc=desc):
+    for sample in adhoc.tqdm(sample_list, desc=desc):
         yield sample['input']
 
 class HFModel(Model):
     def __init__(self, model_path, aargs):
         from transformers import pipeline
         super().__init__(model_path, aargs)
-        self.tokenizer = configurable_tokenizer()
+        self.tokenizer = adhoc.load_tokenizer()
         # print('@pad_id', self.tokenizer.pad_token, self.tokenizer.pad_token_id)
         # self.tokenizer.pad_token = self.tokenizer.eos_token
         model, generator_args = load_model_generator_args(model_path, aargs)
@@ -371,6 +371,6 @@ def load_model(**kwargs):
     aargs = kwargs.get('aargs')
     if isinstance(aargs, AdhocArguments):
         return load_model_with_aargs(aargs)
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with adhoc.from_main(**kwargs) as aargs:
         return load_model_with_aargs(aargs)
 

@@ -13,10 +13,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from ..adhoc_args import AdhocArguments, verbose_print, configurable_tokenizer, parse_path_arguments, adhoc
+import kogitune.adhocs as adhoc
+
 from ..utils_file import *
 from ..utils_chunk import *
-from ..tokenizers import *
+from ..stores.tokenizers import *
 
 from .gpus import *
 from .collators import TextBlockCollator, NumpyCollator, TensorCollator
@@ -173,7 +174,7 @@ class TokenDataset(Dataset):
             self.n_items = n_items
         
         logs.append(f'トークン数 {self.n_items * max_length/10**9:.2f}B')
-        verbose_print(' '.join(logs))
+        adhoc.print(' '.join(logs))
         self.queue = ChunkQueue(self.n_chunks, self.max_length)
         self.prefetch=local_args.get('prefetch', 1)
         self.try_prefetch(0)
@@ -193,7 +194,7 @@ class TokenDataset(Dataset):
             if chunks is not None:
                 self.queue.set(chunk_file, chunks)
             else:
-                verbose_print(f'{self.name}: 破損したファイル {chunk_file}')
+                adhoc.print(f'{self.name}: 破損したファイル {chunk_file}')
                 chunks = self.queue.last_chunks()
         return chunks
 
@@ -240,10 +241,10 @@ def prepare_dataset(url_list, max_length, cache_dir, aargs, tokenizer=None, pref
     global_args = {'datatype': datatype, 'split': split}
     datasets = []
     for url in url_list:
-        url, local_args = parse_path_arguments(url, include_urlinfo=True, global_args=global_args)
+        url, local_args = adhoc.parse_path_args(url, include_urlinfo=True, global_args=global_args)
         url = safe_dir(url)
         if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
-            tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+            tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
             url = store_files([url], tokenizer, **local_args)
         cache_dir = local_cache_dir(cache_dir, url)
         found = find_dataset_config(url, datatype, max_length, split, cache_dir)
@@ -255,7 +256,7 @@ def prepare_dataset(url_list, max_length, cache_dir, aargs, tokenizer=None, pref
             #     continue
             datasets.append(dataset)
         else:
-            verbose_print(f'{url} は、見つかりません。スキップして学習を続けます。')
+            adhoc.print(f'{url} は、見つかりません。スキップして学習を続けます。')
     return datasets
 
 class Indexer(Dataset):
@@ -296,11 +297,11 @@ class MixierDataset(Dataset):
         self.total_length = sum(lens)
         mixers = [f'{d} {round(100*len(d)/self.total_length, 2)}%' for d in datasets]
         qmixers = [round(batch_size * (dlen/self.total_length)) for dlen in lens]
-        verbose_print(f'データセットの混成比率: {mixers} batch_size={sum(qmixers)}')
+        adhoc.print(f'データセットの混成比率: {mixers} batch_size={sum(qmixers)}')
         indexers = []
         for dataset, mix in zip(datasets, qmixers):
             if mix == 0:
-                verbose_print(f'{dataset}は小さ過ぎるので無視されます。')
+                adhoc.print(f'{dataset}は小さ過ぎるので無視されます。')
             indexers.extend([Indexer(dataset)] * mix)
         random.seed(random_seed)
         random.shuffle(indexers)
@@ -340,7 +341,7 @@ class DummyWandb:
     def finish(self):
         pass
 
-def load_wandb(args: AdhocArguments):
+def load_wandb(args: adhoc.Arguments):
     try:
         import wandb
         if 'wandb_team' in args:
@@ -356,7 +357,7 @@ def load_wandb(args: AdhocArguments):
             )
         return wandb
     except ModuleNotFoundError:
-        verbose_print('wandb は入れた方がいいよ')
+        adhoc.print('wandb は入れた方がいいよ')
     return DummyWandb()
 
 def get_trained_global_step(path: str):
@@ -401,7 +402,7 @@ def check_composer_args(aargs: None):
 
     if 'output_dir' not in aargs:
         aargs['output_dir'] = create_output_path(aargs['run_name'])
-        verbose_print(f'出力先:', aargs['output_dir'])
+        adhoc.print(f'出力先:', aargs['output_dir'])
 
     return aargs
 
@@ -416,7 +417,7 @@ def parse_url_list(url_list=[]):
 
 class DatasetComposer():
     def __init__(self, collator_fn = None, cleanup=False, prefetch = 1, **kwargs):
-        self.aargs = aargs = AdhocArguments.from_main(**kwargs)
+        self.aargs = aargs = adhoc.from_main(**kwargs)
         url_list = parse_url_list(aargs['url_list|files|!!url_listを指定してください'])
         self.max_length = aargs['max_length|block_size|!512']
 
@@ -429,7 +430,7 @@ class DatasetComposer():
             self.cache_dir = safe_dir(cache_dir)
             self.cleanup = False if get_rank() > 0 else cleanup
         if os.path.isdir(self.cache_dir):
-            verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
+            adhoc.print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
             self.cleanup = False
         else:
             os.makedirs(self.cache_dir, exist_ok=True)
@@ -466,10 +467,10 @@ class DatasetComposer():
         if isinstance(resume_path, str):
             resume_step = get_trained_global_step(resume_path)
             if resume_step == 0:
-                verbose_print(f'チェックポイント {resume_path} が見つかりません')
+                adhoc.print(f'チェックポイント {resume_path} が見つかりません')
                 self.aargs['resume_from_checkpoint']=False
             if resume_step > 0:
-                verbose_print(f'チェックポイント step={resume_step} から再開します。')
+                adhoc.print(f'チェックポイント step={resume_step} から再開します。')
                 self.train_dataset.skip(resume_step * batch_size)
         return self.train_dataset
 
@@ -478,7 +479,7 @@ class DatasetComposer():
             global_count = self.train_dataset.count
             global_step = global_count//1024
             total_tokens = global_count * self.max_length
-            verbose_print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
+            adhoc.print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self
@@ -490,7 +491,7 @@ class DatasetComposer():
         if self.cleanup and os.path.isdir(self.cache_dir):
             try:
                 shutil.rmtree(self.cache_dir)
-                verbose_print('Cleaned up', self.cache_dir)
+                adhoc.print('Cleaned up', self.cache_dir)
             except:
                 pass
         self.aargs.__exit__(exc_type, exc_value, traceback)
@@ -508,7 +509,7 @@ class DatasetComposer():
             global_batch_size = aargs['global_batch_size|batch_size|=1024']
             device_batch_size = aargs['device_batch_size|=16']
             gas = global_batch_size // device_batch_size
-            verbose_print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
+            adhoc.print(f'batch_size global={global_batch_size} device={device_batch_size} gradient_accumulation_steps={gas}')
             overwrite_output_dir = 'resume_from_checkpoint' not in aargs
             bf16_enabled = aargs[f'bf16|={bf16_is_available()}']
             fp16_enabled = False
@@ -552,15 +553,15 @@ class DatasetComposer():
     
     def train(self, model=None, **kwargs):
         from transformers import Trainer, AutoModelForCausalLM
-        from kogitune.trainers.scratch import configurable_scratch, print_summary
+        from kogitune.trainers.scratch import generate_scratch, print_summary
         with self.aargs.from_kwargs(**kwargs) as aargs:
             if model is None:
                 model_path = aargs['model_path|model']
                 if model_path is None:
                     self.aargs.raise_unset_key('model_path')
                 if model_path == 'scratch' and not os.path.exists('scratch'):
-                    verbose_print('scratch モデルを生成しますよ')
-                    model = configurable_scratch()
+                    adhoc.print('scratch モデルを生成しますよ')
+                    model = generate_scratch()
                 else:
                     model = AutoModelForCausalLM.from_pretrained(model_path)
             wandb = load_wandb(aargs)
@@ -585,7 +586,7 @@ class DatasetComposer():
             adhoc.setlog('train', trainer_result=result)
             save_path = aargs['save_path|model_output_path']
             if save_path is None and not os.path.exists('model'):
-                verbose_print('modelに保存するよ。save_pathで保存先を指定してね')
+                adhoc.print('modelに保存するよ。save_pathで保存先を指定してね')
                 save_path = 'model'
             if save_path:
                 self.get_tokenizer().save_pretrained(save_path)
