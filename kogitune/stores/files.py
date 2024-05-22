@@ -31,18 +31,6 @@ def safe_join_path(dir, file):
         file = file[1:]
     return f'{dir}/{file}'
 
-'''
-def safe_new_file(filebase, ext, max=1000):
-    filename=f'{filebase}.{ext}'
-    if not os.path.exists(filename):
-        return filename
-    for i in range(1, max):
-        filename=f'{filebase}_{i}.{ext}'
-        if not os.path.exists(filename):
-            break
-    return filename
-'''
-
 def basename(path:str, skip_dot=False):
     if '?' in path:
         path, _, _ = path.partition('?')
@@ -53,15 +41,6 @@ def basename(path:str, skip_dot=False):
     if not skip_dot and '.' in path:
         path, _, _ = path.partition('.')
     return path
-
-"""
-def get_filebase(filename):
-    filebase = filename
-    if '/' in filebase:
-        _, _, filebase = filebase.rpartition('/')
-    filebase, _, _ = filebase.partition('.')
-    return filebase
-"""
 
 def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'
@@ -129,30 +108,36 @@ def get_linenum(filepath):
 class _JSONTemplate(object):
     def __init__(self, template='{text}'):
         self.template = template
+        self.test_mode = True
     def __call__(self, s) -> str:
+        if self.test_mode:
+            self.test_mode = False
+            try:
+                sample = json.loads(s)
+                return self.template.format(**sample)
+            except KeyError as e:
+                adhoc.warn(key_error=e, template=self.template, sample=sample)
         return self.template.format(**json.loads(s))
 
-def _reader_none(s):
-    return s
-
-def _reader_strip(s):
+def reader_strip(s):
     return s.strip()
 
-def _reader_json(s):
+def reader_json(s):
     return json.loads(s)['text']
 
-def _reader_jsonl(s):
+def reader_jsonl(s):
     return json.loads(s)['text']
 
 def _find_reader_fn(reader_name):
-    func = globals().get(f'_reader_{reader_name}')
+    func = globals().get(f'reader_{reader_name}')
     if func is None:
-        patterns = [s.replace('_reader_', '') for s in globals() if s.startswith('_reader_')]
-        adhoc.print(f'line_reader={reader_name}は未定義だから、stripを使うよ.')
-        return _reader_strip
+        patterns = [s.replace('reader_', '') for s in globals() if s.startswith('reader_')]
+        adhoc.warn(unknown_line_reader=reader_name, 
+                     expected=patterns, default_line_reader='strip')
+        return reader_strip
     return func
 
-def configurable_reader(**kwargs):
+def adhoc_line_reader(**kwargs):
     with adhoc.from_kwargs(**kwargs) as aargs:
         template = aargs['json_template']
         if template:
@@ -161,7 +146,7 @@ def configurable_reader(**kwargs):
         return _find_reader_fn(reader_name)
 
 def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_reader = 'strip'):
-    reader_fn = configurable_reader(json_template=json_template, line_reader=line_reader)
+    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):
@@ -182,7 +167,7 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
         pbar.close()
 
 def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip'):
-    reader_fn = configurable_reader(json_template=json_template, line_reader=line_reader)
+    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
     for i, filename in enumerate(filenames):

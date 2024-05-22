@@ -10,6 +10,7 @@ import subprocess
 import numpy as np
 
 import kogitune.adhocs as adhoc
+from .files import safe_join_path
 
 N_CHUNKS = 4096
 

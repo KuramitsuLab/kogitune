@@ -24,8 +24,8 @@ from .formats import (
 
 from .logs import (
     log, save_log, get_log, 
-    notice, start_time, end_time,
-    warn, fatal
+    notice, warn,
+    start_time, end_time,
 )
 
 from .arguments import (

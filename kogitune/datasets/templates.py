@@ -91,24 +91,14 @@ class TemplateProcessor:
         try:
             prompt = self.create_prompt(sample)
         except KeyError as e:
-            self.report_KeyError(e)
-            adhoc.fatal('データセットとプロンプトテンプレートが一致しないよ')
+            adhoc.warn(key_error=e, template=self.prompt, sample=sample)
         try:
             reference = self.create_output(sample)
         except KeyError as e:
-            self.report_KeyError(e)
-            adhoc.fatal('データセットと出力(参照)テンプレートが一致しないよ')
+            adhoc.warn(key_error=e, template=self.output, sample=sample)
         if verbose:
             adhoc.print(f'プロンプトを確認してね\n{prompt}\n（期待される出力）\n{reference}')
  
-    def report_KeyError(self, e):
-        try:
-            matches = re.findall(r"'(.*?)'",  f'{e}')
-            key = matches[0]
-            adhoc.perror(f'テンプレートの{key}がデータセットにないのが原因だよ')
-        except:
-            adhoc.perror(f'テンプレートのキーがデータセットにないのが原因だよ')
-
     def calc_length(self, dataset:List[dict], tokenizer=None, return_max_new_tokens=False, q=95):
         import pandas as pd
         tokenizer = tokenizer or adhoc.load_tokenizer()
@@ -220,7 +210,7 @@ def load_template(sample=None, **kwargs):
             if isinstance(sample, dict):
                 template_args = guess_template(sample)
         if template_args is None:
-            adhoc.fatal('templateの指定がないよ！このあと、何も出力されないよ')
+            adhoc.warn(unset_key='template')
         template = TemplateProcessor(**template_args)
         if sample:
             template.test_template(sample)

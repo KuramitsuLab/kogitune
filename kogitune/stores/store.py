@@ -4,8 +4,8 @@ import json
 import numpy as np
 
 from .tokenizers import *
-from ..utils_file import *
-from ..utils_chunk import *
+from .files import *
+from .chunks import *
 import kogitune.adhocs as adhoc
 
 ## meta

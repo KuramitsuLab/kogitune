@@ -5,7 +5,7 @@ import re
 
 import kogitune.adhocs as adhoc
 
-from kogitune.utils_file import (
+from kogitune.stores.files import (
     zopen, filelines, 
     read_multilines, 
     rename_with_linenum, 

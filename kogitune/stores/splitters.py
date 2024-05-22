@@ -6,7 +6,7 @@ import kogitune.adhocs as adhoc
 
 from .tokenizers import *
 from ..commons import *
-from ..utils_file import *
+from .files import *
 from .store import DatasetStore
 from .sections import find_section_fn
 
@@ -172,9 +172,7 @@ def find_splitter(tokenizer, aargs):
     data_type = aargs['datatype|data_type|=text']
     if data_type == 'text':
         section = aargs['section|=pack']
-        if section is None or section == 'none':
-            return TextBlockSpliter(tokenizer, aargs)
-        if section == 'pack':
+        if section is None or section == 'none' or section == 'pack':
             return TextPacker(tokenizer, aargs)
         section_fn = find_section_fn(section)
         if section_fn is None:
@@ -293,7 +291,7 @@ def report_record(logs, block_size):
 def get_store_path(filenames, tokenizer, aargs):
     store_path = aargs['store_path|store_dir|store']
     if store_path is None:
-        filebase = filebase(filenames[0])
+        filebase = basename(filenames[0])
         tokenizer_name = tokenizer_id(tokenizer)
         store_path=f'{tokenizer_name}/{filebase}'
         return store_path
@@ -313,7 +311,7 @@ def store_files(filenames: List[str], tokenizer=None, **kwargs):
     :param filenames: ファイル名、もしくはファイル名のリスト
     """
     filenames = list_filenames(filenames)
-    with adhoc.from_main(section='store', **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
         splitter = find_splitter(tokenizer, aargs)
         adhoc.notice('ストアは時間がかかる場合があるから確認してね', 
@@ -324,7 +322,7 @@ def store_files(filenames: List[str], tokenizer=None, **kwargs):
         store_path = get_store_path(filenames, tokenizer, aargs)
         adhoc.notice('保存先', store_path=store_path)
  
-        store = DatasetStore(store_path, aargs=aargs)
+        store = DatasetStore(store_path)
 
         num_workers = aargs['num_workers|=1']
         N=aargs['head|N|=-1']

@@ -51,6 +51,8 @@ QUOTE = '"""'
 
 def _repr(value, indent=0): # 再帰的な繰り返し
     if isinstance(value, str):
+        if indent == 0:
+            return value
         if value.count('\n') < 2:
             return repr(value)
         lines = []

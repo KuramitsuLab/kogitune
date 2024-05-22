@@ -29,7 +29,7 @@ def score_function(score_path):
         func = SCORE_FUNCTION_MAP[path]
         return func(**args)
     else:
-        adhoc.fatal(f'知らないscore_path={score_path}', unknown_score_path=score_path, expected=list(SCORE_FUNCTION_MAP.keys()))
+        adhoc.warn(unknown_score_path=score_path, expected=list(SCORE_FUNCTION_MAP.keys()))
 
 ## MaxMin
 
@@ -112,13 +112,13 @@ def _describe(values, funcname, percentiles=DEFAULT_PERCENTILES, filename=None):
 # def urlencode(d:dict):
 #     return urllib.parse.urlencode(d)
 
-def encode_arguments_without(path:str, args:dict, keys:list):
+def encode_path_arguments(path:str, args:dict, without_keys:list):
+    args = args.copy()
     if isinstance(path, str):
-        if isinstance(keys, str):
-            keys = keys.split('|')
-        for key in keys:
-            if key in args:
-                del args[key]
+        if isinstance(without_keys, str):
+            without_keys = without_keys.split('|')
+        for key in without_keys:
+            args.pop(key, None)
         if len(args) > 0:
             return f'{path}?{urllib.parse.urlencode(args)}'
     return path
@@ -129,7 +129,7 @@ def maxmin(_score, **kwargs):
         args['min_value'] = args.pop('min')
     if 'max' in args and 'max_value' not in args:
         args['max_value'] = args.pop('max')
-    score_path = encode_arguments_without(_score, args.copy(), 
+    score_path = encode_path_arguments(_score, args, 
                 'min_value|max_value|record_key|histogram_sample|save_to|percentiles')
     return MaxMinFilter(score_path=score_path, **args)
 

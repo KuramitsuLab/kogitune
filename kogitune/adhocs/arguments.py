@@ -147,6 +147,23 @@ class AdhocArguments(object):
     def __contains__(self, key):
         return key in self.local_args or (self.parent and key in self.parent) or (self.use_environ and key.upper() in os.environ)
 
+    def remove_keys(self, keys):
+        if not isinstance(keys, list):
+            keys = keys.split('|')
+        for key in keys:
+            if key.startswith('=') or key.startswith('!'):
+                continue
+            self.local_args.pop(key, None)
+        if self.parent:
+            self.parent.remove_keys(keys)
+
+    def pop(self, keys, default_value=None):
+        if not isinstance(keys, list):
+            keys = keys.split('|')
+        default_value = self.get(keys, default_value=default_value)
+        self.remove_keys(keys)
+        return default_value
+
     def as_dict(self):
         dic = {}
         if self.parent:
@@ -203,39 +220,6 @@ class AdhocArguments(object):
             self.update(loaded_data, overwrite=overwrite)
         return loaded_data
 
-    # def subset(self, keys='', prefix=None):
-    #     subargs = {}
-    #     keys = set(keys.split('|'))
-    #     for key, value in self.local_args.items():
-    #         if key in keys:
-    #             self.used_keys.add(key)
-    #             subargs[key] = value
-    #         elif prefix and key.startswith(prefix):
-    #             self.used_keys.add(key)
-    #             key = key[len(prefix):]
-    #             if key.startswith('_'):
-    #                 key = key[1:]
-    #             subargs[key] = value
-    #     return subargs
-
-    # def get_subargs(self, keys, exclude=None):
-    #     subargs = {}
-    #     for key in keys.split('|'):
-    #         if key.endswith('*'):
-    #             prefix = key[:-1]
-    #             for key, value in self.local_args.items():
-    #                 if key.startswith(prefix):
-    #                     self.used_keys.add(key)
-    #                     key = key[len(prefix):]
-    #                     subargs[key] = value
-    #         elif key in self:
-    #             subargs[key] = self[key]
-    #     if exclude is not None:
-    #         for key in exclude.split('|'):
-    #             if key in subargs:
-    #                 del subargs[key]
-    #     return subargs
-
     def find_options(self, prefix: str, namespace: dict = None):
         if namespace is None:
             # 呼び出し元のフレームを取得
@@ -264,26 +248,6 @@ class AdhocArguments(object):
         with open(file_path, 'w', encoding='utf-8') as w:
             print(json.dumps(self.as_dict(), ensure_ascii=False, indent=4), file=w)
 
-    # def raise_uninstalled_module(self, module_name):
-    #     self.print(f'{module_name}がインストールされていません//Uninstalled {module_name}')
-    #     print(f'pip3 install -U {module_name}')
-    #     sys.exit(1)
-
-    # def raise_error(self, key, desc):
-    #     if desc:
-    #         raise ValueError(desc)
-    #     raise TypeError(f'{key}の設定を忘れてます')
-
-    # def warn_unset_key(self, key, value):
-    #     self.print(f'{key} を忘れずに。とりあえず {key}={value} で続けます //Please set {key}')
-    #     return value
-
-    # def raise_unset_key(self, key, desc_ja=None, desc_en=None):
-    #     desc_ja = f' ({desc_ja})' if desc_ja else ''
-    #     desc_en = f' ({desc_en})' if desc_en else ''
-    #     self.print(f'{key}{desc_ja}を設定してください//Please set {key}{desc_en}')
-    #     sys.exit(1)
-
     def print(self, *args, **kwargs):
         if 'verbose' in kwargs:
             target = kwargs.pop('verbose')
@@ -308,12 +272,13 @@ class AdhocArguments(object):
 # main adhoc arguments
 
 def from_kwargs(open_section=None, **kwargs):
-    # aargs = pop_from_dict('aargs', kwargs)
-    # if not isinstance(aargs, AdhocArguments):
+    if 'aargs' in kwargs:
+        # aargs をパラメータに渡すのは廃止
+        raise ValueError('FIXME: aargs is unncessary')
     aargs = get_stack_aargs()
     caller_frame = inspect.stack()[1].function
     return AdhocArguments(kwargs, parent=aargs, 
-                          caller=caller_frame, section=open_section or get_section())
+                        caller=caller_frame, section=open_section or get_section())
 
 ### parse_argument
 

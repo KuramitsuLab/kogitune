@@ -63,9 +63,28 @@ def log(section:str, key:str, data,
     elif verbose:
         print('確認してね！', data)
 
+
+def get_identifier(method):
+    name = str(method)
+    if 'method ' in name and ' of' in name:
+        _, _, name = name.partition('method ')
+        name, _, _ = name.partition(' of')
+        return name
+    if "class '" in name and "'>" in name:
+        _, _, name = name.partition("class '")
+        name, _, _ = name.partition("'>")
+        if '.' in name:
+            _,_,name = name.partition('.')
+        return name
+    if 'function ' in name and ' at' in name:
+        _, _, name = name.partition('function ')
+        name, _, _ = name.partition(' at')
+        return name
+    
+    return name
+
 def log_args(function_or_method, version:str, path:str, args:dict):
-    name = function_or_method.__name__
-    print(function_or_method, type(function_or_method))
+    name = get_identifier(function_or_method)
     d = dict(
         name = name,
         version = version, 
@@ -73,7 +92,6 @@ def log_args(function_or_method, version:str, path:str, args:dict):
         args = args,
     )
     log('arguments', name, d)
-    print('@arguments', name, d)
 
 def setlog(_section, **kwargs):
     if _section is None:
@@ -81,40 +99,53 @@ def setlog(_section, **kwargs):
     for key, value in kwargs.items():
         log(_section, key, value)
 
-def _stringfy_kwargs(_message=None, **kwargs):
-    ss = []
-    if _message:
-        ss.append(_message)
-    for key, value in kwargs.items():
-        ss.append(f'{key}={value}')
-    return ' '.join(ss)   
+# def _stringfy_kwargs(_message=None, **kwargs):
+#     ss = []
+#     if _message:
+#         ss.append(_message)
+#     for key, value in kwargs.items():
+#         ss.append(f'{key}={value}')
+#     return ' '.join(ss)   
 
 def notice(_message: str, **kwargs):
     section = get_section()
     for key, value in kwargs.items():
         log(section, key, value)
-    # aargs_print(_stringfy_kwargs(_message, **kwargs), verbose=section)
     aargs_print(_message, verbose=section, **kwargs)
 
-
-def warn(_message: str, **kwargs):
-    section = get_section()
+def warn(**kwargs):
+    import re
+    exit_at_end = False
+    ss=[]
     for key, value in kwargs.items():
-        log(section, key, value)
-    aargs_print(_stringfy_kwargs(_message, **kwargs), color='red')
-    msg = {'message':_message, **kwargs}
-    log('error', 'warn', msg)
-
-
-def fatal(_message, **kwargs):
-    log('error', 'fatal', _stringfy_kwargs(_message, **kwargs), verbose=True)
-    aargs_print('続けて実行できないので停止するよ', color='red')
-    sys.exit(1)
-
-def perror(_message, **kwargs):
-    log('error', 'error', _stringfy_kwargs(_message, **kwargs), verbose=True)
-
-
+        if key.startswith('unknown_'):
+            key = key[8:]
+            ss.append(f'知らない値を設定しちゃったね. {key}={repr(value)}')
+            exit_at_end = True
+        elif key.startswith('unset_key'):
+            ss.append(f'{value}が設定してないよ')
+            exit_at_end = True
+        elif key.startswith('key_error'):
+            try:
+                matches = re.findall(r"'(.*?)'",  f'{value}')
+                key = matches[0]
+                ss.append(f'テンプレートに{key}がないよ')
+            except:
+                ss.append(f'テンプレートにキーがないよ')
+            exit_at_end = True
+        elif key.startswith('expected'):
+            ss.append(f'\nどれか選んでね. {value}')
+        elif key.startswith('default_'):
+            key = key[8:]
+            ss.append(f'とりあえず、{key}={repr(value)}としておくよ')
+            exit_at_end = False
+        else:
+            ss.append(f'{key}={repr(value)}')
+    _message = ' '.join(ss)   
+    aargs_print(_message)
+    if exit_at_end:
+        aargs_print('実行が続けられないので停止するよ', color='red')
+        sys.exit(1)
 
 
 _TIME = {}

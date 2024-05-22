@@ -16,7 +16,7 @@ import torch
 from torch.utils.data import Dataset
 
 from ..commons import *
-from ..utils_file import *
+from ..stores.files import *
 from ..stores.tokenizers import *
 from ..stores.store import Metastore
 from ..splitters import make_local_store

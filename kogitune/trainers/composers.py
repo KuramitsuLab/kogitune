@@ -15,8 +15,8 @@ from torch.utils.data import Dataset
 
 import kogitune.adhocs as adhoc
 
-from ..utils_file import *
-from ..utils_chunk import *
+from ..stores.files import *
+from ..stores.chunks import *
 from ..stores.tokenizers import *
 
 from .gpus import *
@@ -27,8 +27,6 @@ from kogitune.stores import store_files
 
 # ChunkedDataset
 
-# def url_to_hash(url):
-#     return hashlib.md5(url.encode()).hexdigest()
 
 def local_cache_dir(cache_dir, url):
     hash = hashlib.md5(url.encode()).hexdigest()
@@ -417,7 +415,7 @@ def parse_url_list(url_list=[]):
 
 class DatasetComposer():
     def __init__(self, collator_fn = None, cleanup=False, prefetch = 1, **kwargs):
-        self.aargs = aargs = adhoc.from_main(**kwargs)
+        self.aargs = aargs = adhoc.from_kwargs(**kwargs)
         url_list = parse_url_list(aargs['url_list|files|!!url_listを指定してください'])
         self.max_length = aargs['max_length|block_size|!512']
 
@@ -479,7 +477,7 @@ class DatasetComposer():
             global_count = self.train_dataset.count
             global_step = global_count//1024
             total_tokens = global_count * self.max_length
-            adhoc.print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
+            adhoc.print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {adhoc.format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self

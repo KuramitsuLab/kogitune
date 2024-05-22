@@ -12,7 +12,7 @@ def beta_cli(**kwargs):
     os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
 
 def count_lines_cli(**kwargs):
-    from kogitune.utils_file import extract_linenum_from_filename, rename_with_linenum, get_linenum
+    from kogitune.stores.files import extract_linenum_from_filename, rename_with_linenum, get_linenum
     with adhoc.from_kwargs(**kwargs) as aargs:
         for file in aargs['files']:
             n = extract_linenum_from_filename(file)
@@ -23,18 +23,15 @@ def count_lines_cli(**kwargs):
 def maxmin_cli(**kwargs):
     from kogitune.filters import maxmin
     with adhoc.from_kwargs(**kwargs) as aargs:
-        files = aargs['files|!!ファイルを一つ以上与えてください']
-        score_path = aargs['score_path|score|eval|!!scoreを設定してください']
-        output_path = aargs['output_file|output']
+        files = aargs.pop('files|!!ファイルを一つ以上与えてください')
+        score_path = aargs.pop('score_path|score|eval|!!scoreを設定してください')
+        output_path = aargs.pop('output_file|output')
+        sample = aargs.pop('histogram_sample|sample|head|=10000')
         kwargs = aargs.as_dict()
         if 'record_key' not in kwargs:
             kwargs['record_key'] = 'score'
-        if 'histogram_sample' not in kwargs:
-            kwargs['histogram_sample'] = 10000  # 大きさの調整
-        # if 'score' in kwargs:
-        #     del kwargs['score']
-        text_filter = maxmin(score_path, **kwargs)
-        text_filter.from_jsonl(files, output_path=output_path, num_workers=1)
+        text_filter = maxmin(score_path, histogram_sample=sample, **kwargs)
+        text_filter.from_jsonl(files, output_path=output_path, N=sample, num_workers=1)
 
 def filter_cli(**kwargs):
     from kogitune.filters import load_filter
@@ -53,7 +50,7 @@ def store_cli(**kwargs):
     from .stores import store_files
     with adhoc.from_kwargs(**kwargs) as aargs:
         files = aargs['files|!!ファイルを一つ以上与えてください']
-        store_files(files, skip_validation=False, aargs=aargs)
+        store_files(files, skip_validation=False)
 
 def head_cli(**kwargs):
     from .trainers import DatasetComposer

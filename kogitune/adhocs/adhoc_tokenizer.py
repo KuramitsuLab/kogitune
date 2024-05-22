@@ -17,5 +17,4 @@ def adhoc_load_tokenizer(tokenizer = None, **kwargs):
             if 'use_fast' not in local_args:
                 local_args['use_fast'] = False
             tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
-    #print('@', tokenizer)
     return tokenizer
