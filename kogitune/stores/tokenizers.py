@@ -1,24 +1,23 @@
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
-
 import os
-import re
 import hashlib
-from collections import Counter
-import math
+import kogitune.adhocs as adhoc
 
-from transformers import AutoTokenizer
-from .commons import *
+DEFAULT_TOKENIZER = os.environ.get('DEFAULT_TOKENIZER', 'llm-jp/llm-jp-1.3b-v1.0')
+if 'TOKENIZERS_PARALLELISM' not in os.environ:
+    os.environ['TOKENIZERS_PARALLELISM'] = 'true'
 
+class Tokenizer:
+    pass
 
-
-def tokenizer_hash(tokenizer: AutoTokenizer):
+def tokenizer_hash(tokenizer: Tokenizer):
     ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
     ws.sort()
     allvoc = ''.join(w for _, w in ws)
     #print(len(allvoc), allvoc[:100], allvoc[:100].encode())
     return hashlib.md5(allvoc.encode()).hexdigest()
 
-def tokenizer_id(tokenizer: AutoTokenizer):
+def tokenizer_id(tokenizer: Tokenizer):
     _, _, name_or_path = tokenizer.name_or_path.rpartition('/')
     name_or_path=name_or_path.lower().replace('_', '-')
     names = [name for name in name_or_path.split('-') if name.isalpha()]
@@ -31,12 +30,12 @@ def tokenizer_id(tokenizer: AutoTokenizer):
 def is_special_token(w):
     return w.startswith('<') and w.endswith('>') and not w.startswith('<0x')
 
-def tokenizer_special_tokens(tokenizer: AutoTokenizer):
+def tokenizer_special_tokens(tokenizer: Tokenizer):
     ws = [(id, w) for w, id in tokenizer.get_vocab().items()]
     ws.sort()
     return [(w, id) for id, w in ws if is_special_token(w)]
 
-def tokenizer_as_json(tokenizer: AutoTokenizer):
+def tokenizer_as_json(tokenizer: Tokenizer):
     return dict(
         name_or_path=tokenizer.name_or_path,
         vocab_size=tokenizer.vocab_size,
@@ -45,6 +44,25 @@ def tokenizer_as_json(tokenizer: AutoTokenizer):
         pad_token_id = tokenizer.pad_token_id,
         hash=tokenizer_hash(tokenizer), 
     )
+
+def load_tokenizer(tokenizer: Union[Tokenizer, str] = None, **kwargs):
+    from transformers import AutoTokenizer
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|model_path|={DEFAULT_TOKENIZER}']
+        if isinstance(tokenizer, str):
+            tokenizer, local_args = adhoc.parse_path_args(tokenizer)
+            if 'trust_remote_code' not in local_args:
+                local_args['trust_remote_code'] = True
+            if 'use_fast' not in local_args:
+                local_args['use_fast'] = False
+            adhoc.check_kwargs(local_args, AutoTokenizer.from_pretrained, path=tokenizer)
+            tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
+    adhoc.print(f'トークンナイザーをロードしたよ',
+                tokenizer_as_json(tokenizer),
+                verbose='tokenizer', 
+                once=f'tokenizer={tokenizer.name_or_path}')
+    return tokenizer
+
 
 """
 
@@ -226,24 +244,3 @@ def load_tokenizer(tokenizer_path=DEFAULT_TOKENIZER, adapt=True):
     return tokenizer
 """
 
-
-def calculate_entropy(tokens):
-    """
-    任意のトークンリストのエントロピーを計算でき、それによりトークンの分布がどの程度多様か、
-    またはどの程度予測可能かが分かります。エントロピーが高いほど、トークンの分布は多様で予
-    測が難しいと言えます。逆にエントロピーが低い場合、トークンの分布は比較的均一で予測が容易です。
-
-    :param tokens: List of tokens
-    :return: Entropy value
-    """
-    # Count the frequency of each token
-    token_counts = Counter(tokens)
-    total_tokens = len(tokens)
-
-    # Calculate entropy
-    entropy = 0
-    for count in token_counts.values():
-        probability = count / total_tokens
-        entropy -= probability * math.log(probability, 2)
-
-    return entropy

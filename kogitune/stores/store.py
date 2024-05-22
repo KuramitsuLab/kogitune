@@ -3,10 +3,10 @@ import random
 import json
 import numpy as np
 
-from ..tokenizers import *
-from ..utils_file import *
-from ..utils_chunk import *
-from ..adhoc_args import AdhocArguments, verbose_print, configurable_tqdm, adhoc_log, get_adhoc_log
+from .tokenizers import *
+from .files import *
+from .chunks import *
+import kogitune.adhocs as adhoc
 
 ## meta
 
@@ -14,27 +14,27 @@ DEFAULT_MAX_LENGTH = 4096
 N_CHUNKS = 4096
 
 class DatasetStore(object):
-    def __init__(self, store_path, aargs=None, **kwargs):
-        aargs = AdhocArguments.to_adhoc(aargs, **kwargs)
-        self.store_path = safe_dir(store_path)
+    def __init__(self, store_path, **kwargs):
+        with adhoc.from_kwargs(**kwargs) as aargs:
+            self.store_path = safe_dir(store_path)
 
-        self.data_type = aargs['datatype|data_type|=text']
-        self.block_size = aargs['max_length|block_size|=2048']
-        self.split = aargs['split|=train']
-        self.prefix = f"{self.data_type}{self.block_size}{self.split}"
+            self.data_type = aargs['datatype|data_type|=text']
+            self.block_size = aargs['max_length|block_size|=2048']
+            self.split = aargs['split|=train']
+            self.prefix = f"{self.data_type}{self.block_size}{self.split}"
 
-        self.config_file = safe_join_path(self.store_path, f'{self.prefix}_config.json')
-        self.chunk_files = []
+            self.config_file = safe_join_path(self.store_path, f'{self.prefix}_config.json')
+            self.chunk_files = []
 
-        self.file_ext = aargs.get("file_ext", "npz")
-        self.compressed = aargs.get("compressed", "zst")
-        self.n_chunks = aargs.get("n_chunks", N_CHUNKS)
-        self.max_length = 0
-        self.mix_length = DEFAULT_MAX_LENGTH * 10
-        self.chunks = []
-        self.n_items = 0
-        self.checked_files = {}
-        self.load_config(append_mode=aargs['append_mode|append'])
+            self.file_ext = aargs.get("file_ext", "npz")
+            self.compressed = aargs.get("compressed", "zst")
+            self.n_chunks = aargs.get("n_chunks", N_CHUNKS)
+            self.max_length = 0
+            self.mix_length = DEFAULT_MAX_LENGTH * 10
+            self.chunks = []
+            self.n_items = 0
+            self.checked_files = {}
+            self.load_config(append_mode=aargs['append_mode|append'])
 
     def load_config(self, append_mode=True):
         config = None
@@ -118,7 +118,7 @@ class DatasetStore(object):
             self.save_chunk()
 
     def check_files(self, skip_validation=True):
-        for chunk_file in configurable_tqdm(self.chunk_files, desc='File validation'):
+        for chunk_file in adhoc.tqdm(self.chunk_files, desc='File validation'):
             if chunk_file not in self.checked_files:
                 filepath = safe_join_path(self.store_path, chunk_file)
                 checks = {
@@ -128,15 +128,15 @@ class DatasetStore(object):
                 self.checked_files[chunk_file] = checks
             if not skip_validation:
                 if not load_chunk_file('', filepath):
-                    verbose_print(f'unloaded and broken chunk file {chunk_file}')
+                    adhoc.print(f'unloaded and broken chunk file {chunk_file}')
                     return None
                 if not check_chunk_file(self.store_path, chunk_file, checks):
-                    verbose_print(f'invalidate chunk file {chunk_file}')
+                    adhoc.print(f'invalidate chunk file {chunk_file}')
                     return None
 
     def compress(self, compressed='zst'):
         if compressed:
-            for file in configurable_tqdm(self.chunk_files, desc='File compressed'):
+            for file in adhoc.tqdm(self.chunk_files, desc='File compressed'):
                 filepath = safe_join_path(self.store_path, file)
                 compressed_file = f'{filepath}.{compressed}'
                 if not os.path.exists(compressed_file):
@@ -174,9 +174,9 @@ class DatasetStore(object):
             file_ext = self.file_ext,
             compressed=compressed,
             files = self.checked_files,
-            logs = get_adhoc_log(),
+            logs = adhoc.get_log(),
         )
         with open(self.config_file, "w") as w:
             json.dump(config, w, indent=2)
-        verbose_print(f'チャンク: {n_files}, 件数: {n_items:,}, トークン数: {n_tokens:,}')
+        adhoc.print(f'チャンク: {n_files}, 件数: {n_items:,}, トークン数: {n_tokens:,}')
 

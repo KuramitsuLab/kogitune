@@ -1,5 +1,7 @@
 from typing import List, Union
-from .base import TextFilter
+
+from .commons import TextFilter, adhoc
+
 from .replaces_utils import *
 from .replaces_code import *
 from .replaces_url import *
@@ -40,41 +42,57 @@ def find_replace_func(pattern:str):
     func = globals().get(f'replace_{pattern}')
     if func is None:
         patterns = [s.replace('replace_', '') for s in globals() if s.startswith('replace_')]
-        raise ValueError(f'replace_{pattern} is not found. Select pattern from {patterns}')
+        adhoc.warn('知らないパターンだね', unknown_pattern=pattern, expected_patterns=patterns)
+        return None
     return func
 
-class Replacement(TextFilter):
+class ReplacementFilter(TextFilter):
     """
     置き換えフィルター
     :patterns: 'url:<URL>|date:<date>'
     """
 
-    def __init__(self, patterns: List[str], **kwargs):
+    def __init__(self, patterns: List[str], uppercase=False, verbose_count=0, **kwargs):
         """
         置き換えフィルターを作る
-        :param patterns: 置き換える文字列パターンのリスト
-        """
-        if isinstance(patterns,str):
-            patterns = patterns.split('|')
-        self.replace_funcs = []
-        for pattern in patterns:
-            pattern, _, w = pattern.partition(':')
-            self.replace_funcs.append((pattern, find_replace_func(pattern), w))
-        self.verbose_count = kwargs.get('verbose', 0) 
-    
-    def __call__(self, text):
-        if self.verbose > 0:
-            for name, replace_fn, w in self.replace_funcs:
-                replaced_text = replace_fn(text, w)
-                if text != replaced_text:
-                    adhoc.log('replace', name, {'before': text, 'after': replaced_text})
-                    self.verbose_count -= 1
-                text = replaced_text
-        else:
-            for _, replace_fn, w in self.replace_funcs:
-                text = replace_fn(text, w)
-            return replace_repeated(text)
+        patterns: 置き換える文字列パターンのリスト
+        
+        >>> ReplacementFilter("data|url:<URL>")
 
-def replace(patterns: Union[str, List[str]], **kwargs):
-    return Replacement(patterns)
+        """
+        if isinstance(patterns, str):
+            patterns = patterns.split('|')
+        self.patterns = patterns
+        self.uppercase = uppercase
+        self._funcs = []
+        for pattern in self.patterns:
+            if ':' in patterns:
+                # 'url:<URL>'
+                pattern, _, replaced = pattern.partition(':')
+            else:
+                # コロンがない場合は、置き換えるプレースホルダーを作る
+                replaced, _, _ = pattern.partition('_')
+                if uppercase:
+                    replaced = replaced.upper()
+                replaced = f'<{replaced}>'
+            replace_fn = find_replace_func(pattern)
+            if replace_fn:
+                self._funcs.append((pattern, replace_fn, replaced))
+        self._verbose_count = verbose_count 
+    
+    def __call__(self, text:str, record:dict):
+        if self._verbose_count > 0:
+            for pattern, replace_fn, replaced in self._funcs:
+                replaced_text = replace_fn(text, replaced)
+                if text != replaced_text:
+                    adhoc.log('filter/replace', pattern, {'before': text, 'after': replaced_text})
+                    self._verbose_count -= 1
+                text = replaced_text
+            return replace_repeated(text)
+        for _, replace_fn, replaced in self._funcs:
+            text = replace_fn(text, replaced)
+        return replace_repeated(text)
+
+def replace(patterns: Union[str, List[str]], uppercase=False, verbose_count=0, **kwargs):
+    return ReplacementFilter(patterns, uppercase=uppercase, verbose_count=verbose_count)
 

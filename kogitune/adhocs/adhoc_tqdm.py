@@ -1,13 +1,13 @@
 
-from .adhocargs import AdhocArguments
+from .arguments import from_kwargs
 
 if 'get_ipython' in globals():
     from tqdm.notebook import tqdm
 else:
     from tqdm import tqdm
 
-def configurable_tqdm(iterable, desc=None, total=None, **kwargs):
-    with AdhocArguments.from_main(**kwargs) as aargs:
+def adhoc_tqdm(iterable, desc=None, total=None, **kwargs):
+    with from_kwargs(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(iterable, desc=desc, total=total)
@@ -27,7 +27,7 @@ class _DummyTqdm:
     def __exit__(self, exc_type, exc_value, traceback):
         self.close()
 
-def configurable_progress_bar(desc=None, total=None, **kwargs):
+def adhoc_progress_bar(desc=None, total=None, **kwargs):
     """
     from kogitune.utils_tqdm import progress_bar
 
@@ -35,7 +35,7 @@ def configurable_progress_bar(desc=None, total=None, **kwargs):
         for n in range(10):
             pbar.update()
     """
-    with AdhocArguments.from_main(**kwargs) as aargs:
+    with from_kwargs(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(desc=desc, total=total)

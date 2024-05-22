@@ -3,7 +3,7 @@ import torch
 import numpy as np
 
 from transformers import DataCollatorForLanguageModeling, DataCollatorForSeq2Seq
-from ..tokenizers import find_extra_ids, find_newline_token_id
+from ..stores.tokenizers import find_extra_ids, find_newline_token_id
 from .old_composers import DataComposer, CHUNK_MAGIC
 
 def build_inputs_for_clm(data, max_length):

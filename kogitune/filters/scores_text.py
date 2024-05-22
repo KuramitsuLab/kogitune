@@ -2,8 +2,8 @@ from typing import Optional
 import zlib, math
 from collections import Counter
 
-from .base import ScoreFunction
-from ..adhoc_args import configurable_tokenizer
+from .commons import ScoreFunction
+import kogitune.adhocs as adhoc
 
 class TextLength(ScoreFunction):
     """
@@ -44,7 +44,7 @@ class TokenizerCompression(ScoreFunction):
         :param chars_per_tokens: 圧縮率の計算を1トークン辺りの文字数(chars/tokens)にする。
         """
         super().__init__(**kwargs)
-        self.tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+        self.tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
         self.chars_per_tokens = chars_per_tokens
         self.head = head
         self.length = length
@@ -63,10 +63,10 @@ class TokenizerCompression(ScoreFunction):
         if text_length == 0:
             return 1
         token_length = len(self.tokenizer.encode(text))
-        if self.zlib_fraction:
-            encoded = text.encode("utf-8", errors='ignore')
-            compressed = zlib.compress(encoded, level=9)    
-            text_length = len(compressed)
+        # if self.zlib_fraction:
+        #     encoded = text.encode("utf-8", errors='ignore')
+        #     compressed = zlib.compress(encoded, level=9)    
+        #     text_length = len(compressed)
         if self.chars_per_tokens:
             return text_length / token_length 
         return token_length / text_length
@@ -86,7 +86,7 @@ class TokenizerEntropy(ScoreFunction):
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
         """
         super().__init__(tokenizer=None, **kwargs)
-        self.tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+        self.tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
 
     def as_json(self):
         return {

@@ -3,7 +3,7 @@ import os
 import re
 import numpy as np
 
-from .local_utils import *
+from .commons import *
 
 os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 
@@ -28,7 +28,7 @@ class Metric(object):
 
     def evaluate(self, result_list, force_eval=False):
         scores = []
-        for record in configurable_tqdm(result_list, desc=f'{self.name}'):
+        for record in adhoc.tqdm(result_list, desc=f'{self.name}'):
             if 'outputs' not in record:
                 break
             if force_eval or self.name not in record:

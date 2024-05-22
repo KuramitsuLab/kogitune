@@ -586,19 +586,19 @@ def cleanup(text):
     return text.replace('<url>', '')
 
 
-def CCFilter(text):
-    text = replace_url(text)
-    text = replace_email(text)
-    text = replace_datetime(text)
-    text = replace_phone(text)
-    text = replace_address(text)
-    text = replace_enclose(text)
-    text = replace_id(text)
-    text = replace_float(text)
-    text = replace_article(text)
-    text = replace_menu(text)
-    text = replace_bar(text)
-    return cleanup(text)
+# def CCFilter(text):
+#     text = replace_url(text)
+#     text = replace_email(text)
+#     text = replace_datetime(text)
+#     text = replace_phone(text)
+#     text = replace_address(text)
+#     text = replace_enclose(text)
+#     text = replace_id(text)
+#     text = replace_float(text)
+#     text = replace_article(text)
+#     text = replace_menu(text)
+#     text = replace_bar(text)
+#     return cleanup(text)
 
 def find_replace_func(pattern:str):
     func = globals().get(f'replace_{pattern}')
@@ -620,10 +620,11 @@ class ReplacementFilter:
         """
         if isinstance(patterns,str):
             patterns = patterns.split('|')
-        self.replace_funcs = [find_replace_func(pattern) for pattern in patterns]
+        self.patterns = patterns
+        self._replace_funcs = [find_replace_func(pattern) for pattern in patterns]
 
     def __call__(self, text):
-        for replace_fn in self.replace_funcs:
+        for replace_fn in self._replace_funcs:
             text = replace_fn(text)
             if text is None:
                 break

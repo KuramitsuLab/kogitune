@@ -4,10 +4,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from filelock import FileLock
 
-from .local_utils import *
+from .commons import *
 
 from .datatum import load_data, prepare_result, needs_model_inference, save_score, save_result
-from .templates import load_template
+from ..datasets import load_template
 
 from .models import load_model, get_modeltag
 from .evaluators import evaluate_metric
@@ -17,7 +17,7 @@ def sec(result_file):
 
 def generate_with_args(aargs):
     datalist = load_data(aargs)
-    template = load_template(datalist, aargs)
+    template = load_template(sample=datalist[0], aargs=aargs)
 
     datatag = aargs['datatag']
     modeltag = get_modeltag(aargs)
@@ -27,7 +27,7 @@ def generate_with_args(aargs):
 
     result_list = prepare_result(result_file, datalist, aargs)
     if 'input' not in result_list[0]:
-        template.load_sample(datalist, result_list)
+        template.load_to_sample_list(datalist, result_list)
 
     save_result(result_file, result_list)      
 
@@ -35,30 +35,29 @@ def generate_with_args(aargs):
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
     if needs_model_inference(result_list, n):
-        adhoc.open_section('generation')
-        model = load_model(aargs=aargs)
-        model.configure(template, datalist)
+        with adhoc.open_section('generation'):
+            model = load_model(aargs=aargs)
+            model.configure(template, datalist)
 
-        adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
-        if test_run < len(result_list):
-            adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')
-        sample_list = [sample for sample in result_list[:test_run] if 'outputs' not in sample]
-        def saving():
-            save_result(result_file, result_list)      
-        elapsed_time = model.generate_streaming(sample_list, 
-                                                n=n, 
-                                                saving_func=saving, 
-                                                batch_size=aargs['eval_batch_size|batch_size|=2'])
-        if len(sample_list) > 0:
-            adhoc.notice('お疲れ様！！ 生成終わりました', 
-                        total_time=round(elapsed_time,3),
-                        throughtput=round(elapsed_time/len(sample_list),3))
-        save_result(result_file, result_list)
-        adhoc.close_section()
+            adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
+            if test_run < len(result_list):
+                adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')
+            sample_list = [sample for sample in result_list[:test_run] if 'outputs' not in sample]
+            def saving():
+                save_result(result_file, result_list)      
+            elapsed_time = model.generate_streaming(sample_list, 
+                                                    n=n, 
+                                                    saving_func=saving, 
+                                                    batch_size=aargs['eval_batch_size|batch_size|=2'])
+            if len(sample_list) > 0:
+                adhoc.notice('お疲れ様！！ 生成終わりました', 
+                            total_time=round(elapsed_time,3),
+                            throughtput=round(elapsed_time/len(sample_list),3))
+            save_result(result_file, result_list)
     return result_file, result_list
 
 def get_metric_list(aargs):
-    metric_list = aargs['metric_list|metrics|metric']
+    metric_list = aargs['metric_list|metric']
     if metric_list is None:
         return None
     if isinstance(metric_list, str):
@@ -94,9 +93,9 @@ def check_eval_only(aargs):
             return None, metric_list
     return files, metric_list
 
-def chain_eval(**kwargs):
+def chain_eval_cli(**kwargs):
     import traceback
-    with AdhocArguments.from_main(import_to_main=True, **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         result_files, metric_list = check_eval_only(aargs)
         if result_files:
             metric_list = get_metric_list(aargs)

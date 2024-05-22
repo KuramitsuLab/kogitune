@@ -16,8 +16,8 @@ import torch
 from torch.utils.data import Dataset
 
 from ..commons import *
-from ..utils_file import *
-from ..tokenizers import *
+from ..stores.files import *
+from ..stores.tokenizers import *
 from ..stores.store import Metastore
 from ..splitters import make_local_store
 
@@ -70,7 +70,7 @@ class TensorArrayDataset(Dataset):
             with open(config_file) as f:
                 config = json.load(f)
         except BaseException as e:
-            verbose_print(f'見つかりません {self.url} ({config_file})')
+            adhoc.print(f'見つかりません {self.url} ({config_file})')
             config = dict(n_items=0, n_tokens=0)
         # 設定
         self.n_tokens = config.get('n_tokens', 0)
@@ -85,7 +85,7 @@ class TensorArrayDataset(Dataset):
             self.n_subblocks = config['block_size'] // self.block_size
             if self.n_subblocks > 1:
                 self.n_chunks = self.n_chunks * self.n_subblocks
-                verbose_print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
+                adhoc.print(f'{self.url} は、{self.n_subblocks}個に再分割されます')
         self.is_seq2seq = 'output_sep_token_id' in config
         self.config = config
         return config
@@ -143,7 +143,7 @@ def get_world_size():
     else:
         return 1
 
-def verbose_print(*args, **kwargs):
+def adhoc.print(*args, **kwargs):
     fox_face = '🦊' * (get_rank() + 1)
     print(fox_face, *args, **kwargs)
 
@@ -175,7 +175,7 @@ class DistributedIndexer(Dataset):
         self.sublength = self.length // get_world_size()
         if get_world_size() > 1:
             self.offset = self.offset + (get_rank() * self.sublength)
-            verbose_print(f'データ再配置: rank={get_rank()}, offset={self.offset}, length={self.sublength}')
+            adhoc.print(f'データ再配置: rank={get_rank()}, offset={self.offset}, length={self.sublength}')
         dataset.try_prefetch(self.offset)
 
     def skip(self):
@@ -198,7 +198,7 @@ class DistributedIndexer(Dataset):
     def report(self, max_length):
         iterations = self.sublength * self.epoch + self.count
         total_tokens = iterations * max_length
-        verbose_print(f'{self.dataset.url}: 反復数{iterations:,} トークン数{total_tokens:,}')
+        adhoc.print(f'{self.dataset.url}: 反復数{iterations:,} トークン数{total_tokens:,}')
         return iterations
     
     def get_valid_dataset(self, valid_split=0.1):
@@ -303,7 +303,7 @@ class DataComposer(MixingDataset):
             self.cache_dir = safe_dir(cache_dir)
             self.cleanup = False if get_rank() > 0 else cleanup
         if os.path.isdir(self.cache_dir):
-            verbose_print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
+            adhoc.print(f'既に存在するキャッシュ {self.cache_dir} を使います。')
             self.cleanup = False
         os.makedirs(self.cache_dir, exist_ok=True)
         self.lock_file = safe_join_path(self.cache_dir, get_filename_by_pid('cache')) if use_filelock else None
@@ -318,12 +318,12 @@ class DataComposer(MixingDataset):
         restart = getint_environ('KG_START', 0, param_specified=restart)
         self.global_count = 0
         if restart > 0:
-            verbose_print(f'{restart}回(イテレーション)から、継続学習します')
+            adhoc.print(f'{restart}回(イテレーション)から、継続学習します')
             for i in range(restart):
                 self.skip(i)
         test_run = getint_environ('KG_TEST_RUN|TEST_RUN', None, param_specified=test_run)
         if test_run and isinstance(test_run, int):
-            verbose_print(f'イテレーションを {test_run} 回に減らして、テスト実行します')
+            adhoc.print(f'イテレーションを {test_run} 回に減らして、テスト実行します')
             self.n_items = min(test_run, self.n_items)
 
     def prepare_data(self, urls, tokenizer=None):
@@ -344,16 +344,16 @@ class DataComposer(MixingDataset):
             args['cache_dir'] = local_cache_dir(args['cache_dir'], url)
             prefix = Metastore(url, args['cache_dir']).find_better_size(args)
             if prefix is None:
-                verbose_print(f'データセット {url} には、適切なデータがありません')
+                adhoc.print(f'データセット {url} には、適切なデータがありません')
                 print('CHECKME', args)
                 continue
             dataset = TensorArrayDataset(url, prefix, args)
             if len(dataset) == 0:
-                verbose_print(f'データセット {url} は、スキップして学習を続けます。')
+                adhoc.print(f'データセット {url} は、スキップして学習を続けます。')
                 continue
             if self.check_tokenizer(url, dataset) == False:
                 continue
-            verbose_print(f'{url} {prefix} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
+            adhoc.print(f'{url} {prefix} トークン数: {format_unit(dataset.n_tokens)} {dataset.n_tokens:,} 件数: {len(dataset):,}')
             dataset = DistributedIndexer(dataset, args)
             self.datasets.append(dataset)
             self.n_items += len(dataset)
@@ -369,7 +369,7 @@ class DataComposer(MixingDataset):
             total = sum(dataset_lengths)
             base = total / min(dataset_lengths) * 7
             lens = [max(int((dlen * base) / total),1) for dlen in dataset_lengths]
-            verbose_print(f'最大: {max(dataset_lengths):,} 最小: {min(dataset_lengths):,} 混成比率: {lens}')
+            adhoc.print(f'最大: {max(dataset_lengths):,} 最小: {min(dataset_lengths):,} 混成比率: {lens}')
         else:
             lens=[1]
         self.mixed = []
@@ -383,7 +383,7 @@ class DataComposer(MixingDataset):
         if tokenizer is not None:
             return tokenizer
         if self.tokenizer_path is None:
-            verbose_print(f'トークンナイザーの指定がないので DEFAULT_TOKENIZER={DEFAULT_TOKENIZER}を使います')
+            adhoc.print(f'トークンナイザーの指定がないので DEFAULT_TOKENIZER={DEFAULT_TOKENIZER}を使います')
             self.tokenizer_path = DEFAULT_TOKENIZER
         return load_tokenizer(self.tokenizer_path)
 
@@ -396,13 +396,13 @@ class DataComposer(MixingDataset):
         elif self.tokenizer_path != dataset.tokenizer_path:
             verbose_error(f'警告: トークンナイザーが一致しません。{self.tokenizer_path}')
             verbose_error(f'    {dataset.tokenizer_path} @{url}')
-            verbose_print(f'** {url} は、スキップして学習を続けます。')
+            adhoc.print(f'** {url} は、スキップして学習を続けます。')
             return False
         return True
     
     def report(self):
         total_tokens = self.global_count * self.max_length
-        verbose_print(f'イテレーション {self.global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
+        adhoc.print(f'イテレーション {self.global_count:,} トークン数 {format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
         return self
@@ -414,6 +414,6 @@ class DataComposer(MixingDataset):
         if self.cleanup and os.path.isdir(self.cache_dir):
             try:
                 shutil.rmtree(self.cache_dir)
-                verbose_print('Cleaned up', self.cache_dir)
+                adhoc.print('Cleaned up', self.cache_dir)
             except:
                 pass

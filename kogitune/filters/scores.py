@@ -1,32 +1,35 @@
 from typing import Optional
-import zlib, math, json
-from collections import Counter
-import numpy as np
 import pandas as pd
+import urllib.parse
 
-from .base import TextFilter, ScoreFunction
+from .commons import TextFilter, ScoreFunction
 
 from .scores_text import ZLibCompression, TextLength, TokenizerCompression, TokenizerEntropy
 from .scores_en import AlphaFraction, EnglishWordCounter
 from .scores_ja import JapaneseWordCounter
 
-from ..adhoc_args import parse_path_arguments, verbose_print
+import kogitune.adhocs as adhoc
 
-function_map = {
-    'zlib': ZLibCompression
+SCORE_FUNCTION_MAP = {
+    'text-length': TextLength,
+    'zlib': ZLibCompression,
+    'token': TokenizerCompression,
+    'token-compression': TokenizerCompression,
+    'token-entropy': TokenizerEntropy,
+    'alpha-fraction': AlphaFraction,
+    'word-en': EnglishWordCounter,
+    'word-ja': JapaneseWordCounter,
 }
 
 def score_function(score_path):
     if isinstance(score_path, ScoreFunction):
         return score_path
-    path, args = parse_path_arguments(score_path)
-    if path in function_map:
-        func = function_map[path]
+    path, args = adhoc.parse_path_args(score_path)
+    if path in SCORE_FUNCTION_MAP:
+        func = SCORE_FUNCTION_MAP[path]
+        return func(**args)
     else:
-        ns = globals()
-        if path in ns:
-            func = ns[path]
-    return func(**args)
+        adhoc.warn(unknown_score_path=score_path, expected=list(SCORE_FUNCTION_MAP.keys()))
 
 ## MaxMin
 
@@ -44,7 +47,7 @@ class MaxMinFilter(TextFilter):
                 #  maxq=None, 
                  record_key = None,
                  histogram_sample = 0, 
-                 histogram_save_to=None,
+                 save_to=None,
                  percentiles = DEFAULT_PERCENTILES,
                  **kwargs):
         """
@@ -58,36 +61,28 @@ class MaxMinFilter(TextFilter):
         :param save_to: ヒストグラムの保存先
         """
         super().__init__(**kwargs)
-        self.score_func = score_function(score_path)
+        self.score_path = score_path
         self.min_value = min_value
         self.max_value = max_value
-        # self.minq = minq
-        # self.maxq = maxq
-        self.record_key = record_key
-        self.funcname = record_key or self.score_func.name()
-        self.histogram_sample = histogram_sample
-        self.save_to = histogram_save_to
-        if self.save_to is not None and histogram_sample == 0:
-            self.histogram_sample = 10000
-        if self.histogram_sample > 0:
-            self.values = []
-            self.percentiles = percentiles
-
-    def as_json(self):
-        return {
-            'maxmin': self.score_func.as_json(),
-            'max_value': self.max_value,
-            'min_value': self.min_value,
-        }
+        self._score_func = score_function(score_path)
+        self._record_key = record_key
+        self._funcname = record_key or self._score_func.name()
+        self._histogram_sample = histogram_sample
+        self._save_to = save_to
+        if self._save_to is not None and histogram_sample == 0:
+            self._histogram_sample = 10000
+        if self._histogram_sample > 0:
+            self._values = []
+            self._percentiles = percentiles
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
-        value = self.score_func(text)
-        if self.record_key:
-            record[self.record_key] = round(value,5)
-        if self.histogram_sample > 0:
-            self.values.append(value)
-            if len(self.values) == self.histogram_sample:
-                _describe(self.values, self.funcname, self.percentiles, self.save_to)
+        value = self._score_func(text)
+        if self._record_key:
+            record[self._record_key] = round(value,5)
+        if self._histogram_sample > 0:
+            self._values.append(value)
+            if len(self._values) == self._histogram_sample:
+                _describe(self._values, self._funcname, self._percentiles, self._save_to)
         if (self.min_value and self.min_value > value):
             #record['drop'] = 'DROP[{self.funcname}:{value}>]\n{text}\n'
             return None
@@ -97,51 +92,11 @@ class MaxMinFilter(TextFilter):
             return None
         return text
 
-    # def filter(self, text):
-    #     value = self.score_fn(text)
-    #     if self.record is not None:
-    #         if self.record_name:
-    #             self.record[self.record_name] = round(value,5)
-    #         if len(self.values) < self.window_size:
-    #             self.values.append(value)
-    #         if len(self.extract_samples) > 0:
-    #             key = round(value, 2)
-    #             if key in self.extract_samples:
-    #                 print(f'{self.funcname}[sample={value:.5f}]', text)
-    #                 self.extract_samples.discard(key)
-    #             else:
-    #                 key = round(value, 1)
-    #                 if key in self.extract_samples:
-    #                     print(f'{self.funcname}[sample={value:5f}]', text)
-    #                     self.extract_samples.discard(key)
-    #     if (self.min_value and self.min_value > value):
-    #         if self.verbose > 0:
-    #             self.debug_print(f'DROP[{self.funcname}:{value}<]\n{text}\n')
-    #         return None
-    #     if (self.max_value and self.max_value < value):
-    #         if self.verbose > 0:
-    #             self.debug_print(f'DROP[{self.funcname}:{value}>]\n{text}\n')
-    #         return None
-    #     return text
-    
-    # def recheck(self):
-    #     a = np.array(self.values)
-    #     if self.minq is not None:
-    #         min_value = self.min_value
-    #         self.min_value = round(np.percentile(a, self.minq),5)
-    #         if self.funcname:
-    #             print(f'{self.funcname}[{self.recheck_factor}] min_value: {min_value} => {self.min_value}')
-    #     if self.maxq is not None:
-    #         max_value = self.max_value
-    #         self.max_value = round(np.percentile(a, self.maxq),5)
-    #         if self.funcname:
-    #             print(f'{self.funcname}[{self.recheck_factor}] max_value: {max_value} => {self.max_value}')
-
 def _describe(values, funcname, percentiles=DEFAULT_PERCENTILES, filename=None):
     df = pd.DataFrame({funcname: values})
     print(df.describe(percentiles=percentiles))
     if filename is None:
-        verbose_print(f'ヒストグラムの詳細を知りたいときは、histogram_save_to を設定しよう')
+        adhoc.print(f'ヒストグラムの詳細を知りたいときは、histogram_save_to を設定しよう')
     else:
         df.to_csv(f'{filename}.csv', index=None)
         try:
@@ -149,112 +104,32 @@ def _describe(values, funcname, percentiles=DEFAULT_PERCENTILES, filename=None):
             import seaborn as sns
             sns.displot(df, stat='probability')
             plt.savefig(filename)
-            verbose_print(f'ヒストグラムを保存しました: {filename}.png')
+            adhoc.print(f'ヒストグラムを保存しました: {filename}.png')
             plt.clf()
         except:
             pass
 
-"""
+# def urlencode(d:dict):
+#     return urllib.parse.urlencode(d)
 
-class MaxMinFilter(TextFilter):
-    def __init__(self, 
-                 score_fn, 
-                 min_value=None, 
-                 max_value=None, 
-                 minq=None, 
-                 maxq=None, 
-                 window_size = 10000, 
-                 record_name:str = None,
-                 histogram: Optional[str] = None,
-                 funcname: Optional[str] = None,
-                 percentiles = DEFAULT_PERCENTILES,
-                 extract_samples=[],
-                 verbose=0):
-        super().__init__(verbose=verbose)
-        self.score_fn = score_fn
-        self.min_value = min_value
-        self.max_value = max_value
-        self.minq = minq
-        self.maxq = maxq
-        self.record_name = record_name
-        self.values = []
-        self.window_size = window_size
-        self.recheck_factor = 100
-        if funcname:
-            self.funcname = funcname
-        elif hasattr(score_fn, 'name'):
-            self.funcname = score_fn.name
-        elif hasattr(score_fn, '__name__'):
-            self.funcname = score_fn.__name__
-        else:
-            self.funcname = score_fn.__class__.__name__
-        self.histogram = histogram
-        self.percentiles = percentiles
-        self.extract_samples = set(round(x,2) for x in extract_samples)
+def encode_path_arguments(path:str, args:dict, without_keys:list):
+    args = args.copy()
+    if isinstance(path, str):
+        if isinstance(without_keys, str):
+            without_keys = without_keys.split('|')
+        for key in without_keys:
+            args.pop(key, None)
+        if len(args) > 0:
+            return f'{path}?{urllib.parse.urlencode(args)}'
+    return path
 
-    def filter(self, text):
-        value = self.score_fn(text)
-        if self.record is not None:
-            if self.record_name:
-                self.record[self.record_name] = round(value,5)
-            if len(self.values) < self.window_size:
-                self.values.append(value)
-                if len(self.values) % self.recheck_factor == 1:
-                    self.recheck()
-                    self.recheck_factor *= 2
-                if len(self.values) == self.window_size:
-                    _describe(self.values, self.funcname, self.histogram, self.percentiles)
-            if len(self.extract_samples) > 0:
-                key = round(value, 2)
-                if key in self.extract_samples:
-                    print(f'{self.funcname}[sample={value:.5f}]', text)
-                    self.extract_samples.discard(key)
-                else:
-                    key = round(value, 1)
-                    if key in self.extract_samples:
-                        print(f'{self.funcname}[sample={value:5f}]', text)
-                        self.extract_samples.discard(key)
-        if (self.min_value and self.min_value > value):
-            if self.verbose > 0:
-                self.debug_print(f'DROP[{self.funcname}:{value}<]\n{text}\n')
-            return None
-        if (self.max_value and self.max_value < value):
-            if self.verbose > 0:
-                self.debug_print(f'DROP[{self.funcname}:{value}>]\n{text}\n')
-            return None
-        return text
-    
-    def recheck(self):
-        a = np.array(self.values)
-        if self.minq is not None:
-            min_value = self.min_value
-            self.min_value = round(np.percentile(a, self.minq),5)
-            if self.funcname:
-                print(f'{self.funcname}[{self.recheck_factor}] min_value: {min_value} => {self.min_value}')
-        if self.maxq is not None:
-            max_value = self.max_value
-            self.max_value = round(np.percentile(a, self.maxq),5)
-            if self.funcname:
-                print(f'{self.funcname}[{self.recheck_factor}] max_value: {max_value} => {self.max_value}')
+def maxmin(_score, **kwargs):
+    args = kwargs
+    if 'min' in args and 'min_value' not in args:
+        args['min_value'] = args.pop('min')
+    if 'max' in args and 'max_value' not in args:
+        args['max_value'] = args.pop('max')
+    score_path = encode_path_arguments(_score, args, 
+                'min_value|max_value|record_key|histogram_sample|save_to|percentiles')
+    return MaxMinFilter(score_path=score_path, **args)
 
-def _describe(values, funcname, histogram, percentiles=DEFAULT_PERCENTILES):
-    caption = histogram or funcname
-    if funcname is None:
-        return
-    df = pd.DataFrame({caption: values})
-    print(df.describe(percentiles=percentiles))
-    if histogram is None:
-        return
-    try:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        sns.displot(df, stat='probability')
-        filename = caption.replace(' ', '_').replace('/', '_')
-        print(f'Saving Histgram {filename}.png Data {filename}.csv')
-        df.to_csv(f'{filename}.csv', index=None)
-        plt.savefig(filename)
-        plt.clf()
-    except:
-        pass
-
-"""

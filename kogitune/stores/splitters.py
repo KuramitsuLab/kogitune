@@ -1,16 +1,14 @@
 from typing import List, Union, Tuple
 import numpy as np
-import pandas as pd
 from multiprocessing import Pool
 
-from transformers import AutoTokenizer
+import kogitune.adhocs as adhoc
 
-from ..adhoc_args import configurable_tokenizer, adhoc_log
-from ..tokenizers import *
+from .tokenizers import *
 from ..commons import *
-from ..utils_file import *
+from .files import *
 from .store import DatasetStore
-from .section import find_section_fn
+from .sections import find_section_fn
 
 empty_tokens = []
 
@@ -174,9 +172,7 @@ def find_splitter(tokenizer, aargs):
     data_type = aargs['datatype|data_type|=text']
     if data_type == 'text':
         section = aargs['section|=pack']
-        if section is None or section == 'none':
-            return TextBlockSpliter(tokenizer, aargs)
-        if section == 'pack':
+        if section is None or section == 'none' or section == 'pack':
             return TextPacker(tokenizer, aargs)
         section_fn = find_section_fn(section)
         if section_fn is None:
@@ -187,7 +183,7 @@ def find_splitter(tokenizer, aargs):
         raise NotImplementedError(f'datatype={data_type}')
 
 class Recorder(object):
-    def __init__(self, args: AdhocArguments, rank=0):
+    def __init__(self, args: adhoc.Arguments, rank=0):
         self.rank = rank
         self.head_count = 0
         self.block_count = 0
@@ -269,6 +265,7 @@ class Recorder(object):
         return logs
 
 def report_record(logs, block_size):
+    format_unit = adhoc.format_unit
     chars = logs['source_chars']
     tokens = logs['source_tokens']
     filtered = int(logs['filtered'])
@@ -280,7 +277,7 @@ def report_record(logs, block_size):
     overlapped = logs['overlapped'] 
     max_cpt = logs.get('max_cpt',100)
     min_cpt = logs.get('min_cpt', 0)
-    verbose_print(f'訓練データセットの結果')
+    adhoc.print(f'訓練データセットの結果')
     print(f'文字数//chars {format_unit(chars, scale=1000)} トークン数//tokens {format_unit(tokens, scale=1000)} 適合率(cpt) {chars/tokens:.4f}')
     print(f'フィルタ//filtered {format_unit(filtered, scale=1000)}トークン {filtered*100/tokens:.2f}% 区間 [{min_cpt:.3f}, {max_cpt:.3f}]')
     print(f'切り詰め//trancated {format_unit(trancated, scale=1000)}トークン {trancated*100/tokens:.2f}% ')
@@ -294,7 +291,7 @@ def report_record(logs, block_size):
 def get_store_path(filenames, tokenizer, aargs):
     store_path = aargs['store_path|store_dir|store']
     if store_path is None:
-        filebase = get_filebase(filenames[0])
+        filebase = basename(filenames[0])
         tokenizer_name = tokenizer_id(tokenizer)
         store_path=f'{tokenizer_name}/{filebase}'
         return store_path
@@ -306,7 +303,7 @@ def get_store_path(filenames, tokenizer, aargs):
             tokenizer_name = tokenizer_id(tokenizer)
             store_path=f'{tokenizer_name}/{filebase}'
             aargs['store_path'] = store_path
-            verbose_print(f'保存先/Saving To.. {store_path}')
+            adhoc.print(f'保存先/Saving To.. {store_path}')
 
 def store_files(filenames: List[str], tokenizer=None, **kwargs):
     """
@@ -314,17 +311,18 @@ def store_files(filenames: List[str], tokenizer=None, **kwargs):
     :param filenames: ファイル名、もしくはファイル名のリスト
     """
     filenames = list_filenames(filenames)
-    adhoc_log('store', 'input_files', filenames)
-    with AdhocArguments.from_main(**kwargs) as aargs:
-        tokenizer = configurable_tokenizer(tokenizer=tokenizer)
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
         splitter = find_splitter(tokenizer, aargs)
-        adhoc_log('store', 'splitter', splitter.as_json(), message='確認してよ')
-        adhoc_log('store', 'tokenizer', tokenizer_as_json(tokenizer))
+        adhoc.notice('ストアは時間がかかる場合があるから確認してね', 
+                     splitter=splitter.as_json(), 
+                     input_files=filenames, 
+                     tokenizer=tokenizer_as_json(tokenizer))
 
         store_path = get_store_path(filenames, tokenizer, aargs)
-        adhoc_log('store', 'store_path', store_path, message='保存先//Saving To..')
+        adhoc.notice('保存先', store_path=store_path)
  
-        store = DatasetStore(store_path, aargs=aargs)
+        store = DatasetStore(store_path)
 
         num_workers = aargs['num_workers|=1']
         N=aargs['head|N|=-1']
@@ -356,10 +354,9 @@ def store_files(filenames: List[str], tokenizer=None, **kwargs):
             for a in func_args:
                 a['record'].as_json(merge=record_logs)
         report_record(record_logs, splitter.block_size)
-        adhoc_log('store', 'result', record_logs)
+        adhoc.notice('お連れ様!! トークン化完了です', result=record_logs)
         store.save(tokenizer, skip_validation=aargs['skip_validation'])
     return str(os.path.abspath(store_path))
-
 
 # def make_local_store(filename:str, tokenizer, args:dict):
 #     if 'cache_dir' in args and 'store_path' not in args:

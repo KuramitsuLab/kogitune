@@ -7,4 +7,5 @@ pyzstd
 einops
 termcolor
 sacrebleu
+levenshtein
 evaluate
