@@ -268,6 +268,12 @@ class AdhocArguments(object):
         print(f'{face}{text}', end=kwargs.pop('end', os.linesep))
         if flush:
             print(flush_buf())
+    
+    def from_kwargs(self, open_section=None, **kwargs):
+        caller_frame = inspect.stack()[1].function
+        return AdhocArguments(kwargs, parent=self, 
+            caller=caller_frame, section=open_section or get_section())
+
 
 # main adhoc arguments
 
