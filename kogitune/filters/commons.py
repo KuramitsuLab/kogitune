@@ -150,7 +150,7 @@ class TextFilter(object):
 
     def _from_jsonl_multi(self, filenames: str, output_path:str=None, N=-1, num_workers=1):
         filenames = list_filenames(filenames)
-        adhoc.setlog('filter', input_files=filenames, filter_config =self.as_json())
+        #adhoc.setlog('filter', input_files=filenames, filter_config =self.as_json())
         c=0
         n=0
         with zopen(output_path, 'wt') as w, Pool(num_workers) as pool:

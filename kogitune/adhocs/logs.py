@@ -166,4 +166,4 @@ def end_time(key: str, message=None, total=None):
         notice(message, **logdata)
     else:
         notice(f'実行時間[{key}] {format_unit(elapsed_time, scale=60)}', **logdata)
-    setlog('time', section=get_section(), **logdata)
+    #setlog('time', section=get_section(), **logdata)

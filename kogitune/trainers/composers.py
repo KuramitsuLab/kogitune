@@ -1,6 +1,7 @@
 from typing import Any, List
 
 import os
+import math
 import random
 
 import json
@@ -546,7 +547,7 @@ class DatasetComposer():
                 bf16=bf16_enabled, 
                 fp16=fp16_enabled,
             )
-            adhoc.setlog('train', trainer_args=train_args)
+            #adhoc.setlog('train', trainer_args=train_args)
             return TrainingArguments(**train_args)
     
     def train(self, model=None, **kwargs):
@@ -581,7 +582,7 @@ class DatasetComposer():
                     args=self.get_train_args(),
                 )
             result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
-            adhoc.setlog('train', trainer_result=result)
+            #adhoc.setlog('train', trainer_result=result)
             save_path = aargs['save_path|model_output_path']
             if save_path is None and not os.path.exists('model'):
                 adhoc.print('modelに保存するよ。save_pathで保存先を指定してね')

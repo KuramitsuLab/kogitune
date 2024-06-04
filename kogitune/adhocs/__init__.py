@@ -5,10 +5,11 @@ from .stacks import (
 
 from .dicts import (
     find_simkey, 
-    get_from_dict, pop_from_dict, 
-    copy_dict_keys, move_dict_keys,
+    get_from_dict, 
+    pop_from_dict, 
+    copy_dict_keys, 
+    move_dict_keys,
     parse_path_args, 
-#    dump_as_json, 
 )
 
 from .inspects import (
@@ -23,9 +24,13 @@ from .formats import (
 )
 
 from .logs import (
-    log, save_log, get_log, 
-    notice, warn,
-    start_time, end_time,
+    log, 
+    save_log, 
+    get_log, 
+    notice, 
+    warn,
+    start_time, 
+    end_time,
 )
 
 from .arguments import (
