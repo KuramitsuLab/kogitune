@@ -15,10 +15,10 @@ def _requires_from_file(filename):
 
 setup(
     name="kogitune",
-    version="0.3.2.2024.6.4",
+    version="0.3.3.2024.6.23",
     license="Apache",
     author="Kimio Kuramitsu",
-    description="The KOGItune 🦊 LLM Project",
+    description="The Kogitune 🦊 Distributed Dataset",
     url="https://github.com/kuramitsulab/kogitune",
     packages=["kogitune",
               'kogitune.datasets',

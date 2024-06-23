@@ -233,7 +233,10 @@ def resolve_file(url_base, file_path, cache_dir, compressed=None, sync=True, ver
             if wait_for_file(cached_file, 30):
                 return cached_file
         touch(cached_file)
-        result=subprocess.call(cmd, shell=True)
+        if verbose:
+            result = subprocess.call(cmd, shell=True)
+        else:
+            result = subprocess.call(cmd, shell=True, stderr=subprocess.DEVNULL)
         cached_file_size = get_filesize(cached_file)
         if cached_file_size == 0:
             if verbose:

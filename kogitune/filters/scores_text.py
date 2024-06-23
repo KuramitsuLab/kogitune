@@ -38,10 +38,9 @@ class TokenizerCompression(ScoreFunction):
                  chars_per_tokens=False, 
                  **kwargs):
         """
-        トークンナイザーの圧縮率による評価関数を作る
+        トークンナイザーの圧縮率（1トークン辺りの文字数）による評価関数を作る
         :param tokenizer: トークンナイザー(もしくはトークンナイザー名)   
-        :param head: 指定された先頭の文字数だけチェックする（デフォルトは全体）   
-        :param chars_per_tokens: 圧縮率の計算を1トークン辺りの文字数(chars/tokens)にする。
+        :param head: 指定された先頭の文字数だけチェックする（デフォルトは全体）
         """
         super().__init__(**kwargs)
         self.tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
@@ -63,13 +62,7 @@ class TokenizerCompression(ScoreFunction):
         if text_length == 0:
             return 1
         token_length = len(self.tokenizer.encode(text))
-        # if self.zlib_fraction:
-        #     encoded = text.encode("utf-8", errors='ignore')
-        #     compressed = zlib.compress(encoded, level=9)    
-        #     text_length = len(compressed)
-        if self.chars_per_tokens:
-            return text_length / token_length 
-        return token_length / text_length
+        return text_length / token_length 
 
 class TokenizerEntropy(ScoreFunction):
     """
