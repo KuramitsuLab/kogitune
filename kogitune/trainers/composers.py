@@ -414,7 +414,7 @@ def parse_url_list(url_list=[]):
     return url_list
 
 
-class DatasetComposer():
+class DatasetRecipe():
     def __init__(self, collator_fn = None, cleanup=False, prefetch = 1, **kwargs):
         self.aargs = aargs = adhoc.from_kwargs(**kwargs)
         url_list = parse_url_list(aargs['url_list|files|!!url_listを指定してください'])
@@ -594,3 +594,4 @@ class DatasetComposer():
             wandb.finish()
             return result
 
+DatasetComposer = DatasetRecipe

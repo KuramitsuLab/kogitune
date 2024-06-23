@@ -96,7 +96,7 @@ def _describe(values, funcname, percentiles=DEFAULT_PERCENTILES, filename=None):
     df = pd.DataFrame({funcname: values})
     print(df.describe(percentiles=percentiles))
     if filename is None:
-        adhoc.print(f'ヒストグラムの詳細を知りたいときは、histogram_save_to を設定しよう')
+        adhoc.print(f"ヒストグラムの詳細を知りたいときは、save_to='file.csv' を設定しよう")
     else:
         df.to_csv(f'{filename}.csv', index=None)
         try:
