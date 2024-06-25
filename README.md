@@ -4,7 +4,9 @@ Kogitune is a distributed dataset platform for building machine learning pipelin
 
 ## Overview
 
-The performance of large language models (LLMs) relies on massive, high-quality, preprocessed datasets, often over hundreds of gigabytes. Maintaining such large datasets by a single organization is challenging. Therefore, a framework that promotes division of labor and collaboration among multiple organizations is necessary. We propose a new distributed dataset platform that separates dataset preprocessing and LLM pre-training, building ML pipelines over wide area networks.
+The performance of large language models (LLMs) relies on massive, high-quality, preprocessed datasets, often over hundreds of gigabytes. Maintaining such large datasets by a single organization is challenging. Therefore, a framework that promotes division of labor and collaboration among multiple organizations is necessary. We propose a new distributed dataset platform that separates dataset preprocessing and LLM pre-training, building ML pipelines over the Internet.
+
+![](images/kogitune_concept-fs8.png)
 
 Kogitune is a prototype implementation of this proposed distributed dataset platform. Its main features include the following, with some still in the conceptual stage:
 
