@@ -1,7 +1,7 @@
 import re
 import pandas as pd
 
-from .scores_ja import score_japanese, score_english
+from .utils_ja import score_japanese, score_english
 from .replaces import RE, replace_pattern, replace_datetime, replace_url, replace_email, replace_uuid
 
 code_pattern = RE(

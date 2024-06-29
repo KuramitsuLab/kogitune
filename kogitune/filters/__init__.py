@@ -19,27 +19,30 @@ from .replaces import (
     replace,
 )
 
-from .scores import (
+from .evals import (
+    load_eval_fn,
     MaxMinFilter, 
-    TokenizerCompression, 
-    TokenizerEntropy, 
-    ZLibCompression
+    maxmin,
+    # TokenizerCompression, 
+    # TokenizerEntropy, 
+    # ZLibCompression
 )
 
-from .scores_en import (
-    contains_english, 
-    EnglishWordCounter,
-    WhitespaceCounter,
-)
+# from .utils_en import (
+#     contains_english, 
+#     # EnglishWordCounter,
+#     # WhitespaceCounter,
+# )
 
-from .scores_ja import (
-    contains_japanese, 
-    japanese_fraction,
-    JapaneseWordCounter, 
-    FootnoteFilter,
-)
+# from .utils_ja import (
+#     contains_japanese, 
+#     # japanese_fraction,
+#     # JapaneseWordCounter, 
+#     # FootnoteFilter,
+# )
 
 from .generators import (
-    load_filter, generate_filter, maxmin, 
+    load_filter, generate_filter, 
+    #maxmin, 
     compose, choice, each_line, 
 )

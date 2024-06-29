@@ -2,29 +2,37 @@ from typing import Optional
 import pandas as pd
 import urllib.parse
 
-from .commons import TextFilter, ScoreFunction
+from .commons import TextFilter
 
-from .scores_text import ZLibCompression, TextLength, TokenizerCompression, TokenizerEntropy
-from .scores_en import AlphaFraction, EnglishWordCounter
-from .scores_ja import JapaneseWordCounter
+from .scores_base import ScoreFunction, TokenCount, TokenFraction, CharactorCount, CharactorFraction, AlphaCount
+from .OLDscores_text import TextLength, ZLibCompression, TokenizerEntropy
+from .utils_en import EnglishWordCounter
+from .utils_ja import JapaneseWordCounter
 
 import kogitune.adhocs as adhoc
 
 SCORE_FUNCTION_MAP = {
     'text-length': TextLength,
     'zlib': ZLibCompression,
-    'token': TokenizerCompression,
-    'token-compression': TokenizerCompression,
+    'char': CharactorCount,
+    'char-fraction': CharactorFraction,
+    'token': TokenCount,
+    'token-fraction': TokenFraction,
     'token-entropy': TokenizerEntropy,
     'alpha-fraction': AlphaFraction,
     'word-en': EnglishWordCounter,
     'word-ja': JapaneseWordCounter,
 }
 
-def score_function(score_path):
+def load_eval_fn(score_path):
     if isinstance(score_path, ScoreFunction):
         return score_path
     path, args = adhoc.parse_path_args(score_path)
+    if '.' in path:
+        func = adhoc.load_class(path)
+        if not issubclass(func, ScoreFunction):
+            raise TypeError(f'{path} is not a subclass of ScoreFunction')
+        return func(**args)
     if path in SCORE_FUNCTION_MAP:
         func = SCORE_FUNCTION_MAP[path]
         return func(**args)
@@ -40,11 +48,9 @@ class MaxMinFilter(TextFilter):
     評価関数の最大値と最小値からフィルターする
     """
     def __init__(self, 
-                 score_path, 
+                 text_eval, 
                  min_value=None, 
                  max_value=None, 
-                #  minq=None, 
-                #  maxq=None, 
                  record_key = None,
                  histogram_sample = 0, 
                  save_to=None,
@@ -61,10 +67,7 @@ class MaxMinFilter(TextFilter):
         :param save_to: ヒストグラムの保存先
         """
         super().__init__(**kwargs)
-        self.score_path = score_path
-        self.min_value = min_value
-        self.max_value = max_value
-        self._score_func = score_function(score_path)
+        self._score_func = load_eval_fn(self.eval)
         self._record_key = record_key
         self._funcname = record_key or self._score_func.name()
         self._histogram_sample = histogram_sample

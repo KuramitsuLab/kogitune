@@ -3,7 +3,7 @@ import os
 import json
 import time
 
-from .stacks import get_section, aargs_print
+from .prints import aargs_print
 from .formats import format_unit
 
 ## ログ用のセクション
@@ -48,7 +48,7 @@ def log(section:str, key:str, data,
         max_limit=_MAX_LIMIT, verbose=False, message=None):
     global _MAIN_LOG
     if section is None:
-        section = get_section()
+        section = '?' # get_section()
     if section not in _MAIN_LOG:
         _MAIN_LOG[section] = {}
     log = _MAIN_LOG[section]
@@ -94,24 +94,23 @@ def log_args(function_or_method, version:str, path:str, args:dict):
     log('arguments', name, d)
 
 def setlog(_section, **kwargs):
-    if _section is None:
-        _section = get_section()
-    for key, value in kwargs.items():
-        log(_section, key, value)
+    pass
+    # if _section is None:
+    #     _section = get_section()
+    # for key, value in kwargs.items():
+    #     log(_section, key, value)
 
-# def _stringfy_kwargs(_message=None, **kwargs):
-#     ss = []
-#     if _message:
-#         ss.append(_message)
-#     for key, value in kwargs.items():
-#         ss.append(f'{key}={value}')
-#     return ' '.join(ss)   
+def list_kwargs(**kwargs):
+    ss = []
+    for key, value in kwargs.items():
+        ss.append(f'{key}={value}')
+    return ss   
 
 def notice(_message: str, **kwargs):
-    section = get_section()
-    for key, value in kwargs.items():
-        log(section, key, value)
-    aargs_print(_message, verbose=section, **kwargs)
+    # section = get_section()
+    # for key, value in kwargs.items():
+    #     log(section, key, value)
+    aargs_print(_message, *list_kwargs(**kwargs))
 
 def warn(**kwargs):
     import re
@@ -154,16 +153,18 @@ def start_time(key: str):
     global _TIME
     _TIME[key] = time.time()
 
-def end_time(key: str, message=None, total=None):
+def end_time(key: str, message=None, total=None, **kwargs):
     if key not in _TIME:
         return
     elapsed_time = time.time() - _TIME[key]
-    logdata = dict(key = key, 
-                    elapsed_time=round(elapsed_time,3))
-    if total is None and total != 0:
-        logdata['throughput'] = round(elapsed_time/total,3)
-    if message:
-        notice(message, **logdata)
+    if total is not None and total != 0:
+        logdata = dict(elapsed_time=format_unit(elapsed_time, scale=60),
+            elapsed_second=round(elapsed_time,3), 
+            throughput=round(elapsed_time/total,3), total=total, **kwargs)
     else:
-        notice(f'実行時間[{key}] {format_unit(elapsed_time, scale=60)}', **logdata)
-    #setlog('time', section=get_section(), **logdata)
+        logdata = dict(
+            elapsed_time=format_unit(elapsed_time, scale=60),
+            elapsed_second=round(elapsed_time,3), **kwargs)
+    if message is None:
+        message = f'実行時間[{key}]'
+    notice(message, **logdata)

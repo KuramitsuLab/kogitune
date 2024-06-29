@@ -135,7 +135,7 @@ def formatting_prompts_func(example):
 def finetune_cli(**kwargs):
     from transformers import TrainingArguments
     from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
-    with adhoc.from_kwargs(open_section='finetune', **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         # dataset = load_dataset("kunishou/amenokaku-code-instruct")
         dataset = load_train_dataset()
         # print(type(dataset[0]), dataset[0])

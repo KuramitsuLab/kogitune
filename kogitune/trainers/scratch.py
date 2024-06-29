@@ -225,7 +225,7 @@ def reduce_model_using_float16(model_path):
     model.save_pretrained(model_path)
 
 def generate_scratch(tokenizer=None, **kwargs):
-    with adhoc.from_kwargs(open_section='scratch', **kwargs) as aargs:
+    with adhoc.from_kwargs(**kwargs) as aargs:
         tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
         scratch_config = extract_scratch_config(tokenizer)
         model_type = scratch_config.get('model_type', 'llama2')

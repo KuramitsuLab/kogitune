@@ -61,6 +61,14 @@ class TextFilter(object):
         新しいテキストフィルタを作る
         """
         self._kwargs = kwargs
+        self.rec = {}
+
+    def setups(self, kwargs, *keys):
+        for key in keys:
+            key, value = adhoc.get_key_value(kwargs, key)
+            self.rec[key] = value
+            if not hasattr(self, key):
+                setattr(self, key, value)
 
     def name(self):
         return self.__class__.__name__
@@ -109,7 +117,7 @@ class TextFilter(object):
     
     def from_jsonl(self, filenames: str, output_path:str=None, **kwargs):
         filenames = list_filenames(filenames)
-        with adhoc.from_kwargs(open_section='filter', **kwargs) as aargs:
+        with adhoc.from_kwargs(**kwargs) as aargs:
             N = aargs['head|N|=-1']
             num_workers = aargs['num_workers|=1']
             adhoc.notice('フィルタ', input_files=filenames, filter_config=self.as_json())
@@ -118,8 +126,8 @@ class TextFilter(object):
                 result = self._from_jsonl_single(filenames, N=N, output_path=output_path)
             else:
                 result = self._from_jsonl_multi(filenames, output_path=output_path, N=N, num_workers=num_workers)
-            adhoc.notice('フィルタ、無事完了。お疲れ様', **result)
-            adhoc.end_time('filter', total=result['total'])
+            # adhoc.notice('フィルタ、無事完了。お疲れ様', **result)
+            adhoc.end_time('filter', message='フィルタ、無事完了。お疲れ様', total=result.pop('total'), **result)
 
     def _from_jsonl_single(self, filenames: str, N=-1, output_path=None):
         w = None
@@ -214,21 +222,24 @@ class ChoiceFilter(TextFilter):
 
 class ScoreFunction(object):
     def __init__(self, **kwargs):
+        self.rec = {'class': self.name()}
         if len(kwargs) > 0:
             adhoc.print(f'Unused [{self.name()}]', kwargs)
-
-    def name(self):
-        return self.__class__.__name__
-
-    def as_json(self):
-        return None
-
-    def __repr__(self):
-        return json.dumps(self.as_json(), indent=2)
 
     def __call__(self, text: str):
         return len(text)
 
+    def name(self):
+        return self.__class__.__name__
+
+    def get_value(self, key, **kwargs):
+        return adhoc.get_value(key, self.rec, kwargs)
+
+    def as_json(self):
+        return self.rec
+
+    def __repr__(self):
+        return json.dumps(self.as_json(), indent=2)
 
 def compile_pattern_for_words(words: List[str], prefix='', suffix=''):
     """

@@ -22,15 +22,15 @@ def count_lines_cli(**kwargs):
 
 def maxmin_cli(**kwargs):
     from kogitune.filters import maxmin
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        files = aargs.pop('files|!!ファイルを一つ以上与えてください')
-        score_path = aargs.pop('score_path|score|eval|!!scoreを設定してください')
-        output_path = aargs.pop('output_file|output')
-        sample = aargs.pop('histogram_sample|sample|head|=10000')
-        kwargs = aargs.as_dict()
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        score_path = aargs['eval|score|function|!!scoreを設定してください']
+        output_path = aargs['output_file|output']
+        sample = aargs['sample|head|=10000']
+        kwargs = {**aargs}
         if 'record_key' not in kwargs:
             kwargs['record_key'] = 'score'
-        text_filter = maxmin(score_path, histogram_sample=sample, **kwargs)
+        text_filter = maxmin(score_path, **kwargs)
         text_filter.from_jsonl(files, output_path=output_path, N=sample, num_workers=1)
 
 def filter_cli(**kwargs):
@@ -174,6 +174,13 @@ def chain_eval_cli(**kwargs):
     from kogitune.metrics import chain_eval_cli
     chain_eval_cli(**kwargs)
 
+def launch(subcommand, **kwargs):
+    fname = f'{subcommand}_cli'
+    if '.' in fname:
+        cls = adhoc.load_class(fname)
+    else:
+        cls = adhoc.load_class(f'kogitune.cli.{fname}')
+    cls(**kwargs)
 
 def main():
     # メインのパーサーを作成

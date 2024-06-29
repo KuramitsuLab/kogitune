@@ -2,7 +2,7 @@ from typing import List
 
 from .commons import *
 from .documents import *
-from .scores import MaxMinFilter, maxmin
+from .evals import MaxMinFilter, maxmin
 from .replaces import replace
 
 def compose(*filters):
