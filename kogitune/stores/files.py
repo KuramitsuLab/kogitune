@@ -167,9 +167,11 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
         pbar.close()
 
 def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip'):
-    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
+    if filenames[0].endswith('.jsonl'):
+        line_reader='jsonl'
+    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
         pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')

@@ -6,6 +6,14 @@ except:
     def colored(text, color):
         return text
 
+USE_JA = None
+
+def use_ja():
+    global USE_JA
+    if USE_JA is None:
+        USE_JA = 'ja' in os.environ.get('LANG','')
+    return USE_JA
+
 WATCH_COUNT = {}
 
 def aargs_print(*args, **kwargs):

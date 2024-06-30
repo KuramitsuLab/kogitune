@@ -39,7 +39,7 @@ def format_unit(num: int, scale=1000)->str:
         if num < 1_000:
             return str(num)
         elif num < 1_000_000:
-            return f"{num / 1_000:.2}K"
+            return f"{num / 1_000:.2f}K"
         elif num < 1_000_000_000:
             return f"{num / 1_000_000:.2f}M"
         elif num < 1_000_000_000_000:

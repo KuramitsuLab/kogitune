@@ -12,7 +12,7 @@ except:
         b = set(list(text2))
         return len(a.difference(b))+len(b.difference(a))
 
-from .prints import aargs_print
+from .prints import aargs_print, use_ja
 
 def find_simkey(dic, given_key, max_distance=1):
     key_map = {}
@@ -90,7 +90,10 @@ def get_key_value(dic: dict, keys:str, default_value=None, use_simkey = 1):
             raise KeyError(f"'{default_key}' is not found in {list(dic.keys())}.")
         if key.startswith('!'):
             value = parse_key_value(default_key, key[1:])
-            aargs_print(f"FIXME: `{default_key}` is missing. Confirm {default_key}={value}.")
+            if use_ja():
+                aargs_print(f"`{default_key}`が設定されてないよ. デフォルト確認してな {default_key}={repr(value)}.")
+            else:
+                aargs_print(f"FIXME: `{default_key}` is missing. Confirm default{default_key}={repr(value)}.")
             return default_key, value
         if key in dic:
             return default_key, dic.get(key)
@@ -234,7 +237,7 @@ class ChainMap(object):
             return self.local_dic[key]
         if self.parent is None:
             return None
-        return self.parent[key]
+        return self.parent.get(key, None)
 
     def __setitem__(self, key, value):
         self.local_dic[key] = value

@@ -1,4 +1,4 @@
-from .splitters import (
+from .packers import (
     store_files,
 )
 

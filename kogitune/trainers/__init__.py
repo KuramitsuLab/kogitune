@@ -4,5 +4,5 @@ from .composers import (
     DatasetRecipe as DatasetComposer
 )
 
-from .finetune import finetune_cli
+#from .finetune import finetune_cli
 

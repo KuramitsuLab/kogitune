@@ -481,6 +481,7 @@ class DatasetRecipe():
             adhoc.print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {adhoc.format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
+        self.aargs.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):

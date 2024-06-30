@@ -46,6 +46,12 @@ def filter_cli(**kwargs):
 
 ## store 系
 
+def pack_cli(**kwargs):
+    from .stores import store_files
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        store_files(files, skip_validation=False)
+
 def store_cli(**kwargs):
     from .stores import store_files
     with adhoc.from_kwargs(**kwargs) as aargs:
@@ -107,8 +113,8 @@ def freeze_cli(**kwargs):
 
 def token_stat_cli(**kwargs):
     import pandas as pd
-    from .trainers import DatasetComposer
-    with DatasetComposer(prefetch=0, **kwargs) as dc:
+    from .trainers import DatasetRecipe
+    with DatasetRecipe(prefetch=0, **kwargs) as dc:
         dc.with_format("numpy")
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
