@@ -7,7 +7,6 @@ from .tokenizers import *
 from ..commons import *
 from .files import *
 from .store import DatasetStore
-from .sections import find_section_fn
 
 EMPTY_TOKENS = []
 
@@ -109,7 +108,6 @@ class Packer(object):
             rec['line_blocks'] = rec.get('line_blocks', 0) + 1
         return end
     
-
 def find_packer(tokenizer, aargs):
     data_type = aargs['datatype|data_type|=text']
     if data_type == 'text':

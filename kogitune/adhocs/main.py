@@ -44,6 +44,9 @@ class AdhocArguments(ChainMap):
         #             print('@used_keys', self.used_keys)
         #             raise TypeError(f'{key} is an unused keyword at {self.caller}')
 
+    def from_kwargs(self, **kwargs):
+        return AdhocArguments(kwargs, self)
+
 
 ### parse_argument
 

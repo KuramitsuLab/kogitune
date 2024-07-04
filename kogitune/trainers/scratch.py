@@ -124,7 +124,7 @@ def print_summary(result, use_flash=False):
 
 def extract_scratch_config(tokenizer, **kwargs):
     with adhoc.from_kwargs(**kwargs) as aargs:
-        aargs.used('model_type')
+        aargs['model_type'] #used
         num_attention_heads = aargs['num_attention_heads|n_heads|=4']
         if 'hidden_size' in kwargs:
             hidden_size = aargs['hidden_size|=1024']

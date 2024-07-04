@@ -31,15 +31,15 @@ def japanese_fraction(text: str) -> float:
     count_commons = count_japanese_characters(text)
     return  count_commons / len(text) if len(text) > 0 else 0.0
 
-class JapaneseCounter(CharCounter):
-    def __init__(self, regex:str, unique=False, **kwargs) -> None:
-        super().__init__(unique=unique, **kwargs)
-        self.pattern = re.compile(regex)
+# class JapaneseCounter(CharCounter):
+#     def __init__(self, regex:str, unique=False, **kwargs) -> None:
+#         super().__init__(unique=unique, **kwargs)
+#         self.pattern = re.compile(regex)
 
-    def __call__(self, text:str) -> int:
-        if self.unique:
-            return len(set(self.pattern.findall(text)))
-        return len(self.pattern.findall(text))
+#     def __call__(self, text:str) -> int:
+#         if self.unique:
+#             return len(set(self.pattern.findall(text)))
+#         return len(self.pattern.findall(text))
 
 
 pattern_japanese_common_words = compile_pattern_for_words(
