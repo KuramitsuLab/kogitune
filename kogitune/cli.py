@@ -12,13 +12,13 @@ def beta_cli(**kwargs):
     os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
 
 def count_lines_cli(**kwargs):
-    from kogitune.stores.files import extract_linenum_from_filename, rename_with_linenum, get_linenum
+    from kogitune.stores.files import extract_linenum, rename_linenum, get_linenum
     with adhoc.from_kwargs(**kwargs) as aargs:
         for file in aargs['files']:
-            n = extract_linenum_from_filename(file)
+            n = extract_linenum(file)
             if n is None:
                 n = get_linenum(file)
-                file = rename_with_linenum(file, n)
+                file = rename_linenum(file, n)
 
 def maxmin_cli(**kwargs):
     from kogitune.filters import maxmin
@@ -33,6 +33,7 @@ def maxmin_cli(**kwargs):
         text_filter = maxmin(score_path, **kwargs)
         text_filter.from_jsonl(files, output_path=output_path, N=sample, num_workers=1)
 
+
 def filter_cli(**kwargs):
     from kogitune.filters import load_filter
     with adhoc.from_kwargs(**kwargs) as aargs:
@@ -43,6 +44,15 @@ def filter_cli(**kwargs):
         if output_file is None:
             adhoc.notice('output_fileの指定がないから、少しだけ処理して表示するよ')
         text_filter.from_jsonl(files, output_path=output_file)
+
+def filter_maxmin_cli(**kwargs):
+    from kogitune.filters.maxmins import filter_maxmin_cli
+    filter_maxmin_cli(**kwargs)
+
+
+def filter_langset_cli(**kwargs):
+    from kogitune.filters.languages import filter_langset_cli
+    filter_langset_cli(**kwargs)
 
 ## store 系
 
@@ -193,6 +203,7 @@ def main():
     namespace = globals()
     subcommands = [name.replace('_cli', '') for name in namespace.keys() if name.endswith('_cli')]
     with adhoc.parse_main_args(subcommands=subcommands) as aargs:
+        aargs.errors = 'main'
         cmd = aargs['subcommand']
         funcname = f'{cmd}_cli'
         namespace[funcname]()

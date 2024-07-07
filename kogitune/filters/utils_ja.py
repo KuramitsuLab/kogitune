@@ -1,7 +1,7 @@
 from typing import Any, List, Optional
 import re
 
-from .commons import TextFilter, ScoreFunction, compile_pattern_for_words
+from .filters import TextFilter, ScoreFunction, compile_pattern_for_words
 
 pattern_hirakata = re.compile(r'[ぁ-んァ-ヶ]')
 pattern_japanese = re.compile(r'[ぁ-んァ-ヶー・\u4E00-\u9FFF\u3400-\u4DBF、。]')

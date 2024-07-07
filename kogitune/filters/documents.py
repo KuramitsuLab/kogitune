@@ -1,6 +1,6 @@
 from typing import Optional
 import unicodedata
-from .commons import TextFilter
+from .filters import TextFilter
 
 class UnicodeNormalization(TextFilter):
 

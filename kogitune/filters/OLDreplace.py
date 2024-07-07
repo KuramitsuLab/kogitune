@@ -1,7 +1,7 @@
 from typing import List
 import re
 import regex
-from .commons import TextFilter
+from .filters import TextFilter
 
 def RE(*patterns: List[str], flags=0):
     return regex.compile('|'.join(patterns), flags=flags)

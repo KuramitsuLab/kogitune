@@ -6,9 +6,13 @@ import inspect
 import importlib
 
 from .dicts import (
-    aargs_print,
     parse_key_value, load_config, 
     ChainMap, use_os_environ,
+)
+
+from .prints import (
+    aargs_print,
+    saved, report_saved_files
 )
 
 # main
@@ -20,6 +24,8 @@ class AdhocArguments(ChainMap):
     def __init__(self, args:dict, parent=None, caller='main'):
         super().__init__(args, parent) 
         self.caller = caller
+        self.errors = 'ignore'
+        self.saved_files = False
 
     def __enter__(self):
         push_stack_aargs(self)
@@ -28,21 +34,27 @@ class AdhocArguments(ChainMap):
     def __exit__(self, exc_type, exc_value, traceback):
         if exc_type is None:
             self.check_unused()
+        if self.saved_files:
+            report_saved_files()
+            self.saved_files = False
         pop_stack_aargs()
+
+    def saved(self, filepath:str, desc:str, rename_from=None):
+        self.saved_files = True
+        saved(filepath, desc, rename_from=rename_from)
 
     def check_unused(self):
         unused_keys = self.unused_keys()
         if len(unused_keys) > 0:
+            if self.errors == 'ignore':
+                return
+            if self.errors == 'strict':
+                raise TypeError(f'{key} is an unused keyword at {self.caller}')
             aargs_print(f'未使用の引数があるよ//List of unused arguments')
             for key in unused_keys:
                 value = self[key]
-                print(f'{key}: {value}')
-            print(f'引数にスペルミスがないか確認して//Check if typos exist.')
-        # else:
-        #     for key, value in self.local_args.items():
-        #         if key not in self.used_keys:
-        #             print('@used_keys', self.used_keys)
-        #             raise TypeError(f'{key} is an unused keyword at {self.caller}')
+                print(f'{key}: {repr(value)}')
+            print(f'[確認↑] スペルミスはない？//Check if typos exist.')
 
     def from_kwargs(self, **kwargs):
         return AdhocArguments(kwargs, self)
@@ -109,11 +121,24 @@ def load_symbol(module_path, symbol):
     module = importlib.import_module(module_path)
     return getattr(module, symbol)
 
-def load_class(class_path):
+def load_class(class_path, check=None):
     module_path, class_name = class_path.rsplit('.', 1)
     module = importlib.import_module(module_path)
     cls = getattr(module, class_name)
+    if check is not None:
+        if not issubclass(cls, check):
+            raise TypeError(f'{class_path} is not a subclass of {check.__name__}')
     return cls
+
+def instantiate_from_dict(dic:dict, check=None):
+    class_path = dic.pop('class_path')
+    if class_path is None:
+        raise TypeError(f'No class_path in {dic}')
+    cls = load_class(class_path, check=check)
+    args = dic.pop('args', [])
+    kwargs = dic.pop('kwargs', {})
+    return cls(*args, **kwargs)
+
 
 def load_subcommand(subcommand, **kwargs):
     fname = f'{subcommand}_cli'

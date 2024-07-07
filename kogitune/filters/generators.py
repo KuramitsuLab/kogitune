@@ -1,8 +1,8 @@
 from typing import List
 
-from .commons import *
+from .filters import *
 from .documents import *
-from .evals import MaxMinFilter, maxmin
+from .maxmins import MaxMinFilter, maxmin
 from .replaces import replace
 
 def compose(*filters):

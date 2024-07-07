@@ -116,7 +116,7 @@ def chain_eval_cli(**kwargs):
                     if metric_list:
                         eval_with_args(result_file, result_list, metric_list, aargs)
                 except BaseException as e:
-                    adhoc.warn(f'{model_path}の生成・評価に失敗したよ: {e}')
+                    #adhoc.warn(f'{model_path}の生成・評価に失敗したよ: {e}')
                     traceback.print_exception(e)
         else:
             result_file, result_list = generate_with_args(aargs)

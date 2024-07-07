@@ -1,6 +1,6 @@
 from typing import Any, List
 import re
-from .commons import ScoreFunction, compile_pattern_for_words
+from .filters import compile_pattern_for_words
 
 # 英語の頻出単語を50個以上含む正規表現パターン
 # 例: 'the', 'and', 'of', 'to', 'a', 'in', 'is', 'that', 'it', 'for', ...
@@ -26,30 +26,30 @@ def contains_english(text: str) -> bool:
 # 空白の前が空白であればウントしない
 pattern_whitespace = re.compile(r'[^\s　][\s　]+')
 
-class WhitespaceCounter(ScoreFunction):
-    """
-    与えられたテキストの空白文字を数える。
-    ただし、空白の前が空白であればカウントしません。
-    """
-    def __init__(self, length_fraction=False, **kwargs):
-        """
-        与えられたテキストの空白文字を数える評価関数を作る
-        :param length_fraction: 全テキストにおける比率 
-        """
-        super().__init__(**kwargs)
-        self.length_fraction = length_fraction
+# class WhitespaceCounter(ScoreFunction):
+#     """
+#     与えられたテキストの空白文字を数える。
+#     ただし、空白の前が空白であればカウントしません。
+#     """
+#     def __init__(self, length_fraction=False, **kwargs):
+#         """
+#         与えられたテキストの空白文字を数える評価関数を作る
+#         :param length_fraction: 全テキストにおける比率 
+#         """
+#         super().__init__(**kwargs)
+#         self.length_fraction = length_fraction
 
-    def as_json(self):
-        return {
-            'score': self.name(),
-            'length_fraction': self.length_fraction,
-        }
+#     def as_json(self):
+#         return {
+#             'score': self.name(),
+#             'length_fraction': self.length_fraction,
+#         }
 
-    def __call__(self, text):
+#     def __call__(self, text):
 
-        ws = pattern_whitespace.findall(text)
-        whitespace_count = len(ws)
-        if self.length_fraction:
-            length_count =len(text)
-            return (whitespace_count / length_count) if length_count > 0 else 0.0
-        return whitespace_count
+#         ws = pattern_whitespace.findall(text)
+#         whitespace_count = len(ws)
+#         if self.length_fraction:
+#             length_count =len(text)
+#             return (whitespace_count / length_count) if length_count > 0 else 0.0
+#         return whitespace_count

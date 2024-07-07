@@ -1,6 +1,6 @@
 from typing import List, Union
 
-from .commons import TextFilter, adhoc
+from .filters import TextFilter, adhoc
 
 from .replaces_utils import *
 from .replaces_code import *
@@ -52,7 +52,7 @@ class ReplacementFilter(TextFilter):
     :patterns: 'url:<URL>|date:<date>'
     """
 
-    def __init__(self, patterns: List[str], uppercase=False, verbose_count=0, **kwargs):
+    def __init__(self, aargs):
         """
         置き換えフィルターを作る
         patterns: 置き換える文字列パターンのリスト

@@ -1,7 +1,7 @@
-
-
+import sys
 import re
 from collections import Counter
+from .filters import TextFilter, adhoc
 
 # languages that require word segmentation
 
@@ -192,6 +192,10 @@ def dedup(words):
 def compile_without_word_boundaries(words):
     return re.compile(r'|'.join(map(re.escape, dedup(words))))
 
+def compile_combined_pattern(words, exclude_pattern:str):
+    word_pattern = re.compile(r'|'.join(map(re.escape, dedup(words))))
+    return re.compile(f'(?={exclude_pattern})(?={word_pattern})')
+
 # 頻出日本語単語100個のリスト
 frequent_japanese_words = [
     "の", "に", "は", "を", "た", "が", "で", "て", "と", "し", "れ", "さ", "ある", "いる", "も", "する", "から", "な", "こと",
@@ -218,7 +222,8 @@ frequent_chinese_words = [
     "二", "理", "起", "小", "物", "现", "实", "加", "量", "都", "两", "体", "制", "机", "当", "使", "点", "从", "业", "本"
 ]
 
-pattern_zh = compile_without_word_boundaries(frequent_chinese_words)
+# ひらがなを除外する
+pattern_zh = compile_combined_pattern(frequent_chinese_words, r'[^\u3040-\u309F]+')
 
 frequent_korean_words = [
     "이", "그", "저", "안", "있다", "없다", "좋다", "나쁘다", "크다", "작다", "많다", "적다", "새롭다", "오래되다", "높다", "낮다",
@@ -256,12 +261,14 @@ def patterns():
 
 all_patterns = patterns()
 
-def count_all(text, patterns=all_patterns):
+def count_lang(text, threshold=5, patterns=all_patterns):
     results = Counter()
     for lang, pattern in patterns.items():
         matches = pattern.findall(text)
         # 一致する単語の数を数える
-        results[lang] = len(matches)
+        match_count = len(matches)
+        if match_count >= threshold:
+            results[lang] = match_count
     return results
 
 def split_text(text, max_length=200):
@@ -305,6 +312,89 @@ def split_text(text, max_length=200):
 
 def recongnize(text):
     for text in split_text(text):
-        c = count_all(text)
+        c = count_lang(text)
         print(text)
-        print(c)
+        print(c.most_common()[0][0])
+
+def detect_lang(text, threshold=5):
+    lang_counter = Counter()
+    for text in split_text(text):
+        if len(text) < 40:
+            continue
+        counter = count_lang(text, threshold=threshold)
+        if len(counter) == 0:
+            continue
+        l, c = counter.most_common()[0]
+        if c  > 5:
+            lang_counter.update([l])
+    lang_list = [l for l, c in lang_counter.most_common()]
+    lang_list.sort()
+    return lang_list
+
+class LangSetFilter(TextFilter):
+    """
+    評価関数の最大値と最小値からフィルターする
+    """
+    def __init__(self, record_key='lang', threshold=5, **kwargs):
+        """
+        評価関数フィルタを作る
+        """
+        super().__init__()
+        kwargs = dict(
+            record_key=record_key,
+            threshold=threshold,
+        ) | kwargs
+        adhoc.aargs_from(**kwargs).record(
+            'record_key|=lang',
+            'langset',
+            'threshold|=5',
+            'sample|head|N|=0',
+            field=self, dic=self.rec,
+        )
+        if self.langset is not None:
+            if isinstance(self.langset, str):
+                self.langset = set(self.langset.split(','))
+            else:
+                self.langset = set(self.langset)
+        else:
+            adhoc.notice(f"フィルタする言語の指定がないね。こんな感じで指定を langset='en,ja'")
+            if self.sample == 0:
+                self.sample = 10000
+        if self.sample > 0:
+            self.samples = []
+
+    def __call__(self, text: str, record: dict):
+        detected = detect_lang(text)
+        if self.record_key:
+            record[self.record_key] = ','.join(detected)
+        if self.sample > 0:
+            self.samples.append(','.join(detected))
+            if len(self.samples) == self.sample:
+                self.describe()
+        if self.langset is None:
+            return text
+        for locale in detected:
+            if locale in self.langset:
+                return text
+        return None
+
+    def describe(self):
+        if self.sample > 0:
+            counter = Counter()
+            sample=len(self.samples)
+            for target in self.samples:
+                counter.update([target])
+            for locale, count in counter.most_common():
+                if locale == '':
+                    locale = 'unknown'
+                adhoc.print(locale.ljust(24), f'{count*100/sample:2.3f}%', f'{count:12d}', face='')
+            self.sample = 0
+            self.samples = None
+
+def langset(langset, **kwargs):
+    return LangSetFilter(langset=langset, **kwargs)
+
+def filter_langset_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        aargs.errors = 'main'
+        LangSetFilter(**kwargs).run_for_cli(**kwargs)

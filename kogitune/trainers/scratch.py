@@ -1,4 +1,6 @@
 import torch
+import os
+
 torch.backends.cuda.matmul.allow_tf32=True
 
 import kogitune.adhocs as adhoc
@@ -12,40 +14,40 @@ def count_parameters(model)->int:
     """
     return sum(p.numel() for p in model.parameters())
 
+adhoc_print = print
 
 def print_model(model):
     n_parameters=count_parameters(model)
     config = model.config
-    adhoc.p(flush=True)
-    adhoc.p(f'Parameters: {n_parameters} {adhoc.format_unit(n_parameters)}', end=' ')
+    adhoc.print(f'Parameters: {n_parameters} {adhoc.format_unit(n_parameters)}', end=' ', face='')
     if hasattr(config, 'max_position_embeddings'):
-        adhoc.p(f"max_length: {config.max_position_embeddings}", end=' ')
+        adhoc.print(f"max_length: {config.max_position_embeddings}", end=' ', face='')
     elif hasattr(config, "n_positions"):
-        adhoc.p(f"max_length: {config.n_positions}", end=' ')
-    adhoc.p(f"vocab_size: {config.vocab_size}")
+        adhoc.print(f"max_length: {config.n_positions}", end=' ', face='')
+    adhoc.print(f"vocab_size: {config.vocab_size}", face='')
 
     if hasattr(config, 'd_kv'):  # T5
-        adhoc.p(f"d_model: {model.config.d_model}", end=' ')
-        adhoc.p(f"d_kv: {model.config.d_kv}", end=' ')
-        adhoc.p(f"d_ff: {model.config.d_ff}", end=' ')
-        adhoc.p(f"num_heads: {model.config.num_heads}", end=' ')
-        adhoc.p(f"num_layers: {model.config.num_layers}+{model.config.num_decoder_layers}")
-        adhoc.p(config)
+        adhoc.print(f"d_model: {model.config.d_model}", end=' ', face='')
+        adhoc.print(f"d_kv: {model.config.d_kv}", end=' ', face='')
+        adhoc.print(f"d_ff: {model.config.d_ff}", end=' ', face='')
+        adhoc.print(f"num_heads: {model.config.num_heads}", end=' ', face='')
+        adhoc.print(f"num_layers: {model.config.num_layers}+{model.config.num_decoder_layers}", face='')
+        adhoc.print(config)
     elif hasattr(config, 'n_embd'): #GPT-2
-        adhoc.p(f"hidden_size: {config.n_embd}", end=' ')
-        adhoc.p(f"intermediate_size: {config.n_inner}", end=' ')
-        adhoc.p(f"n_dims: {config.n_embd//config.n_head}", end=' ')
-        adhoc.p(f"n_heads: {config.n_head}", end=' ')
-        adhoc.p(f"n_layers: {config.n_layer}")
-        adhoc.p(config)
+        adhoc.print(f"hidden_size: {config.n_embd}", end=' ', face='')
+        adhoc.print(f"intermediate_size: {config.n_inner}", end=' ', face='')
+        adhoc.print(f"n_dims: {config.n_embd//config.n_head}", end=' ', face='')
+        adhoc.print(f"n_head: {config.n_head}", end=' ', face='')
+        adhoc.print(f"n_layers: {config.n_layer}", face='')
+        adhoc.print(config)
     elif hasattr(config, 'hidden_size'): #GPT-NeoX
-        adhoc.p(f"hidden_size: {config.hidden_size}", end=' ')
-        adhoc.p(f"intermediate_size: {config.intermediate_size}", end=' ')
-        adhoc.p(f"n_dims: {config.hidden_size//model.config.num_attention_heads}", end=' ')
-        adhoc.p(f"n_heads: {config.num_attention_heads}", end=' ')
-        adhoc.p(f"n_layers: {config.num_hidden_layers}")
+        adhoc.print(f"hidden_size: {config.hidden_size}", end=' ', face='')
+        adhoc.print(f"intermediate_size: {config.intermediate_size}", end=' ', face='')
+        adhoc.print(f"n_dims: {config.hidden_size//model.config.num_attention_heads}", end=' ', face='')
+        adhoc.print(f"num_attention_heads: {config.num_attention_heads}", end=' ', face='')
+        adhoc.print(f"num_hidden_layers: {config.num_hidden_layers}", face='')
     else:
-        adhoc.p(config)
+        adhoc.print(config, face='')
 
 def is_integer(s):
     try:
@@ -73,7 +75,7 @@ def print_model_structure(model):
         name_set.append(".".join(name))
 
     #主要なレイヤーグループの表示
-    adhoc.p(set(name_set))
+    #adhoc.print(set(name_set))
 
     #パラメータ数の計算
     name_group_dict={}
@@ -96,7 +98,7 @@ def print_model_structure(model):
     df=pd.DataFrame.from_dict(name_group_dict,orient="index")
     df.columns=["params"]
     df["ratio"]=df["params"]/all_params*100
-    adhoc.p(df)
+    adhoc.print(df, face='')
 
 
 def print_gpu_utilization():
@@ -224,29 +226,33 @@ def reduce_model_using_float16(model_path):
     model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float16)
     model.save_pretrained(model_path)
 
+desc = {
+    'model_type': "モデルの種類, model_type='llama2'",
+}
+
 def generate_scratch(tokenizer=None, **kwargs):
     with adhoc.from_kwargs(**kwargs) as aargs:
-        tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
-        scratch_config = extract_scratch_config(tokenizer)
-        model_type = scratch_config.get('model_type', 'llama2')
-        adhoc.notice('新しいLLMを生成しています', scratch_config=scratch_config)
+        output_path = aargs['scratch_output_path|=scratch']
+        with adhoc.open_log_file(output_path, 'scratch_log.txt'):
+            tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
+            scratch_config = extract_scratch_config(tokenizer)
+            model_type = scratch_config.get('model_type', 'llama2')
+            adhoc.notice('スクラッチLLMの生成', scratch_config=scratch_config)
 
-        ns = globals()
-        name = f'generate_scratch_{model_type}'
-        if name in ns:
-            model = ns[name](**scratch_config)
-        else:
-            required = [k.replace('generate_scratch_', '') for k, _ in ns.items() if k.startswith('generate_scratch_')]
-            adhoc.warn(f'model_type={model_type}は知らないよ', 
-                    unknown_model_type=model_type, 
-                    required_model_type=required, default_model_type='llama2')
-            model = generate_scratch_llama2(**scratch_config)
-        output_path = aargs.get('scratch_output_path', 'scratch')
-        if output_path:
-            tokenizer.save_pretrained(output_path)
-            model.save_pretrained(output_path)
-            reduce_model_using_float16(output_path)
-        
+            ns = globals()
+            name = f'generate_scratch_{model_type}'
+            if name in ns:
+                model = ns[name](**scratch_config)
+            else:
+                required = [k.replace('generate_scratch_', '') for k, _ in ns.items() if k.startswith('generate_scratch_')]
+                adhoc.warn(f'model_type={model_type}は知らないよ', 
+                        unknown_model_type=model_type, 
+                        required_model_type=required, default_model_type='llama2')
+                model = generate_scratch_llama2(**scratch_config)
+            if output_path:
+                tokenizer.save_pretrained(output_path)
+                model.save_pretrained(output_path)
+                reduce_model_using_float16(output_path)
     return model
 
 

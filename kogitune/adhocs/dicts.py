@@ -248,7 +248,11 @@ class ChainMap(object):
         """
         for key in keys:
             key, value = get_key_value(self, key)
-            if field is not None:
-                setattr(field, key, value)
             if isinstance(dic, dict):
-                dic[key] = value
+                if not key.startswith("_"):
+                    dic[key] = value
+            if field is not None:
+                if key.startswith("_"):
+                    setattr(field, key[1:], value)
+                else:
+                    setattr(field, key, value)

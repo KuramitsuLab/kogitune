@@ -5,7 +5,7 @@ from collections import Counter
 import math
 
 import kogitune.adhocs as adhoc
-from .commons import TextFilter
+from .filters import TextFilter
 
 class TextEval(object):
     def __init__(self, kwargs):
@@ -15,14 +15,14 @@ class TextEval(object):
         self.reverse = False
 
     def setups(self, kwargs, *keys):
-        for key in keys:
-            key, value = adhoc.get_key_value(kwargs, key)
-            self.rec[key] = value
-            if not hasattr(self, key):
-                setattr(self, key, value)
+        adhoc.aargs_from(**kwargs).record(
+            *keys,
+            dic=self.rec, field=self,
+        )
 
     def setup_fraction(self, kwargs):
-        self.setups(kwargs, 'fraction|=text-length', 'reverse|=text-length')
+        self.setups(kwargs, 
+                    'fraction|=text-length', f'reverse|={self.reverse}')
         self.fraction_fn = load_eval_fn(self.fraction)
 
     def eval(self, text: str):
@@ -165,7 +165,7 @@ def alpha_fraction(text: str) -> float:
 
 ## Pattern
 
-from .commons import compile_pattern_for_words
+from .filters import compile_pattern_for_words
 from .utils_en import common_english_words_pattern
 
 class PatternEval(TextEval):
@@ -220,10 +220,10 @@ EVAL_MAP = {
     # 'word-ja': JapaneseWordCounter,
 }
 
-def load_eval_fn(eval, kwargs: dict = None):
+def load_eval_fn(eval, parent: dict = None):
     if isinstance(eval, TextEval):
         return eval
-    path, kwargs = adhoc.parse_path_args(eval, parent_args=kwargs)
+    path, kwargs = adhoc.parse_path_args(eval, parent_args=parent)
     if path.startswith('tokenizer:'):
         kwargs['tokenizer_path'] = path[10:]
         return TokenCount(kwargs)
@@ -241,6 +241,9 @@ def load_eval_fn(eval, kwargs: dict = None):
     else:
         adhoc.warn(unknown_eval=eval, expected=list(EVAL_MAP.keys()))
 
+
+DEFAULT_PERCENTILES = [0.01, 0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95, 0.99]
+
 class MaxMinFilter(TextFilter):
     """
     評価関数の最大値と最小値からフィルターする
@@ -249,15 +252,24 @@ class MaxMinFilter(TextFilter):
         """
         評価関数フィルタを作る
         """
-        super().__init__(**kwargs)
-        self.setups(kwargs, 
-            'eval|text_eval|!!',
-            'min_value|min',
-            'max_value|max',
+        super().__init__()
+        aargs = adhoc.aargs_from(**kwargs)
+        aargs.record(
+            'eval|!!',
+            'max_inclusive|max',
+            'min_inclusive|min',
             'record_key',
-            'sample|=0',
+            'sample|head|N|=0',
+            '_prefix|prefix|=',
+            field=self, dic=self.rec,
         )
-        self.eval_fn = load_eval_fn(self.eval, kwargs=kwargs)
+        self.eval_fn = load_eval_fn(self.eval, parent=aargs)
+        self.rec = self.rec | self.eval_fn.rec
+        if self.record_key == True:
+            self.record_key = self.eval
+        if self.max_inclusive == None and self.min_inclusive == None:
+            if self.sample == 0:
+                self.sample = 100000
         if self.sample > 0:
             self.samples = []
 
@@ -268,52 +280,46 @@ class MaxMinFilter(TextFilter):
         if self.sample > 0:
             self.samples.append(value)
             if len(self.samples) == self.sample:
-                describe_samples(self.samples, name=self.record_key)
-        if (self.min_value and self.min_value > value):
-            adhoc.print(f'[DROP] {value} < min={self.min_value} {text}', watch=self.record_key)
+                self.describe()
+        if (self.min_inclusive and self.min_inclusive > value):
+            adhoc.print(f'[DROP] {value} < min={self.min_inclusive} {repr(text)}', watch=self.record_key)
             return None
-        if (self.max_value and self.max_value < value):
-            adhoc.print(f'[DROP] {value} > max={self.max_value} {text}', watch=self.record_key)
+        if (self.max_inclusive and self.max_inclusive < value):
+            adhoc.print(f'[DROP] {value} > max={self.max_inclusive} {repr(text)}', watch=self.record_key)
             return None
         return text
 
-DEFAULT_PERCENTILES = [0.01, 0.05, 0.1, 0.2, 0.25, 0.33, 0.5, 0.66, 0.75, 0.8, 0.9, 0.95, 0.99]
-
-def describe_samples(samples, **kwargs):
-    import pandas as pd
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        name = aargs['name|=histogram']
-        df = pd.DataFrame({name: samples})
-        print(df.describe(percentiles=DEFAULT_PERCENTILES))
-        if name is None:
-            adhoc.print(f"ヒストグラムの詳細を知りたいときは、save_to='file.csv' を設定しよう")
-        else:
-            df.to_csv(f'{name}.csv', index=None)
+    def describe(self):
+        import pandas as pd
+        if self.sample > 0 and len(self.samples) > 0:
+            self.sample = 0
+            name = self.record_key or self.eval
+            df = pd.DataFrame({name: self.samples})
+            adhoc.print(df.describe(percentiles=DEFAULT_PERCENTILES), face='')
+            df.to_csv(f'{self.prefix}{name}.csv', index=None)
+            adhoc.saved(f'{self.prefix}{name}.csv', f'分布データ({self.eval})')
+            self.samples = []
             try:
                 import matplotlib.pyplot as plt
                 import seaborn as sns
                 sns.displot(df, stat='probability')
-                plt.savefig(name)
-                adhoc.print(f'ヒストグラムを保存しました: {name}.png')
+                plt.savefig(f'{self.prefix}{name}')
+                adhoc.saved(f'{self.prefix}{name}.png', f'ヒストグラム画像({self.eval})')
                 plt.clf()
             except:
                 pass
 
-# def urlencode(d:dict):
-#     return urllib.parse.urlencode(d)
+def maxmin(eval_fn_name, **kwargs):
+    try:
+        return MaxMinFilter(eval=eval_fn_name, **kwargs)
+    except KeyError as e:
+        print(e)
+        raise e
 
-# def encode_path_arguments(path:str, args:dict, without_keys:list):
-#     args = args.copy()
-#     if isinstance(path, str):
-#         if isinstance(without_keys, str):
-#             without_keys = without_keys.split('|')
-#         for key in without_keys:
-#             args.pop(key, None)
-#         if len(args) > 0:
-#             return f'{path}?{urllib.parse.urlencode(args)}'
-#     return path
-
-def maxmin(_eval, **kwargs):
-    kwargs['eval'] = _eval
-    return MaxMinFilter(**kwargs)
-
+def filter_maxmin_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        if 'record_key' not in aargs:
+            text_filter = MaxMinFilter(record_key=True, **kwargs)
+        else:
+            text_filter = MaxMinFilter(**kwargs)
+        text_filter.run_for_cli(**kwargs)

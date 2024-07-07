@@ -338,7 +338,7 @@ class HFModel(Model):
         return elapsed_time
 
 
-def get_modeltag(aargs:AdhocArguments):
+def get_modeltag(aargs):
     model_path = aargs['model_path|!!model_pathを設定しましょ']
     if ':' in model_path:
         _, _, model_path = model_path.partition(':')
@@ -356,7 +356,7 @@ def get_modeltag(aargs:AdhocArguments):
             modeltag = f'{modeltag}_cp{checkpoint}'
     return modeltag
 
-def load_model_with_aargs(aargs:AdhocArguments):
+def load_model_with_aargs(aargs):
     model_path = aargs['model_path|!!model_pathを設定しましょ']
     if model_path.startswith("openai:"):
         return OpenAIModel(model_path[7:], aargs)
@@ -368,8 +368,8 @@ def load_model_with_aargs(aargs:AdhocArguments):
         return HFModel(model_path, aargs)
 
 def load_model(**kwargs):
-    aargs = kwargs.get('aargs')
-    if isinstance(aargs, AdhocArguments):
+    aargs = kwargs.pop('aargs')
+    if aargs is not None:
         return load_model_with_aargs(aargs)
     with adhoc.from_main(**kwargs) as aargs:
         return load_model_with_aargs(aargs)

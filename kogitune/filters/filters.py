@@ -1,14 +1,16 @@
 from typing import Optional, List, Union, Any
-import json
 import os
+import sys
+import json
 import re
 
 import kogitune.adhocs as adhoc
 
 from kogitune.stores.files import (
-    zopen, filelines, 
+    zopen, 
+    filelines, 
     read_multilines, 
-    rename_with_linenum, 
+    rename_linenum, 
     list_filenames
 )
 
@@ -31,69 +33,46 @@ def is_json_valuable(v):
         return True
     return False
 
-def as_json(v):
+def jsonsafe(v):
     if hasattr(v, 'as_json'):
         return v.as_json()
     if isinstance(v, (bool, int, float, str)):
         return v
     if isinstance(v, (list, tuple)):
-        return [as_json(x) for x in v]
+        return [jsonsafe(x) for x in v]
     if isinstance(v, dict):
-        return {key:as_json(value) for key,value in v.items()}
+        return {f'{key}': jsonsafe(value) for key, value in v.items()}
     return None
-
-def instantiate_json(v, namespace:dict):
-    if isinstance(v, dict) and 'class_name' in v:
-        class_name = v.pop()
-        if class_name in namespace:
-            return namespace[class_name](**v)
-    if isinstance(v, (list, tuple)):
-        return [instantiate_json(x, namespace) for x in v]
-    return v
-
 
 class TextFilter(object):
     """
     テキストフィルターの規定クラス
     """
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         新しいテキストフィルタを作る
         """
-        self._kwargs = kwargs
         self.rec = {}
-
-    def setups(self, kwargs, *keys):
-        for key in keys:
-            key, value = adhoc.get_key_value(kwargs, key)
-            self.rec[key] = value
-            if not hasattr(self, key):
-                setattr(self, key, value)
-
-    def name(self):
-        return self.__class__.__name__
-
-    def as_json(self):
-        json_data = {
-            'class_name': self.__class__.__name__,
-        }
-        for key, value in self.__dict__.items():
-            if not key.startswith('_') and is_json_valuable(value):
-                json_data[key] = as_json(value)
-        return json_data
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         return text
 
-    def __repr__(self):
-        return json.dumps(self.as_json(), indent=2)
-
-    def save_as_json(self, filename: str):
-        with open(filename, 'w') as w:
-            json.dump(self.as_json(), w, indent=2)
-
-    def to_report(self, section):
+    def describe(self):
         pass
+
+    def __repr__(self):
+        return repr(self.rec)
+
+    def as_json(self):
+        cls = self.__class__
+        return {
+            'class_path' : f'{cls.__module__}.{cls.__name__}',
+            'args': self.rec,
+        }
+
+    def save_config(self, filepath: str):
+        with open(filepath, 'w') as w:
+            json.dump(self.as_json(), w, indent=2)
 
     def transform(self, sample_texts: Union[str, List[str]], return_text_only=False):
         """
@@ -115,24 +94,40 @@ class TextFilter(object):
             result = [d['output'] for d in result]            
         return result[0] if len(result) == 1 else result
     
-    def from_jsonl(self, filenames: str, output_path:str=None, **kwargs):
-        filenames = list_filenames(filenames)
+    def from_jsonl(self, files: Union[str|List[str]], N=-1, num_workers=1, **kwargs):
+        kwargs = dict(
+            files = files, 
+            N=N,
+            num_workers=num_workers,
+        ) | kwargs
         with adhoc.from_kwargs(**kwargs) as aargs:
+            files = list_filenames(aargs['files|!!'])
             N = aargs['head|N|=-1']
             num_workers = aargs['num_workers|=1']
-            adhoc.notice('フィルタ', input_files=filenames, filter_config=self.as_json())
-            adhoc.start_time('filter')
-            if num_workers == 1 or output_path is None:
-                result = self._from_jsonl_single(filenames, N=N, output_path=output_path)
-            else:
-                result = self._from_jsonl_multi(filenames, output_path=output_path, N=N, num_workers=num_workers)
-            # adhoc.notice('フィルタ、無事完了。お疲れ様', **result)
-            adhoc.end_time('filter', message='フィルタ、無事完了。お疲れ様', total=result.pop('total'), **result)
+            output_file = aargs['output_file|output_path|output']
+            adhoc.notice('フィルタ', input_files=files, filter_config=self.as_json())
+            if output_file is None:
+                result = self._from_jsonl_single(files, N=100, output_file=output_file)
+                adhoc.notice(f"先頭100件だけフィルタしたよ! output_file='file.jsonl'で最後まで保存できるからね")
+                return result
+            prefix = aargs['prefix|=']
+            output_file = f'{prefix}{output_file}'
+            with adhoc.start_timer() as timer:
+                if num_workers == 1:
+                    result = self._from_jsonl_single(files, N=N, output_file=output_file)
+                else:
+                    result = self._from_jsonl_multi(files, N=N, output_file=output_file, num_workers=num_workers)
+                timer.notice('フィルタ、無事完了。お疲れ様', **result)
+                if aargs['with_linenum|=True']:
+                    output_file = rename_linenum(output_file, N=result['remaining'], rename=True)
+                adhoc.saved(output_file, '前処理済みファイル//pre-processed file')
+                result['output_file'] = output_file
+            return result
 
-    def _from_jsonl_single(self, filenames: str, N=-1, output_path=None):
+    def _from_jsonl_single(self, filenames: str, N=-1, output_file=None):
         w = None
-        if isinstance(output_path, str):
-            w = zopen(output_path, 'wt')
+        if isinstance(output_file, str):
+            w = zopen(output_file, 'wt')
         c=0
         n=0
         for line in filelines(filenames, N=N, line_reader='jsonl'):
@@ -145,23 +140,17 @@ class TextFilter(object):
                 if w:
                     print(json.dumps(record, ensure_ascii=False), file=w)
                 else:
-                    if c < 100:
-                        print(record)
-        result = dict(total=n, filtered=c)
-        if output_path:
-            newpath = rename_with_linenum(output_path, N=c, ext='json')
-            result['output_file'] = newpath
-        return result
+                    print(record)
+        return dict(total=n, remaining=c)
 
     def invoke_as_multi(self, text):
         return self(text, _dummy_record)
 
-    def _from_jsonl_multi(self, filenames: str, output_path:str=None, N=-1, num_workers=1):
+    def _from_jsonl_multi(self, filenames: str, output_file:str=None, N=-1, num_workers=1):
         filenames = list_filenames(filenames)
-        #adhoc.setlog('filter', input_files=filenames, filter_config =self.as_json())
         c=0
         n=0
-        with zopen(output_path, 'wt') as w, Pool(num_workers) as pool:
+        with zopen(output_file, 'wt') as w, Pool(num_workers) as pool:
             for lines in read_multilines(filenames, N=N, bufsize=1000 * num_workers, line_reader='jsonl'):
                 lines = pool.map(self.invoke_as_multi, lines)
                 n += len(lines)
@@ -169,35 +158,65 @@ class TextFilter(object):
                     if text:
                         c+=1
                         print(json.dumps({'text': text}, ensure_ascii=False), file=w)
-        newpath = rename_with_linenum(output_path, N=c, ext='json')
-        adhoc.notice(f'完了//Complete: {newpath} {c}/{n} {c/n:.3f}', 
-                     output_file = newpath, total=n, filtered=c)
-        adhoc.save_log(newpath)
+        return dict(total=n, remaining=c)
+
+    def run_for_cli(self, **kwargs):
+        with adhoc.open_log_file('.', 'filter_log.txt') as log:
+            result = self.from_jsonl(**kwargs)
+            self.describe()
+            output_file = result.pop('output_file')
+            if output_file:
+                adhoc.saved(f'{output_file}_log.txt', 'ログ',
+                            rename_from='filter_log.txt')
+            adhoc.report_saved_files()
 
 class ComposeFilter(TextFilter):
     """
     テキストフィルタを合成する
     :param filters:
     """
-    def __init__(self, *filters, **kwargs):
-        super().__init__(**kwargs)
-        self.filters = tuple(filters)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.filters = tuple(args)
+
+    def as_json(self):
+        cls = self.__class__
+        return {
+            'class_path' : f'{cls.__module__}.{cls.__name__}',
+            'args': [f.as_json() for f in self.filters]
+        }
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
-        for f in self.filters:
-            text = f(text, record)
+        for filter in self.filters:
+            text = filter(text, record)
             if text is None:
                 return None
         return text
 
-class ChoiceFilter(TextFilter):
+    def describe(self, file=sys.stdout):
+        for filter in self.filters:
+            filter.describe(file)
+
+def generate_filter(expression):
+    if isinstance(expression, TextFilter):
+        return expression
+    if isinstance(expression, dict):
+        return adhoc.instantiate_from_dict(expression, check=TextFilter)
+    return TextFilter(unknown_expression=f'{expression}')
+
+def compose(*filters):
+    if len(filters) == 1:
+        return generate_filter(filters[0])
+    return ComposeFilter(*(generate_filter(e) for e in filters))
+ 
+class ChoiceFilter(ComposeFilter):
     """
     テキストフィルタを合成する
     :param filters:
     """
-    def __init__(self, *filters, **kwargs):
-        super().__init__(**kwargs)
-        self.filters = tuple(filters)
+    def __init__(self, args: List[TextFilter]):
+        super().__init__()
+        self.filters = tuple(args)
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         for f in self.filters:
@@ -206,6 +225,10 @@ class ChoiceFilter(TextFilter):
                 return text2
         return None
 
+def choice(*filters):
+    if len(filters) == 1:
+        return generate_filter(filters[0])
+    return ChoiceFilter(*(generate_filter(e) for e in filters))
 
 # class ExtractFilter(ComposeFilter):
 #     def __init__(self, extract_fn, *filters):
@@ -218,28 +241,6 @@ class ChoiceFilter(TextFilter):
 #             if f(doc) is None:
 #                 return None
 #         return text
-
-
-class ScoreFunction(object):
-    def __init__(self, **kwargs):
-        self.rec = {'class': self.name()}
-        if len(kwargs) > 0:
-            adhoc.print(f'Unused [{self.name()}]', kwargs)
-
-    def __call__(self, text: str):
-        return len(text)
-
-    def name(self):
-        return self.__class__.__name__
-
-    def get_value(self, key, **kwargs):
-        return adhoc.get_value(key, self.rec, kwargs)
-
-    def as_json(self):
-        return self.rec
-
-    def __repr__(self):
-        return json.dumps(self.as_json(), indent=2)
 
 def compile_pattern_for_words(words: List[str], prefix='', suffix=''):
     """

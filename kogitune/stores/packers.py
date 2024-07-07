@@ -121,7 +121,7 @@ def find_packer(tokenizer, aargs):
 def get_store_path(filenames, tokenizer, aargs):
     store_path = aargs['store_path|store_dir|store']
     if store_path is None:
-        filebase = basename(filenames[0])
+        filebase = basename(rename_linenum(filenames[0], N=0, rename=False))
         tokenizer_name = tokenizer_id(tokenizer)
         store_path=f'{tokenizer_name}/{filebase}'
         return store_path
@@ -142,52 +142,51 @@ def sum_all_numbers(dics: List[dict]):
         d[key] = sum(dic[key] for dic in dics)
     return d
 
-def store_files(filenames: List[str], tokenizer=None, **kwargs):
+def store_files(files: List[str], tokenizer=None, **kwargs):
     """
     ファイルからローカルストアを構築する
-    :param filenames: ファイル名、もしくはファイル名のリスト
+    :param files: ファイル名、もしくはファイル名のリスト
     """
-    filenames = list_filenames(filenames)
+    filenames = list_filenames(files)
     with adhoc.from_kwargs(**kwargs) as aargs:
         tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
         packer = find_packer(tokenizer, aargs)
-        adhoc.notice('ストアは時間がかかる場合があるから確認してね', 
-                    packer=packer, 
-                     input_files=filenames, 
-                     tokenizer=tokenizer.name_or_path)
 
         store_path = get_store_path(filenames, tokenizer, aargs)
-        adhoc.notice('保存先', store_path=store_path)
- 
-        store = DatasetStore(store_path)
-
-        num_workers = aargs['num_workers|=1']
-        N=aargs['head|N|=-1']
-        call_args = dict(extra_tokens = EMPTY_TOKENS, input=None, output=None)
-        if num_workers == 1:
-            for docs in read_multilines(filenames, N=N, bufsize=1024):
-                call_args['input'] = docs
-                # call_args['output'] = None
-                call_result = packer.encode(call_args)
-                store.append(call_result['output'])
-            record=sum_all_numbers([call_result])
-        else:
-            pool = Pool(num_workers)
-            args_list = [call_args.copy() for _ in range(num_workers)]
-            for batch in read_multilines(filenames, N=N, bufsize=1024 * num_workers):
-                batch_size = len(batch) // num_workers
-                for i in range(num_workers):
-                    args_list[i]['input'] = batch[batch_size*i:batch_size*(i+1)]
-                    # args_list[i]['output'] = None
-                result_list = pool.map(packer, args_list)
-                for i in range(num_workers):
-                    store.append(result_list[i]['output'])
-            pool.close()
-            record=sum_all_numbers(result_list)
-        record = packer.rec | record
-        make_report(record, packer.block_size)
-        adhoc.notice('お連れ様!! トークン化完了です', result=record)
-        store.save(tokenizer, skip_validation=aargs['skip_validation'])
+        aargs.saved(store_path, 'テンソルデータセットへのパス')
+        with adhoc.open_log_file(store_path, 'pack_log.txt') as log:
+            adhoc.notice('トークン化を始めます', 
+                        packer=packer, 
+                        input_files=filenames, 
+                        tokenizer=tokenizer.name_or_path)
+            store = DatasetStore(store_path)
+            num_workers = aargs['num_workers|=1']
+            N=aargs['head|N|=-1']
+            with adhoc.start_timer() as timer:
+                call_args = dict(extra_tokens = EMPTY_TOKENS, input=None, output=None)
+                if num_workers == 1:
+                    for docs in read_multilines(filenames, N=N, bufsize=1024):
+                        call_args['input'] = docs
+                        call_result = packer.encode(call_args)
+                        store.append(call_result['output'])
+                    record=sum_all_numbers([call_result])
+                else:
+                    pool = Pool(num_workers)
+                    args_list = [call_args.copy() for _ in range(num_workers)]
+                    for batch in read_multilines(filenames, N=N, bufsize=1024 * num_workers):
+                        batch_size = len(batch) // num_workers
+                        for i in range(num_workers):
+                            args_list[i]['input'] = batch[batch_size*i:batch_size*(i+1)]
+                        result_list = pool.map(packer, args_list)
+                        for i in range(num_workers):
+                            store.append(result_list[i]['output'])
+                    pool.close()
+                    record=sum_all_numbers(result_list)
+                timer.notice()
+                record = packer.rec | record
+                make_report(record, packer.block_size)
+                timer.notice('お連れ様!! トークン化完了', iteration=record['texts'], **record)
+            store.save(tokenizer, skip_validation=aargs['skip_validation'])
     return str(os.path.abspath(store_path))
 
 def make_report(rec, block_size):
@@ -223,7 +222,5 @@ def make_report(rec, block_size):
     line_blocks = rec.get('line_blocks',0)
     ss.append(f'行頭ブロック {adhoc.format_unit(line_blocks, scale=1000)}ブロック')
     ss.append(f'行頭ブロック率 {line_blocks*100/blocks:.2f}%')
-    print('\n'.join(ss))
-
-    print(rec)
-
+    adhoc.print('\n'.join(ss),face='')
+    

@@ -1,7 +1,7 @@
 import re
 import inspect
 from .dicts import find_simkey
-from .logs import log_args
+from .OLDlogs import log_args
 
 def get_version(class_or_function):
     module_name = class_or_function.__module__
