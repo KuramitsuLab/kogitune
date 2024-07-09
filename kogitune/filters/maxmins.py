@@ -254,7 +254,7 @@ class MaxMinFilter(TextFilter):
         """
         super().__init__(*args, **kwargs)
         aargs = adhoc.aargs_from(**kwargs)
-        print('@@@', aargs)
+        #print('@@@', aargs)
         aargs.record(
             'eval|!!',
             'max_inclusive|max',

@@ -67,7 +67,7 @@ class TextFilter(object):
         cls = self.__class__
         return {
             'class_path' : f'{cls.__module__}.{cls.__name__}',
-            'args': self.rec,
+            'kwargs': self.rec,
         }
 
     def save_config(self, filepath: str):
@@ -212,9 +212,9 @@ class ComposeFilter(TextFilter):
                 return None
         return text
 
-    def describe(self, file=sys.stdout):
+    def describe(self):
         for filter in self.filters:
-            filter.describe(file)
+            filter.describe()
 
 
 def compose(*filters):
