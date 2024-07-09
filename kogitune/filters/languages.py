@@ -72,7 +72,6 @@ italian_words = [
 
 pattern_it = compile_with_word_segmentation(italian_words)
 
-
 german_words = [
     "der", "die", "und", "in", "zu", "den", "das", "nicht", "von", "sie", "ist", "des", "sich", "mit", "dem", 
     "dass", "er", "es", "ein", "ich", "auf", "so", "eine", "auch", "als", "an", "nach", "wie", "im", "für", 
@@ -179,7 +178,7 @@ python_operators_and_keywords = [
     "raise", "return", "try", "while", "with", "yield"
 ]
 
-pattern_py = compile_with_word_segmentation(python_operators_and_keywords)
+# pattern_py = compile_with_word_segmentation(python_operators_and_keywords)
 
 
 def dedup(words):
