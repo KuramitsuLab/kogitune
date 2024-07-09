@@ -85,6 +85,66 @@ german_words = [
 
 pattern_de = compile_with_word_segmentation(german_words)
 
+dutch_words = [
+    "de", "van", "ik", "te", "dat", "die", "in", "een", "hij", "het",
+    "niet", "zijn", "is", "was", "op", "aan", "met", "als", "voor", "had",
+    "er", "maar", "om", "hem", "dan", "zou", "of", "wat", "mijn", "men",
+    "dit", "zo", "door", "over", "ze", "zich", "bij", "ook", "tot", "je",
+    "mij", "uit", "der", "daar", "haar", "naar", "heb", "hoe", "heeft", "hebben",
+    "deze", "u", "want", "nog", "zal", "me", "zij", "nu", "ge", "geen",
+    "omdat", "iets", "worden", "toch", "al", "waren", "veel", "meer", "doen", "toen",
+    "moet", "ben", "zonder", "kan", "hun", "dus", "alles", "onder", "ja", "eens",
+    "hier", "wie", "werd", "altijd", "doch", "wordt", "wezen", "kunnen", "ons", "zelf",
+    "tegen", "na", "reeds", "wil", "kon", "niets", "uw", "iemand", "geweest", "andere"
+]
+
+pattern_nl = compile_with_word_segmentation(dutch_words)
+
+polish_words = [
+    "i", "w", "na", "z", "do", "nie", "że", "to", "się", "jak", 
+    "jest", "ja", "co", "tak", "ty", "ale", "za", "dla", "o", "czy",
+    "być", "mnie", "go", "już", "jej", "mu", "było", "jesteś", "jestem", "on",
+    "ona", "my", "mi", "może", "po", "ma", "mój", "mój", "był", "była",
+    "byłem", "będzie", "bym", "też", "tu", "tam", "one", "nas", "was", "ich",
+    "tych", "tych", "kiedy", "gdzie", "który", "które", "których", "jakie", "jaka", "jaki",
+    "mnie", "ciebie", "moim", "twoim", "jego", "jej", "ich", "nasz", "wasz", "tyle",
+    "coś", "nic", "nikt", "nigdy", "wszyscy", "wszystko", "tutaj", "tam", "gdzieś", "dokąd",
+    "dlaczego", "jak", "już", "kiedy", "musi", "mogę", "może", "mam", "masz", "mają",
+    "mamy", "miał", "miała", "miałem", "miałam", "miałeś", "miałaś", "będę", "będziesz", "będziemy"
+]
+
+pattern_pl = compile_with_word_segmentation(polish_words)
+
+swedish_words = [
+    "och", "i", "att", "en", "det", "som", "på", "är", "av", "för",
+    "med", "till", "den", "har", "inte", "om", "ett", "men", "var", "jag",
+    "de", "så", "han", "honom", "hade", "vi", "du", "kunde", "hans", "där",
+    "nu", "när", "eller", "ett", "hon", "vara", "bli", "är", "här", "kommer",
+    "hur", "man", "säger", "ska", "vill", "kan", "måste", "mitt", "över", "under",
+    "ut", "in", "då", "nu", "varit", "blivit", "kommer", "går", "få", "även",
+    "andra", "någon", "vara", "aldrig", "eller", "bara", "varje", "igen", "själv", "mycket",
+    "mer", "många", "varför", "oss", "dem", "se", "fram", "tillbaka", "igenom", "åt",
+    "utan", "vid", "framför", "bakom", "innan", "efter", "ingen", "vem", "vilken", "vad",
+    "vilka", "vart", "något", "allt", "allt", "alla", "dessa", "denna", "dessa", "hur"
+]
+
+pattern_sv = compile_with_word_segmentation(swedish_words)
+
+hungarian_words = [
+    "és", "a", "hogy", "nem", "az", "is", "meg", "egy", "de", "már",
+    "van", "volt", "el", "én", "te", "ő", "mi", "ti", "ők", "lesz",
+    "mit", "ki", "ez", "azt", "akkor", "ha", "mert", "csak", "nem", "tudom",
+    "lehet", "volt", "lesz", "kell", "nekem", "neked", "neki", "még", "mikor", "miért",
+    "hol", "hogyan", "egy", "kicsit", "mindig", "soha", "talán", "igen", "nem", "vagy",
+    "nagyon", "minden", "semmi", "valami", "valaki", "bármi", "senki", "úgy", "ahogy", "itt",
+    "ott", "mindenki", "senki", "más", "ugyanaz", "valamennyi", "kevés", "sok", "több", "leg",
+    "másik", "azonban", "viszont", "ennél", "annál", "emiatt", "amellett", "ezért", "azért", "hiszen",
+    "továbbá", "mivel", "szintén", "azonban", "egyébként", "sőt", "tehát", "igen", "nem", "biztos",
+    "talán", "kérlek", "köszönöm", "bocsánat", "szia", "jó", "rossz", "milyen", "milyen", "hány"
+]
+
+pattern_hu = compile_with_word_segmentation(hungarian_words)
+
 finnish_words = [
     "ja", "on", "oli", "että", "ei", "se", "en", "hänen", "mutta", "tai", "joka", "kuin", "että", "niin", "hän", 
     "tässä", "nyt", "oli", "minä", "sinä", "kun", "jossa", "mitä", "kun", "mikä", "yksi", "se", "olen", "sitten", 
@@ -222,8 +282,12 @@ chinese_words = [
     "二", "理", "起", "小", "物", "现", "实", "加", "量", "都", "两", "体", "制", "机", "当", "使", "点", "从", "业", "本"
 ]
 
+# chinese_words = r'[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]'
+
+pattern_zh = re.compile(r'(?=[^\u3040-\u309F]+)(?=[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF])')
+
 # ひらがなを除外する
-pattern_zh = compile_combined_pattern(chinese_words, r'[^\u3040-\u309F]+')
+#pattern_zh = compile_combined_pattern(chinese_words, r'[^\u3040-\u309F]+')
 
 korean_words = [
     "이", "그", "저", "안", "있다", "없다", "좋다", "나쁘다", "크다", "작다", "많다", "적다", "새롭다", "오래되다", "높다", "낮다",
@@ -249,6 +313,9 @@ thai_words = [
 
 pattern_th = compile_without_word_boundaries(thai_words)
 
+pattern_ar = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+pattern_hi = re.compile(r'[\u0900-\u097F]')
+pattern_el = re.compile(r'[\u0370-\u03FF]')
 
 # 正規表現パターンを事前にコンパイル
 
@@ -279,6 +346,8 @@ def recongnize(text):
         print(c.most_common()[0][0])
 
 def detect_lang(text, min_word_count=5, max_chunk_length=200):
+    if len(text) < max_chunk_length:
+        return ['*']
     lang_counter = Counter()
     for text in chunk_text(text, max_length=max_chunk_length):
         if len(text) < 40:
@@ -329,7 +398,9 @@ class LangSetFilter(TextFilter):
         if self.record_key:
             record[self.record_key] = ','.join(detected)
         if self.sample > 0:
-            self.samples.append(','.join(detected))
+            locale = ','.join(detected)
+            if locale != '*':
+                self.samples.append(locale)
             if len(self.samples) == self.sample:
                 self.describe()
         if self.langset is None:
