@@ -137,6 +137,7 @@ def instantiate_from_dict(dic:dict, check=None):
     cls = load_class(class_path, check=check)
     args = dic.pop('args', [])
     kwargs = dic.pop('kwargs', {})
+    print('@@', cls, args, kwargs)
     return cls(*args, **kwargs)
 
 

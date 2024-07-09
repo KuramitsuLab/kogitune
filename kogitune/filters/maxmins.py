@@ -165,7 +165,7 @@ def alpha_fraction(text: str) -> float:
 
 ## Pattern
 
-from .filters import compile_pattern_for_words
+from .patterns import compile_words
 from .utils_en import common_english_words_pattern
 
 class PatternEval(TextEval):
@@ -190,7 +190,7 @@ class EnglishWordCount(PatternEval):
         """
         words = kwargs.pop('words')
         if words:
-            pattern = compile_pattern_for_words(words, prefix=r'\b', suffix=r'\b')
+            pattern = compile_words(words, prefix=r'\b', suffix=r'\b')
         else:
             pattern = common_english_words_pattern
         super().__init__(pattern, kwargs)
@@ -248,12 +248,13 @@ class MaxMinFilter(TextFilter):
     """
     評価関数の最大値と最小値からフィルターする
     """
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         評価関数フィルタを作る
         """
-        super().__init__()
+        super().__init__(*args, **kwargs)
         aargs = adhoc.aargs_from(**kwargs)
+        print('@@@', aargs)
         aargs.record(
             'eval|!!',
             'max_inclusive|max',

@@ -2,13 +2,14 @@ import sys
 import re
 from collections import Counter
 from .filters import TextFilter, adhoc
+from .documents import chunk_text
 
 # languages that require word segmentation
 
 def compile_with_word_segmentation(words):
     return re.compile(r'\b(?:' + '|'.join(map(re.escape, words)) + r')\b', re.IGNORECASE)
 
-frequent_english_words = [
+english_words = [
     "the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he",
     "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or",
     "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about",
@@ -18,10 +19,10 @@ frequent_english_words = [
     "work", "first", "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us"
 ]
 
-pattern_en = compile_with_word_segmentation(frequent_english_words)
+pattern_en = compile_with_word_segmentation(english_words)
 
 # 頻出フランス語単語100個のリスト
-frequent_french_words = [
+french_words = [
     "le", "de", "un", "à", "être", "et", "en", "avoir", "que", "pour", "dans", "ce", "il", "qui", "ne", "sur",
     "se", "pas", "plus", "pouvoir", "par", "je", "avec", "tout", "faire", "son", "mettre", "autre", "on", "mais",
     "nous", "comme", "ou", "si", "leur", "y", "dire", "elle", "avant", "deux", "bien", "où", "même", "prendre",
@@ -31,9 +32,9 @@ frequent_french_words = [
     "pendant", "ainsi", "cela", "là", "notre", "depuis", "quand", "autour", "chez", "sous", "près", "ainsi", "savoir"
 ]
 
-pattern_fr = compile_with_word_segmentation(frequent_french_words)
+pattern_fr = compile_with_word_segmentation(french_words)
 
-frequent_spanish_words = [
+spanish_words = [
     "de", "la", "que", "el", "en", "y", "a", "los", "se", "del", "las", "un", "por", "con", "no", "una", "su", 
     "para", "es", "al", "lo", "como", "más", "pero", "sus", "le", "ya", "o", "este", "sí", "porque", "esta", 
     "entre", "cuando", "muy", "sin", "sobre", "también", "me", "hasta", "hay", "donde", "quien", "desde", "todo", 
@@ -44,9 +45,9 @@ frequent_spanish_words = [
     "mías", "tuyo", "tuya", "tuyos", "tuyas", "suyo", "suya", "suyos", "suyas"
 ]
 
-pattern_es = compile_with_word_segmentation(frequent_spanish_words)
+pattern_es = compile_with_word_segmentation(spanish_words)
 
-frequent_portuguese_words = [
+portuguese_words = [
     "de", "a", "que", "e", "o", "do", "da", "em", "um", "para", "é", "com", "não", "uma", "os", "no", "se", "na", 
     "por", "mais", "as", "dos", "como", "mas", "foi", "ao", "ele", "das", "tem", "à", "seu", "sua", "ou", "ser", 
     "quando", "muito", "há", "nos", "já", "está", "eu", "também", "só", "pelo", "pela", "até", "isso", "ela", 
@@ -57,9 +58,9 @@ frequent_portuguese_words = [
     "nossas", "dela", "delas", "esta", "estes", "estas"
 ]
 
-pattern_pt = compile_with_word_segmentation(frequent_portuguese_words)
+pattern_pt = compile_with_word_segmentation(portuguese_words)
 
-frequent_italian_words = [
+italian_words = [
     "di", "che", "e", "il", "la", "a", "per", "un", "in", "è", "io", "non", "sono", "una", "le", "si", "con", "mi", 
     "ma", "ti", "ci", "lo", "gli", "ha", "no", "ho", "questo", "tu", "quello", "al", "lui", "come", "del", "loro", 
     "della", "delle", "questi", "cosa", "molto", "quella", "su", "nel", "tutto", "questa", "alla", "ne", "essere", 
@@ -69,10 +70,10 @@ frequent_italian_words = [
     "stata", "stato", "ogni", "posso", "dopo", "quasi", "fare", "vostra", "nostra", "sopra", "loro"
 ]
 
-pattern_it = compile_with_word_segmentation(frequent_italian_words)
+pattern_it = compile_with_word_segmentation(italian_words)
 
 
-frequent_german_words = [
+german_words = [
     "der", "die", "und", "in", "zu", "den", "das", "nicht", "von", "sie", "ist", "des", "sich", "mit", "dem", 
     "dass", "er", "es", "ein", "ich", "auf", "so", "eine", "auch", "als", "an", "nach", "wie", "im", "für", 
     "man", "aber", "aus", "durch", "wenn", "nur", "war", "noch", "werden", "bei", "hat", "wir", "was", "wird", 
@@ -83,9 +84,9 @@ frequent_german_words = [
     "ohne", "eines", "können", "dieses", "hatten", "allen", "waren"
 ]
 
-pattern_de = compile_with_word_segmentation(frequent_german_words)
+pattern_de = compile_with_word_segmentation(german_words)
 
-frequent_finnish_words = [
+finnish_words = [
     "ja", "on", "oli", "että", "ei", "se", "en", "hänen", "mutta", "tai", "joka", "kuin", "että", "niin", "hän", 
     "tässä", "nyt", "oli", "minä", "sinä", "kun", "jossa", "mitä", "kun", "mikä", "yksi", "se", "olen", "sitten", 
     "me", "kuten", "te", "he", "niin", "tämä", "nämä", "siinä", "vain", "vielä", "jo", "johon", "jolla", "voi", 
@@ -96,9 +97,9 @@ frequent_finnish_words = [
     "olla", "sitten", "seuraava", "samoin"
 ]
 
-pattern_fi = compile_with_word_segmentation(frequent_finnish_words)
+pattern_fi = compile_with_word_segmentation(finnish_words)
 
-frequent_turkish_words = [
+turkish_words = [
     "ve", "bir", "bu", "da", "ne", "için", "ile", "de", "mi", "ben", "o", "ama", "gibi", "çok", "daha", "var", "sen", 
     "diye", "bana", "benim", "oldu", "ki", "biraz", "olabilir", "bütün", "biz", "beni", "her", "şey", "siz", "beni", 
     "bile", "şu", "kadar", "o", "bunu", "çünkü", "artık", "neden", "bu", "nasıl", "olduğunu", "diğer", "zaman", "şimdi", 
@@ -109,9 +110,9 @@ frequent_turkish_words = [
     "yeni", "neden", "onun", "önemli", "nasıl", "üzerine", "birisi", "zaman", "kadar", "başka", "bunlar", "üzerinde"
 ]
 
-pattern_tr = compile_with_word_segmentation(frequent_turkish_words)
+pattern_tr = compile_with_word_segmentation(turkish_words)
 
-frequent_indonesian_words = [
+indonesian_words = [
     "dan", "di", "yang", "untuk", "dengan", "pada", "ke", "dari", "adalah", "ini", "itu", "sebagai", "dalam", 
     "tidak", "bahwa", "oleh", "akan", "atau", "juga", "saya", "kami", "anda", "mereka", "kami", "kita", 
     "bisa", "telah", "lebih", "banyak", "sudah", "kalau", "harus", "ada", "tersebut", "agar", "tetapi", 
@@ -123,9 +124,9 @@ frequent_indonesian_words = [
     "hingga", "mana", "dalam", "apakah", "kecil", "cukup", "setiap", "oleh", "milik", "hingga", "sudah", "telah"
 ]
 
-pattern_id = compile_with_word_segmentation(frequent_indonesian_words)
+pattern_id = compile_with_word_segmentation(indonesian_words)
 
-frequent_vietnamese_words = [
+vietnamese_words = [
     "và", "của", "là", "có", "trong", "được", "đến", "này", "cho", "một", "với", "như", "cũng", "còn", "khi", "người", 
     "năm", "để", "anh", "về", "đã", "tôi", "không", "nhiều", "thì", "mà", "hơn", "ra", "sẽ", "bị", "rất", "nhưng", 
     "đi", "nếu", "lại", "có", "đây", "nhất", "các", "nhiệm", "hoặc", "vì", "học", "nước", "ở", "vào", "phải", "em", 
@@ -135,9 +136,9 @@ frequent_vietnamese_words = [
     "có", "lắm", "với", "vậy", "khác", "còn", "trước", "bây", "ngay", "nên", "đôi", "thành", "đầu", "vô", "phải"
 ]
 
-pattern_vi = compile_with_word_segmentation(frequent_vietnamese_words)
+pattern_vi = compile_with_word_segmentation(vietnamese_words)
 
-frequent_russian_words = [
+russian_words = [
     "и", "в", "не", "на", "я", "что", "тот", "быть", "с", "он", "как", "это", "по", "но", "они", "к", "из", "у", 
     "от", "о", "со", "за", "так", "весь", "она", "вы", "ты", "мы", "же", "который", "мочь", "этот", "говорить", 
     "для", "вот", "делать", "если", "её", "наш", "их", "его", "только", "себя", "ещё", "один", "сказать", "кто", 
@@ -148,9 +149,9 @@ frequent_russian_words = [
     "мир", "также", "сегодня", "где", "говорить", "всегда", "почему", "об", "любить"
 ]
 
-pattern_ru = compile_with_word_segmentation(frequent_russian_words)
+pattern_ru = compile_with_word_segmentation(russian_words)
 
-frequent_hebrew_words = [
+hebrew_words = [
     "של", "הוא", "על", "לא", "זה", "את", "אני", "מה", "היא", "עם", "כל", "כי", "היה", "גם", "אבל", "אם", "או", 
     "יש", "אחד", "הם", "הן", "מי", "כמו", "עוד", "רק", "כבר", "הזה", "כך", "היה", "בא", "בין", "ב", "אני", "היו", 
     "הייתה", "אחר", "לה", "אשר", "ל", "ה", "הייתי", "היום", "כן", "יהיה", "היו", "זאת", "ב", "שלא", "אתה", 
@@ -160,7 +161,7 @@ frequent_hebrew_words = [
     "אין", "משהו", "כמו", "אבל", "איך", "אל", "רק", "שלה", "שלהם", "יש", "אני"
 ]
 
-pattern_he = compile_with_word_segmentation(frequent_russian_words)
+pattern_he = compile_with_word_segmentation(russian_words)
 
 python_operators_and_keywords = [
     "+", "-", "*", "/", "//", "%", "**",         # 算術演算子
@@ -197,7 +198,7 @@ def compile_combined_pattern(words, exclude_pattern:str):
     return re.compile(f'(?={exclude_pattern})(?={word_pattern})')
 
 # 頻出日本語単語100個のリスト
-frequent_japanese_words = [
+japanese_words = [
     "の", "に", "は", "を", "た", "が", "で", "て", "と", "し", "れ", "さ", "ある", "いる", "も", "する", "から", "な", "こと",
     "として", "い", "や", "など", "なっ", "ない", "この", "ため", "その", "あっ", "よう", "また", "もの", "という", "あ", "さらに",
     "でも", "なら", "なり", "なり", "でき", "これ", "さん", "して", "それ", "その", "どう", "どの", "わたし", "わたし",
@@ -211,10 +212,10 @@ frequent_japanese_words = [
     "もしくは", "やっぱり", "ようするに", "より", "わざと", "わたし", "わたしたち", "わかる", "わたし", "わたし"
 ]
 
-pattern_ja = compile_without_word_boundaries(frequent_japanese_words)
+pattern_ja = compile_without_word_boundaries(japanese_words)
 
 # 頻出中国語単語100個のリスト
-frequent_chinese_words = [
+chinese_words = [
     "的", "一", "是", "在", "不", "了", "有", "和", "人", "这", "中", "大", "为", "上", "个", "国", "我", "以", "要", "他",
     "时", "来", "用", "们", "生", "到", "作", "地", "于", "出", "就", "分", "对", "成", "会", "可", "主", "发", "年", "动",
     "同", "工", "也", "能", "下", "过", "子", "说", "产", "种", "面", "而", "方", "后", "多", "定", "行", "学", "法", "所",
@@ -223,9 +224,9 @@ frequent_chinese_words = [
 ]
 
 # ひらがなを除外する
-pattern_zh = compile_combined_pattern(frequent_chinese_words, r'[^\u3040-\u309F]+')
+pattern_zh = compile_combined_pattern(chinese_words, r'[^\u3040-\u309F]+')
 
-frequent_korean_words = [
+korean_words = [
     "이", "그", "저", "안", "있다", "없다", "좋다", "나쁘다", "크다", "작다", "많다", "적다", "새롭다", "오래되다", "높다", "낮다",
     "빠르다", "느리다", "쉽다", "어렵다", "같다", "다르다", "같이", "다르게", "그렇다", "그러다", "이렇다", "저렇다", "너무", "매우",
     "정말", "진짜", "아주", "조금", "좀", "많이", "적게", "또", "그리고", "그러나", "하지만", "그래서", "그런데", "그러니까", "즉", "그러면",
@@ -234,9 +235,9 @@ frequent_korean_words = [
     "너", "그", "우리", "너희", "그들", "나의", "너의", "그의", "우리의", "너희의", "그들의", "이", "그", "저", "안", "있다"
 ]
 
-pattern_ko = compile_without_word_boundaries(frequent_korean_words)
+pattern_ko = compile_without_word_boundaries(korean_words)
 
-frequent_thai_words = [
+thai_words = [
     "ที่", "เป็น", "และ", "การ", "ใน", "มี", "ของ", "ได้", "ให้", "ว่า", "นี้", "ไม่", "ไป", "จะ", "มา", "ด้วย", "เรา",
     "แต่", "ก็", "เมื่อ", "หรือ", "จาก", "โดย", "เขา", "คุณ", "กัน", "นั้น", "ซึ่ง", "อย่าง", "ดี", "ต้อง", "แล้ว", "ถึง",
     "มาก", "คน", "อีก", "อยู่", "ทั้ง", "วัน", "ทำ", "บอก", "เข้า", "ดู", "เพื่อ", "รัก", "ออก", "ครั้ง", "แม่", "เงิน",
@@ -247,7 +248,7 @@ frequent_thai_words = [
     "หนี", "เดิน", "รัก"
 ]
 
-pattern_th = compile_without_word_boundaries(frequent_thai_words)
+pattern_th = compile_without_word_boundaries(thai_words)
 
 
 # 正規表現パターンを事前にコンパイル
@@ -261,67 +262,29 @@ def patterns():
 
 all_patterns = patterns()
 
-def count_lang(text, threshold=5, patterns=all_patterns):
+def count_lang(text, min_word_count=5, patterns=all_patterns):
     results = Counter()
     for lang, pattern in patterns.items():
         matches = pattern.findall(text)
         # 一致する単語の数を数える
         match_count = len(matches)
-        if match_count >= threshold:
+        if match_count >= min_word_count:
             results[lang] = match_count
     return results
 
-def split_text(text, max_length=200):
-    """
-    指定されたルールに基づいてテキストを分割する関数。
-    
-    Parameters:
-    text (str): 分割するテキスト
-    max_length: 分割する単位
-
-    Returns:
-    list: 分割されたテキストのリスト
-    """
-    lines = text.split('\n')
-    chunks = []
-    current_chunk = []
-    current_length = 0
-
-    for line in lines:
-        if line.strip() == "":
-            # 空行が来たら分割
-            if current_chunk:
-                chunks.append("\n".join(current_chunk))
-                current_chunk = []
-                current_length = 0
-        elif current_length + len(line) + 1 > max_length:
-            # 今までの行がmax_length文字を超えたら分割
-            chunks.append("\n".join(current_chunk))
-            current_chunk = [line]
-            current_length = len(line)
-        else:
-            # 行を追加
-            current_chunk.append(line)
-            current_length += len(line) + 1
-
-    # 最後のチャンクを追加
-    if current_chunk:
-        chunks.append("\n".join(current_chunk))
-
-    return chunks
 
 def recongnize(text):
-    for text in split_text(text):
+    for text in chunk_text(text):
         c = count_lang(text)
         print(text)
         print(c.most_common()[0][0])
 
-def detect_lang(text, threshold=5):
+def detect_lang(text, min_word_count=5, max_chunk_length=200):
     lang_counter = Counter()
-    for text in split_text(text):
+    for text in chunk_text(text, max_length=max_chunk_length):
         if len(text) < 40:
             continue
-        counter = count_lang(text, threshold=threshold)
+        counter = count_lang(text, min_word_count=min_word_count)
         if len(counter) == 0:
             continue
         l, c = counter.most_common()[0]
@@ -335,20 +298,17 @@ class LangSetFilter(TextFilter):
     """
     評価関数の最大値と最小値からフィルターする
     """
-    def __init__(self, record_key='lang', threshold=5, **kwargs):
+    def __init__(self, *args, **kwargs):
         """
         評価関数フィルタを作る
         """
-        super().__init__()
-        kwargs = dict(
-            record_key=record_key,
-            threshold=threshold,
-        ) | kwargs
+        super().__init__(*args, **kwargs)
         adhoc.aargs_from(**kwargs).record(
             'record_key|=lang',
             'langset',
-            'threshold|=5',
-            'sample|head|N|=0',
+            'max_chunk_length|=200',
+            'min_word_count|min_word|=5',
+            '_sample|sample|head|N|=0',
             field=self, dic=self.rec,
         )
         if self.langset is not None:
@@ -364,7 +324,9 @@ class LangSetFilter(TextFilter):
             self.samples = []
 
     def __call__(self, text: str, record: dict):
-        detected = detect_lang(text)
+        detected = detect_lang(text, 
+                               min_word_count=self.min_word_count, 
+                               max_chunk_length=self.max_chunk_length)
         if self.record_key:
             record[self.record_key] = ','.join(detected)
         if self.sample > 0:

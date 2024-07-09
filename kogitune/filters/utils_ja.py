@@ -1,7 +1,8 @@
 from typing import Any, List, Optional
 import re
 
-from .filters import TextFilter, ScoreFunction, compile_pattern_for_words
+from .filters import TextFilter, adhoc
+from .patterns import compile_words
 
 pattern_hirakata = re.compile(r'[ぁ-んァ-ヶ]')
 pattern_japanese = re.compile(r'[ぁ-んァ-ヶー・\u4E00-\u9FFF\u3400-\u4DBF、。]')
@@ -24,12 +25,12 @@ def count_japanese_characters(text):
     """
     return len(pattern_japanese.findall(text))
 
-def japanese_fraction(text: str) -> float:
-    """
-    テキスト中の漢字/カタカナ/ひらがなの比率を算出する
-    """
-    count_commons = count_japanese_characters(text)
-    return  count_commons / len(text) if len(text) > 0 else 0.0
+# def japanese_fraction(text: str) -> float:
+#     """
+#     テキスト中の漢字/カタカナ/ひらがなの比率を算出する
+#     """
+#     count_commons = count_japanese_characters(text)
+#     return  count_commons / len(text) if len(text) > 0 else 0.0
 
 # class JapaneseCounter(CharCounter):
 #     def __init__(self, regex:str, unique=False, **kwargs) -> None:
@@ -41,59 +42,58 @@ def japanese_fraction(text: str) -> float:
 #             return len(set(self.pattern.findall(text)))
 #         return len(self.pattern.findall(text))
 
+# pattern_japanese_common_words = compile_words(
+#     r'(ある|あり|いた|いて|お|か|く|けど|けれど|こと|これ|この|' + 
+#     r'され|して|した|しな|する|すれ|せず|その|それ|そう|たい|たく|ため|' +
+#     r'ついて|った|って|て|と|な|に|の|は|へ|ほど|まで|ます|ません|まし|' +
+#     r'む|も|や|よ|ら|る|れな|わ|んだ|んで|を|が|だ|でき|です|でな|ば|。)'
+# )
 
-pattern_japanese_common_words = compile_pattern_for_words(
-    r'(ある|あり|いた|いて|お|か|く|けど|けれど|こと|これ|この|' + 
-    r'され|して|した|しな|する|すれ|せず|その|それ|そう|たい|たく|ため|' +
-    r'ついて|った|って|て|と|な|に|の|は|へ|ほど|まで|ます|ません|まし|' +
-    r'む|も|や|よ|ら|る|れな|わ|んだ|んで|を|が|だ|でき|です|でな|ば|。)'
-)
+# class JapaneseWordCounter(ScoreFunction):
+#     """
+#     与えられたテキストに日本語単語が含まれるか判定する評価関数
+#     """
+#     def __init__(self, 
+#                  words: Optional[List[str]] = None, 
+#                  unique=False, 
+#                  japanese_fraction=False, 
+#                  length_fraction=True, **kwargs):
+#         """
+#         与えられたテキストに日本語単語が含まれるか判定する評価関数を作る
+#         :param words: 日本語単語のリスト(省略した場合は助詞)
+#         :param unique: 単一化
+#         :param japanese_fraction: 漢字/ひらがな/かたかな文字における比率
+#         :param length_fraction: 全テキストにおける比率 
+#         """
+#         self.__init__(**kwargs)
+#         if words:
+#             self.pattern = compile_words(words)
+#         else:
+#             self.pattern = pattern_japanese_common_words
+#         self.unique = unique
+#         self.length_fraction = length_fraction
+#         self.japanese_fraction = japanese_fraction
 
-class JapaneseWordCounter(ScoreFunction):
-    """
-    与えられたテキストに日本語単語が含まれるか判定する評価関数
-    """
-    def __init__(self, 
-                 words: Optional[List[str]] = None, 
-                 unique=False, 
-                 japanese_fraction=False, 
-                 length_fraction=True, **kwargs):
-        """
-        与えられたテキストに日本語単語が含まれるか判定する評価関数を作る
-        :param words: 日本語単語のリスト(省略した場合は助詞)
-        :param unique: 単一化
-        :param japanese_fraction: 漢字/ひらがな/かたかな文字における比率
-        :param length_fraction: 全テキストにおける比率 
-        """
-        self.__init__(**kwargs)
-        if words:
-            self.pattern = compile_pattern_for_words(words)
-        else:
-            self.pattern = pattern_japanese_common_words
-        self.unique = unique
-        self.length_fraction = length_fraction
-        self.japanese_fraction = japanese_fraction
+#     def as_json(self):
+#         return {
+#             'score': self.name(),
+#             'unique': self.unique,
+#             'length_fraction': self.length_fraction,
+#             'japanese_fraction': self.japanese_fraction,
+#         }
 
-    def as_json(self):
-        return {
-            'score': self.name(),
-            'unique': self.unique,
-            'length_fraction': self.length_fraction,
-            'japanese_fraction': self.japanese_fraction,
-        }
+#     def __call__(self, text):
+#         ws = self.pattern.findall(text)
+#         word_count = len(set(ws)) if self.unique else len(ws)
+#         if self.length_fraction:
+#             length_count =len(text)
+#             return (word_count / length_count) if length_count > 0 else 0.0
+#         elif self.japanese_fraction:
+#             ja_count = count_japanese_characters(text)
+#             return (word_count / ja_count) if ja_count > 0 else 0.0 
+#         return word_count
 
-    def __call__(self, text):
-        ws = self.pattern.findall(text)
-        word_count = len(set(ws)) if self.unique else len(ws)
-        if self.length_fraction:
-            length_count =len(text)
-            return (word_count / length_count) if length_count > 0 else 0.0
-        elif self.japanese_fraction:
-            ja_count = count_japanese_characters(text)
-            return (word_count / ja_count) if ja_count > 0 else 0.0 
-        return word_count
-
-pattern_wikipedia_footnote = compile_pattern_for_words([
+pattern_wikipedia_footnote = compile_words([
         "脚注",
         "関連項目",
         "日本国内の関連項目",
@@ -125,7 +125,7 @@ class FootnoteFilter(TextFilter):
         :param footnote_words: 脚注の先頭(省略した場合は、Wikipedia 脚注)
         """
         if isinstance(words, list):
-            self.pattern = compile_pattern_for_words(words)
+            self.pattern = compile_words(words)
         else:
             self.pattern = pattern_wikipedia_footnote
 

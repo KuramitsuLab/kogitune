@@ -30,7 +30,7 @@ def load_hfdataset(dataset_path:str, aargs):
     import datasets
     dataset_args = aargs['dataset_args|dataset_config']
     if dataset_args is None:
-        dataset_path, dataset_args = parse_path_arguments(dataset_path)
+        dataset_path, dataset_args = adhoc.parse_path_args(dataset_path)
     dataset = datasets.load_dataset(dataset_path, **dataset_args)
     if isinstance(dataset, datasets.dataset_dict.DatasetDict):
         if 'test' in dataset:

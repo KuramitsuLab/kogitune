@@ -203,3 +203,36 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_tem
             yield buffer
         pbar.close()
 
+def rename_linenum_cli(**kwargs):
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        for file in aargs['files']:
+            n = extract_linenum(file)
+            if n is None:
+                n = get_linenum(file)
+                file = rename_linenum(file, n)
+
+def split_file(input_file, lines_per_file):
+    file_number = 1
+    current_line_count = 0
+    output_file = rename_linenum(input_file, N=0, rename=False)
+    base, _, ext = output_file.partition('.')
+    output_file = zopen(f'{base}_{file_number:03d}.{ext}', 'w')
+    adhoc.print(f'spliting {output_file} ..')
+    with zopen(input_file, 'r') as infile:
+        for line in infile:
+            if current_line_count >= lines_per_file:
+                output_file.close()
+                file_number += 1
+                current_line_count = 0
+                output_file = zopen(f'{base}{file_number:03d}.{ext}', 'tw')
+                adhoc.print(f'spliting {output_file} ..')
+            output_file.write(line)
+            current_line_count += 1
+    output_file.close()
+
+def split_lines_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = aargs['files|!!']
+        lines_per_file = aargs['lines_per_file|lines|max|N|=1000000']        
+        for file in files:
+            split_file(file, lines_per_file)

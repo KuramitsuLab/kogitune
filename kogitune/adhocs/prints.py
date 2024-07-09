@@ -143,6 +143,8 @@ def saved(filepath:str, desc:str, rename_from=None):
 
 def report_saved_files():
     global SAVED_LIST
+    if len(SAVED_LIST) == 0:
+        return
     width = max(len(filepath) for filepath, _ in SAVED_LIST) + 8
     for filepath, desc in SAVED_LIST:
         print(colored(filepath.ljust(width), 'blue'), desc)

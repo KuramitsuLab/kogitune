@@ -8,9 +8,6 @@ from .filters import (
 from .maxmins import (
     load_eval_fn,
     MaxMinFilter, maxmin,
-    # TokenizerCompression, 
-    # TokenizerEntropy, 
-    # ZLibCompression
 )
 
 from .languages import (
@@ -18,9 +15,8 @@ from .languages import (
 )
 
 from .documents import (
-    UnicodeNormalization, 
-    LineByLineFilter, DuplicatedLine,
-#    JSONConvertor, JSONTemplateConvertor,
+    UnicodeNormalization, DuplicatedLineFilter,
+    LineByLineFilter, 
 )
 
 from .replaces import (

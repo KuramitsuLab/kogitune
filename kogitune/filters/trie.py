@@ -74,6 +74,7 @@ class Trie():
         return self._pattern(self.dump())
 
 
+
 if __name__ == '__main__':
     t = Trie()
 

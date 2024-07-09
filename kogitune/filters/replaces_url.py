@@ -12,10 +12,6 @@ def replace_pattern(pattern, text, replaced):
 
 url_pattern = RE(
     r'https?://[\w/:%#\$&\?~\.\,=\+\-\\_]+', # \(\)
-    # r'\%[0-9A-F](\%[0-9A-F])+',
-    # r'\(url\)~[\w/:%#\$&\?\(\)~\.=\+\-]+',
-    # r'\(url\)(?:\s+\(url\))?',
-    # r'\<url\>(?:\s+\<url\>)?',
 )
 
 def replace_url(text, replaced=None):

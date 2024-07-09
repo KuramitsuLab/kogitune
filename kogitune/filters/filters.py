@@ -71,6 +71,7 @@ class TextFilter(object):
         }
 
     def save_config(self, filepath: str):
+        adhoc.print(json.dumps(self.as_json(), indent=2), face='')
         with open(filepath, 'w') as w:
             json.dump(self.as_json(), w, indent=2)
 
@@ -164,11 +165,28 @@ class TextFilter(object):
         with adhoc.open_log_file('.', 'filter_log.txt') as log:
             result = self.from_jsonl(**kwargs)
             self.describe()
-            output_file = result.pop('output_file')
+            output_file = result.pop('output_file', None)
             if output_file:
                 adhoc.saved(f'{output_file}_log.txt', 'ログ',
                             rename_from='filter_log.txt')
             adhoc.report_saved_files()
+
+def generate_filter(expression):
+    if isinstance(expression, TextFilter):
+        return expression
+    if isinstance(expression, dict):
+        return adhoc.instantiate_from_dict(expression, check=TextFilter)
+    return TextFilter(unknown_expression=f'{expression}')
+
+def load_filter(json_filename)->TextFilter:
+    with open(json_filename) as f:
+        return adhoc.instantiate_from_dict(json.load(f), check=TextFilter)
+
+def filter_cli(**kwargs):
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        filter_config = aargs['filter_config|!!']
+        text_filter = load_filter(filter_config)
+        text_filter.run_for_cli(**kwargs)
 
 class ComposeFilter(TextFilter):
     """
@@ -177,13 +195,14 @@ class ComposeFilter(TextFilter):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.filters = tuple(args)
+        self.filters = tuple(generate_filter(f) for f in args)
 
     def as_json(self):
         cls = self.__class__
         return {
             'class_path' : f'{cls.__module__}.{cls.__name__}',
-            'args': [f.as_json() for f in self.filters]
+            'args': [f.as_json() for f in self.filters],
+            'kwargs': self.rec,
         }
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
@@ -197,12 +216,6 @@ class ComposeFilter(TextFilter):
         for filter in self.filters:
             filter.describe(file)
 
-def generate_filter(expression):
-    if isinstance(expression, TextFilter):
-        return expression
-    if isinstance(expression, dict):
-        return adhoc.instantiate_from_dict(expression, check=TextFilter)
-    return TextFilter(unknown_expression=f'{expression}')
 
 def compose(*filters):
     if len(filters) == 1:
@@ -214,9 +227,8 @@ class ChoiceFilter(ComposeFilter):
     テキストフィルタを合成する
     :param filters:
     """
-    def __init__(self, args: List[TextFilter]):
-        super().__init__()
-        self.filters = tuple(args)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
     def __call__(self, text: str, record: dict) -> Optional[str]:
         for f in self.filters:
@@ -242,39 +254,5 @@ def choice(*filters):
 #                 return None
 #         return text
 
-def compile_pattern_for_words(words: List[str], prefix='', suffix=''):
-    """
-    Given a list of words or a single string of words separated by '|', compiles and returns a regular expression pattern that matches any of the words. Additionally, if the words list contains filenames ending in '.txt', the function reads these files and includes their contents as words. The function removes duplicates and sorts the words before compiling the pattern.
-
-    If `prefix` or `suffix` strings are provided, they are added to the beginning and end of the compiled pattern, respectively.
-
-    Parameters:
-    - words (List[str] or str): A list of words, or a single string of words separated by '|'. Can also include filenames with '.txt' extension, whose contents will be read and included as words.
-    - prefix (str, optional): A string to be added to the beginning of the compiled pattern. Defaults to an empty string.
-    - suffix (str, optional): A string to be added to the end of the compiled pattern. Defaults to an empty string.
-
-    Returns:
-    - re.Pattern: A compiled regular expression pattern that matches any of the specified words, optionally enclosed between `prefix` and `suffix`.
-
-    Note:
-    - The function ensures that duplicates are removed and the final list of words is sorted before compiling the pattern.
-    - If a filename is provided in the `words` list and it does not exist or cannot be read, it is ignored.
-    """
-    if isinstance(words, str):
-        words = words.split('|')
-
-    ws = []
-    for w in words:
-        if w.endswith('.txt') and os.path.isfile(w):
-            with open(w) as f:
-                ws.extend(s.strip() for s in f.readlines() if len(s.strip()) > 0)
-        else:
-            ws.append(w)
-    ws = list(set(ws))
-    ws.sort()
-    pattern = '|'.join(re.escape(w) for w in ws)
-    if len(prefix) > 0 or len(suffix) > 0:
-        re.compile(f'{prefix}({pattern}){suffix}')
-    return re.compile(pattern)
 
 

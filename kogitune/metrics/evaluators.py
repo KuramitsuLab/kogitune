@@ -192,7 +192,7 @@ class F1Evaluator(Evaluator):
 #######################
 
 def evaluate_metric(result_list, metric_path, force_eval=False):
-    metric_name, metric_args = parse_path_arguments(metric_path)
+    metric_name, metric_args = adhoc.parse_path_args(metric_path)
     name = metric_name.replace('@', '_at_')
     name = f'metric_{name}'
     if name not in globals():

@@ -11,44 +11,25 @@ def beta_cli(**kwargs):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
 
-def count_lines_cli(**kwargs):
-    from kogitune.stores.files import extract_linenum, rename_linenum, get_linenum
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        for file in aargs['files']:
-            n = extract_linenum(file)
-            if n is None:
-                n = get_linenum(file)
-                file = rename_linenum(file, n)
+def split_lines_cli(**kwargs):
+    from kogitune.stores.files import split_lines_cli
+    split_lines_cli(**kwargs)
 
-def maxmin_cli(**kwargs):
-    from kogitune.filters import maxmin
-    with adhoc.aargs_from(**kwargs) as aargs:
-        files = aargs['files|!!ファイルを一つ以上与えてください']
-        score_path = aargs['eval|score|function|!!scoreを設定してください']
-        output_path = aargs['output_file|output']
-        sample = aargs['sample|head|=10000']
-        kwargs = {**aargs}
-        if 'record_key' not in kwargs:
-            kwargs['record_key'] = 'score'
-        text_filter = maxmin(score_path, **kwargs)
-        text_filter.from_jsonl(files, output_path=output_path, N=sample, num_workers=1)
-
+def rename_linenum_cli(**kwargs):
+    from kogitune.stores.files import rename_linenum_cli
+    rename_linenum_cli(**kwargs)
 
 def filter_cli(**kwargs):
-    from kogitune.filters import load_filter
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        files = aargs['files|!!ファイルを一つ以上与えてください']
-        filter_config = aargs['filter_config|!!filter_configを設定してください']
-        text_filter = load_filter(filter_config)
-        output_file = aargs['output_file']
-        if output_file is None:
-            adhoc.notice('output_fileの指定がないから、少しだけ処理して表示するよ')
-        text_filter.from_jsonl(files, output_path=output_file)
+    from kogitune.filters.filters import filter_cli
+    filter_cli(**kwargs)
+    
+def replace_cli(**kwargs):
+    from kogitune.filters.replaces import replace_cli
+    replace_cli(**kwargs)
 
 def filter_maxmin_cli(**kwargs):
     from kogitune.filters.maxmins import filter_maxmin_cli
     filter_maxmin_cli(**kwargs)
-
 
 def filter_langset_cli(**kwargs):
     from kogitune.filters.languages import filter_langset_cli

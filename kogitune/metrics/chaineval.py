@@ -35,25 +35,24 @@ def generate_with_args(aargs):
     test_run = aargs[f'test_run|head|={len(result_list)}']
 
     if needs_model_inference(result_list, n):
-        with adhoc.open_section('generation'):
-            model = load_model(aargs=aargs)
-            model.configure(template, datalist)
+        model = load_model(aargs=aargs)
+        model.configure(template, datalist)
 
-            adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
-            if test_run < len(result_list):
-                adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')
-            sample_list = [sample for sample in result_list[:test_run] if 'outputs' not in sample]
-            def saving():
-                save_result(result_file, result_list)      
-            elapsed_time = model.generate_streaming(sample_list, 
-                                                    n=n, 
-                                                    saving_func=saving, 
-                                                    batch_size=aargs['eval_batch_size|batch_size|=2'])
-            if len(sample_list) > 0:
-                adhoc.notice('お疲れ様！！ 生成終わりました', 
-                            total_time=round(elapsed_time,3),
-                            throughtput=round(elapsed_time/len(sample_list),3))
-            save_result(result_file, result_list)
+        adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
+        if test_run < len(result_list):
+            adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')
+        sample_list = [sample for sample in result_list[:test_run] if 'outputs' not in sample]
+        def saving():
+            save_result(result_file, result_list)      
+        elapsed_time = model.generate_streaming(sample_list, 
+                                                n=n, 
+                                                saving_func=saving, 
+                                                batch_size=aargs['eval_batch_size|batch_size|=2'])
+        if len(sample_list) > 0:
+            adhoc.notice('お疲れ様！！ 生成終わりました', 
+                        total_time=round(elapsed_time,3),
+                        throughtput=round(elapsed_time/len(sample_list),3))
+        save_result(result_file, result_list)
     return result_file, result_list
 
 def get_metric_list(aargs):
@@ -65,7 +64,6 @@ def get_metric_list(aargs):
     return metric_list
 
 def eval_with_args(result_file, result_list, metric_list, aargs):
-    adhoc.open_section('eval')
     for metric_path in metric_list:
         result = evaluate_metric(result_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
