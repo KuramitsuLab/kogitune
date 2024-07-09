@@ -1,7 +1,7 @@
 import re
 import inspect
 from .dicts import find_simkey
-from .OLDlogs import log_args
+# from .OLDlogs import log_args
 
 def get_version(class_or_function):
     module_name = class_or_function.__module__
@@ -72,8 +72,8 @@ def check_kwargs(kwargs: dict, function_or_method, path=None,
         print('@drop {function_or_method}', dropped)
         for key in dropped:
             del kwargs[key]
-    if path:
-        log_args(function_or_method, 
-                 get_version(function_or_method),
-                 path, kwargs)
+    # if path:
+    #     log_args(function_or_method, 
+    #              get_version(function_or_method),
+    #              path, kwargs)
     
