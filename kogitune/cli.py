@@ -19,6 +19,10 @@ def rename_linenum_cli(**kwargs):
     from kogitune.stores.files import rename_linenum_cli
     rename_linenum_cli(**kwargs)
 
+def spm_train_cli(**kwargs):
+    from kogitune.stores.sentencepieces import spm_train_cli
+    spm_train_cli(**kwargs)
+
 def filter_cli(**kwargs):
     from kogitune.filters.filters import filter_cli
     filter_cli(**kwargs)

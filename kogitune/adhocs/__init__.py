@@ -26,7 +26,8 @@ from .main import (
 )
 
 from .inspects import (
-    check_kwargs, 
+    extract_kwargs,
+    check_kwargs, # OLD
     get_parameters, 
     get_version
 )

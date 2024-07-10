@@ -52,6 +52,25 @@ def get_parameters(function_or_method, default_only=True):
             parameters[name]=d
     return parameters
 
+def extract_kwargs(function_or_method, kwargs: dict, excludes=[], use_simkey=True):
+    params = get_parameters(function_or_method)
+    has_var_keyword = has_VAR_KEYWORD(function_or_method)
+    #print('@', params)
+    new_kwargs={}
+    for key in list(kwargs.keys()):
+        if key in excludes:
+            continue
+        if key in params or has_var_keyword:
+            new_kwargs[key] = kwargs[key]
+            continue
+        simkey = find_simkey(params, key, max_distance=(len(key)/4)+1)
+        if use_simkey and simkey:
+            print('@typo', key, simkey)
+            new_kwargs[key] = kwargs[simkey]
+    #print('@', new_kwargs)
+    return new_kwargs
+
+
 def check_kwargs(kwargs: dict, function_or_method, path=None,
                  excludes=[]):
     params = get_parameters(function_or_method)
