@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 
 try:
@@ -127,6 +128,7 @@ def list_kwargs(**kwargs):
 
 def notice(*args, **kwargs):
     aargs_print(*args, *list_kwargs(**kwargs))
+    sys.stdout.flush()
 
 def warn(*args, **kwargs):
     aargs_print(colored('FIXME' 'red'), *args, *list_kwargs(**kwargs))

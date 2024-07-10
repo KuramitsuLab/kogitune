@@ -52,10 +52,11 @@ def get_parameters(function_or_method, default_only=True):
             parameters[name]=d
     return parameters
 
-def extract_kwargs(function_or_method, kwargs: dict, excludes=[], use_simkey=True):
+def extract_kwargs(function_or_method, kwargs: dict, excludes=[], verbose=False, use_simkey=True):
     params = get_parameters(function_or_method)
     has_var_keyword = has_VAR_KEYWORD(function_or_method)
-    #print('@', params)
+    if verbose:
+        print('@params', params)
     new_kwargs={}
     for key in list(kwargs.keys()):
         if key in excludes:
@@ -67,7 +68,8 @@ def extract_kwargs(function_or_method, kwargs: dict, excludes=[], use_simkey=Tru
         if use_simkey and simkey:
             print('@typo', key, simkey)
             new_kwargs[key] = kwargs[simkey]
-    #print('@', new_kwargs)
+    if verbose:
+        print('@new_kwargs', new_kwargs)
     return new_kwargs
 
 

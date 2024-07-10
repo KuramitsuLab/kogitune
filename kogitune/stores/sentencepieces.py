@@ -1,5 +1,6 @@
 import os
 import kogitune.adhocs as adhoc
+from kogitune.stores.files import list_filenames
 
 def is_model_bpe(model_path):
     # モデルファイルを読み込む
@@ -86,7 +87,6 @@ def replace_spm(model_path, replace_fn):
         f.write(m.SerializeToString())
 
 def spm_train_cli(**kwargs):
-    from kogitune.stores.files import list_filenames
     import sentencepiece as spm
     kwargs = kwargs | dict (
         #input='progtext_all.txt',  #data.txt
@@ -115,7 +115,7 @@ def spm_train_cli(**kwargs):
                                                 'use_wakachi', 
                                                 'save_path'])
         input_file = f'input_{os.getpid()}.txt'
-        remove_input_file = os.path.exists(input_file)
+        remove_input_file = not os.path.exists(input_file)
         if use_wakachi:
             generate_wakachi_file(files, output_file=input_file)
         else:
@@ -141,4 +141,150 @@ def spm_train_cli(**kwargs):
         aargs.saved(f'{prefix}.vocab', 'SentencePiece語彙')
         if save_path:
             convert_fast_tokenizer(f'{prefix}.model', save_path=save_path)
-            aargs.saved(save_path, f"変換されたTokenizerのパス save_path='{save_path}'")
+            aargs.saved(save_path, f"生成されたTokenizerのパス save_path='{save_path}'")
+
+def test_tokenizer(tokenizer):
+    # 使用例
+    text = """\
+自然言語処理は面白い技術です。
+while True:
+    a += 1 #😄
+"""
+    encoded = tokenizer.encode(text)
+    print(len(encoded), encoded)
+    decoded = tokenizer.decode(encoded)
+    print(decoded)
+
+def train_bpe_cli(**kwargs):
+    from transformers import PreTrainedTokenizerFast
+    from tokenizers import Tokenizer, models, trainers, pre_tokenizers, decoders
+
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = list_filenames(aargs['files|!!'])
+        save_path = aargs['save_path']
+
+        # トークナイザーの初期化
+        tokenizer = Tokenizer(models.BPE())
+
+        if aargs['bytelevel|byte_level|=True']:
+            # プレトークナイザーの設定（文字単位）
+            tokenizer.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+
+            # デコーダーの設定
+            tokenizer.decoder = decoders.ByteLevel()
+        else:
+            # プレトークナイザーを文字レベルに設定
+            tokenizer.pre_tokenizer = pre_tokenizers.Sequence([
+                pre_tokenizers.UnicodeScripts(),
+                pre_tokenizers.Whitespace()
+            ])
+
+            # デコーダーの設定
+            tokenizer.decoder = decoders.WordPiece(prefix="##")
+
+            # # プレトークナイザーを文字レベルに設定
+            # tokenizer.pre_tokenizer = pre_tokenizers.Sequence([
+            #     pre_tokenizers.UnicodeScripts(),
+            #     pre_tokenizers.Metaspace(replacement=" ")#, add_prefix_space=False)
+            # ])
+
+            # # デコーダーの設定
+            # tokenizer.decoder = decoders.Metaspace(replacement=" ")#, add_prefix_space=False)
+
+        # トレーナーの設定
+        trainer = trainers.BpeTrainer(
+            vocab_size=aargs['vocab_size|=32000'],
+            min_frequency=aargs['min_frequency|=2'],
+            special_tokens=["[PAD]", 
+                            "[UNK]", 
+                            "[CLS]", 
+                            "[SEP]", 
+                            "[MASK]"]
+        )
+
+        with adhoc.start_timer() as timer:
+            adhoc.notice('BPEモデルの訓練を始めます', options=aargs)
+            # トークナイザーのトレーニング
+            tokenizer.train(files, trainer)
+            timer.notice('お疲れ様す。')
+
+        # FastTokenizerの作成
+        fast_tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=tokenizer,
+            unk_token="[UNK]",
+            pad_token="[PAD]",
+            cls_token="[CLS]",
+            sep_token="[SEP]",
+            mask_token="[MASK]",
+        )
+        adhoc.print('語彙', fast_tokenizer.get_vocab())
+        # トークナイザーの保存
+        if save_path:
+            fast_tokenizer.save_pretrained(save_path)
+            aargs.saved(save_path, f"保存されたTokenizerのパス save_path='{save_path}'")
+
+        test_tokenizer(fast_tokenizer)
+
+def train_unigram_cli(**kwargs):
+    from transformers import PreTrainedTokenizerFast
+    from tokenizers import Tokenizer, models, trainers, pre_tokenizers, processors, decoders
+
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = list_filenames(aargs['files|!!'])
+        save_path = aargs['save_path']
+
+        # トークナイザーの初期化
+        tokenizer = Tokenizer(models.Unigram(byte_fallback=True))
+
+        # プレトークナイザーの設定（文字単位）
+        tokenizer.pre_tokenizer = pre_tokenizers.UnicodeScripts()
+
+        # デコーダーの設定
+        tokenizer.decoder = decoders.ByteLevel()
+
+        # トレーナーの設定
+        trainer = trainers.UnigramTrainer(
+            vocab_size=aargs['vocab_size|=32000'],
+            n_sub_iterations=aargs['n_sub_iterations|=2'],
+            max_piece_length=aargs['max_piece_length|=16'],
+#            seed=aargs['seed|=42'],
+# 
+            unk_token="[UNK]",
+            special_tokens=["[PAD]", 
+                            "[UNK]", 
+                            "[CLS]", 
+                            "[SEP]", 
+                            "[MASK]"]
+        )
+
+        tokenizer.post_processor = processors.TemplateProcessing(
+            single="[CLS] $A [SEP]",
+            pair="[CLS] $A [SEP] $B:1 [SEP]:1",
+            special_tokens=[("[CLS]", 1), ("[SEP]", 2)],
+        )
+
+        with adhoc.start_timer() as timer:
+            adhoc.notice('UnigramModelモデルの訓練', options=aargs)
+            # トークナイザーのトレーニング
+            tokenizer.train(files, trainer)
+            timer.notice('お疲れ様')
+
+        # デコーダーの設定
+        tokenizer.decoder = decoders.Metaspace()
+
+        # FastTokenizerの作成
+        fast_tokenizer = PreTrainedTokenizerFast(
+            tokenizer_object=tokenizer,
+            unk_token="[UNK]",
+            pad_token="[PAD]",
+            cls_token="[CLS]",
+            sep_token="[SEP]",
+            mask_token="[MASK]",
+        )
+        print(fast_tokenizer.get_vocab())
+        # トークナイザーの保存
+        if save_path:
+            fast_tokenizer.save_pretrained(save_path)
+            aargs.saved(save_path, f"保存されたTokenizerのパス save_path='{save_path}'")
+
+        test_tokenizer(fast_tokenizer)
