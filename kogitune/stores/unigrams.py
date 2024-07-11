@@ -29,6 +29,8 @@ VOCAB = [
     (EOS_TOKEN, 0.0), # EOD
     (UNK_TOKEN, 0.0), # UNK
     (MASK_TOKEN, 0.0), # MASK
+    ("\n", -0.01), # 改行
+
 ]
 
 def extract_vocab_score_from_spiece(model_path):
