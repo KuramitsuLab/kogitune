@@ -20,15 +20,15 @@ def rename_linenum_cli(**kwargs):
     rename_linenum_cli(**kwargs)
 
 def train_bpe_cli(**kwargs):
-    from kogitune.stores.sentencepieces import train_bpe_cli
+    from kogitune.stores.unigrams import train_bpe_cli
     train_bpe_cli(**kwargs)
 
 def train_unigram_cli(**kwargs):
-    from kogitune.stores.sentencepieces import train_unigram_cli
+    from kogitune.stores.unigrams import train_unigram_cli
     train_unigram_cli(**kwargs)
 
 def train_spm_cli(**kwargs):
-    from kogitune.stores.sentencepieces import train_spm_cli
+    from kogitune.stores.unigrams import train_spm_cli
     train_spm_cli(**kwargs)
 
 def filter_cli(**kwargs):
