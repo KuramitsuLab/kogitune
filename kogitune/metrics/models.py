@@ -338,24 +338,6 @@ class HFModel(Model):
         return elapsed_time
 
 
-def get_modeltag(aargs):
-    model_path = aargs['model_path|!!model_pathを設定しましょ']
-    if ':' in model_path:
-        _, _, model_path = model_path.partition(':')
-    model_path = basename(model_path, skip_dot=True)
-    if 'checkpoint' in model_path and model_path.endswith('000'):
-        model_path = f'{model_path[:-3]}k'
-    modeltag = aargs['model_tag|modeltag']
-    if modeltag is None:
-        if model_path.startswith('checkpoint-'):
-            adhoc.warn('modeltagを設定した方がいいよ！')
-        return model_path
-    else:
-        if model_path.startswith('checkpoint-'):
-            checkpoint = model_path.replace('checkpoint-', '')
-            modeltag = f'{modeltag}_cp{checkpoint}'
-    return modeltag
-
 def load_model_with_aargs(aargs):
     model_path = aargs['model_path|!!model_pathを設定しましょ']
     if model_path.startswith("openai:"):

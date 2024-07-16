@@ -182,7 +182,7 @@ def finetune_cli(**kwargs):
 
 
 def chain_eval_cli(**kwargs):
-    from kogitune.metrics import chain_eval_cli
+    from kogitune.metrics.chaineval import chain_eval_cli
     chain_eval_cli(**kwargs)
 
 def launch(subcommand, **kwargs):

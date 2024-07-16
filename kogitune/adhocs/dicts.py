@@ -82,6 +82,21 @@ def list_keys(keys: Union[List[str],str]):
         return keys
     return keys.split('|')
 
+def list_values(values: Any, map_fn=str):
+    if isinstance(values, list):
+        return values
+    if isinstance(values, (tuple,set)):
+        return list(values)
+    if isinstance(values, dict):
+        return list(values.keys())
+    if values is None:
+        return []
+    if isinstance(values, str):
+        if '|' in values: 
+            return [map_fn(x) for x in values.split('|')]
+        return [map_fn(x) for x in values.split(',')]
+    return [values]
+
 def normal_key(key):
     if key.endswith('_comma') or key.endswith('_camma'):
         return key[:-6]
@@ -138,6 +153,30 @@ def move_dict_keys(src_args:dict, dist_args: dict, *keys_list):
             if key in src_args:
                 dist_args[default_key] = src_args.pop(key)
                 break
+
+def transform_keys(dict_list: Union[List[dict], dict], transform:str):
+    """
+    transform='key1=key2|key2'
+    """
+    keys = transform.replace(r'\n', '\n').split('|')
+    transforms=[]
+    for key in keys:
+        key, _, format = key.partition('=')
+        transforms.append((key, format))
+    if isinstance(dict_list, dict):
+        new_list = [dict_list.copy()]
+    else:
+        new_list = [d.copy() for d in dict_list]
+    for data in new_list:
+        for key, format in transforms:
+            if format == '':
+                del data[key]
+            elif '{' in format:
+                data[key] = format.format(**data)
+            else:
+                data[key] = data[format]
+    return new_list[0] if isinstance(dict_list, dict) else new_list
+
 
 def filter_as_json(data: dict):
     if isinstance(data, (int, float, str, bool)) or data is None:
