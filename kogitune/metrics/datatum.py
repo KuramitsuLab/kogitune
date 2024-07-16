@@ -108,9 +108,9 @@ def prepare_result(result_file:str, datalist:List[dict], aargs):
             with zopen(result_file, 'rt') as f:
                 result_list = [json.loads(line) for line in f]
             if datalist is None or len(result_list) == len(datalist):
-                adhoc.warn(f'ファイル {result_file}に追記するよ')
+                adhoc.notice(f'ファイル {result_file}に追記するよ')
                 return result_list
-            adhoc.warn(f'ファイル {result_file}の一致しないから上書きするよ')
+            adhoc.notice(f'ファイル {result_file}の一致しないから上書きするよ')
         else:
             if datalist is None:
                 raise FileNotFoundError(result_file)

@@ -46,10 +46,10 @@ GENERATOR_ARGS = [
 ]
 
 def model_generator_args_from_path(model_path, aargs):
-    generator_args = aargs.get('generator_config|generator_kwargs|generator_args', {})
-    AdhocArguments.copy_keys_from_to(GENERATOR_ARGS, aargs, generator_args)    
+    generator_args = aargs['generator_config|generator_kwargs|generator_args'] or {}
+    adhoc.copy_dict_keys(aargs, generator_args, *GENERATOR_ARGS)    
     model_path, model_args = adhoc.parse_path_args(model_path)
-    AdhocArguments.move_keys_from_to(GENERATOR_ARGS, model_args, generator_args)
+    adhoc.move_dict_keys(model_args, generator_args, *GENERATOR_ARGS)
     return model_path, model_args, generator_args
 
 # =====================

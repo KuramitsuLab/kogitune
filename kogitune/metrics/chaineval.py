@@ -79,7 +79,6 @@ def eval_with_args(result_file, result_list, metric_list, aargs):
                 save_score(score_file, result)
             else:
                 print(result)
-    adhoc.close_section()
 
 def check_eval_only(aargs):
     files = aargs['files']

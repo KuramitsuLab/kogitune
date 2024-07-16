@@ -121,6 +121,24 @@ def copy_dict_keys(src_args:dict, dist_args: dict, *keys_list):
                 dist_args[default_key] = src_args[key]
                 break
 
+def copy_dict_keys(src_args:dict, dist_args: dict, *keys_list):
+    for keys in keys_list:
+        keys = list_keys(keys)
+        default_key = keys[0]
+        for key in keys:
+            if key in src_args:
+                dist_args[default_key] = src_args[key]
+                break
+
+def move_dict_keys(src_args:dict, dist_args: dict, *keys_list):
+    for keys in keys_list:
+        keys = list_keys(keys)
+        default_key = keys[0]
+        for key in keys:
+            if key in src_args:
+                dist_args[default_key] = src_args.pop(key)
+                break
+
 def filter_as_json(data: dict):
     if isinstance(data, (int, float, str, bool)) or data is None:
         return data

@@ -6,6 +6,36 @@ from .gpus import bf16_is_available
 from ..datasets import load_train_dataset, load_template
 from .callbacks import load_callbacks
 
+import torch
+from transformers import AutoModelForCausalLM
+
+def inspect_model(model):
+    # # モデルの構造を表示
+    # print("Model Structure:")
+    # print(model)
+    
+    # データタイプを表示
+    print("Parameter Data Types:")
+    for name, param in model.named_parameters():
+        print(f"{name}: {param.dtype}")
+    
+    # 全パラメータ数と学習可能なパラメータ数を表示
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"\nTotal parameters: {total_params}")
+    print(f"Trainable parameters: {trainable_params}")
+    
+    device = next(model.parameters()).device
+    # デバイスを表示
+    print(f"\nModel is loaded on device: {device}")
+
+    # # 特定のレイヤーや属性の情報を表示（例: 埋め込み層、出力層）
+    # print("\nEmbedding Layer Information:")
+    # print(model.transformer.wte)
+    # print("\nOutput Layer Information:")
+    # print(model.lm_head)
+
+
 def load_train_model(**kwargs):
     from transformers import AutoModelForCausalLM
     with adhoc.from_kwargs(**kwargs) as aargs:
@@ -18,9 +48,10 @@ def load_train_model(**kwargs):
         if 'trust_remote_code' not in model_args:
             model_args['trust_remote_code'] = True
         # MacOS 上でエラーになる
-        # if 'device_map' not in model_args:
-        #     model_args['device_map'] = "auto"
+        if 'device_map' not in model_args:
+            model_args['device_map'] = "auto"
         model = AutoModelForCausalLM.from_pretrained(model_path, **model_args)
+        inspect_model(model)
         return model
 
 
@@ -136,10 +167,7 @@ def finetune_cli(**kwargs):
     from transformers import TrainingArguments
     from trl import SFTTrainer, DataCollatorForCompletionOnlyLM
     with adhoc.from_kwargs(**kwargs) as aargs:
-        # dataset = load_dataset("kunishou/amenokaku-code-instruct")
         dataset = load_train_dataset()
-        # print(type(dataset[0]), dataset[0])
-        # print(dataset['instruction'][:5])
         template = load_template(sample=dataset[0])
 
         tokenizer = adhoc.load_tokenizer()
