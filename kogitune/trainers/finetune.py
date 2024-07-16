@@ -171,7 +171,7 @@ def finetune_cli(**kwargs):
             # formatting_func=formatting_prompts_func,
             data_collator=data_collator,
             max_seq_length=max_seq_length,
-            callbacks = load_callbacks(aargs),
+            callbacks = load_callbacks(),
         )
         result = trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         adhoc.notice('お疲れ様！ファインチューン完了です', result=result)

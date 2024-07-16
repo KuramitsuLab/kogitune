@@ -49,11 +49,11 @@ def load_config(config_file, default_value={}):
         return load_yaml(config_file)
     return default_value
 
-def load_text_list(list_file):
+def load_list(list_file, convert_fn=str):
     with open(list_file) as f:
-        return [line.strip() for line in f.readlines() if line.strip() != '' and not line.startswith('#')]
+        return [convert_fn(line.strip()) for line in f.readlines() if line.strip() != '' and not line.startswith('#')]
 
-def parse_key_value(key:str, value:str):
+def parse_key_value(key:str, value:Union[str,int]):
     if not isinstance(value, str):
         return value
     try:
@@ -70,9 +70,11 @@ def parse_key_value(key:str, value:str):
     if lvalue == 'false':
         return False
     if key.startswith('_list') and value.endsith('.txt'):
-        return load_text_list(value)
+        return load_list(value)
     if key.startswith('_config') and value.endsith('_args'):
         return load_config(value, default_value=value)
+    if key.startswith('_comma') and value.endsith('_camma'):
+        return value.split(',')
     return value
 
 def list_keys(keys: Union[List[str],str]):
@@ -80,20 +82,25 @@ def list_keys(keys: Union[List[str],str]):
         return keys
     return keys.split('|')
 
+def normal_key(key):
+    if key.endswith('_comma') or key.endswith('_camma'):
+        return key[:-6]
+    return key
+
 def get_key_value(dic: dict, keys:str, default_value=None, use_simkey = 1):
     keys = list_keys(keys)
-    default_key = keys[0]
+    default_key = normal_key(keys[0])
     for key in keys:
         if key.startswith('='):
             return default_key, parse_key_value(default_key, key[1:])
         if key.startswith('!!'):
             raise KeyError(f"'{default_key}' is not found in {list(dic.keys())}.")
         if key.startswith('!'):
-            value = parse_key_value(default_key, key[1:])
+            value = parse_key_value(key[0], key[1:])
             if use_ja():
-                aargs_print(f"`{default_key}`が設定されてないよ. デフォルト確認してな {default_key}={repr(value)}.")
+                aargs_print(f"`{default_key}`が設定されてないよ. デフォルト確認してね！ {default_key}={repr(value)}.")
             else:
-                aargs_print(f"FIXME: `{default_key}` is missing. Confirm default{default_key}={repr(value)}.")
+                aargs_print(f"FIXME: `{default_key}` is missing. Confirm default value{default_key}={repr(value)}.")
             return default_key, value
         if key in dic:
             return default_key, dic.get(key)

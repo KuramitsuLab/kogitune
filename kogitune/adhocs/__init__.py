@@ -5,6 +5,7 @@ from .prints import (
     notice, warn,
     saved, report_saved_files,
     start_timer, 
+    describe_counters,
 )
 
 from .dicts import (

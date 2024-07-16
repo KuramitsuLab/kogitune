@@ -165,17 +165,16 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
         pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         with zopen(filename) as f:
             line = f.readline()
-            c=0
-            while line:
+            c=1
+            pbar.update()
+            while line and c < N:
                 line = reader_fn(line)
-                c+=1
-                pbar.update()
                 yield line
-                if N != -1 and c >= N:
-                    break
                 line = f.readline()
+                c += 1
+                pbar.update()
+            pbar.close()
             yield line
-        pbar.close()
 
 def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip'):
     if isinstance(filenames, str):

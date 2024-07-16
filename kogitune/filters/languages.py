@@ -328,39 +328,49 @@ def patterns():
 
 all_patterns = patterns()
 
-def count_lang(text, min_word_count=5, patterns=all_patterns):
+def unique_len(list): return len(set(list))
+
+def count_lang(text, len_fn=len, patterns=all_patterns, min_word_count=5):
     results = Counter()
     for lang, pattern in patterns.items():
         matches = pattern.findall(text)
         # 一致する単語の数を数える
-        match_count = len(matches)
+        match_count = len_fn(matches)
         if match_count >= min_word_count:
             results[lang] = match_count
     return results
 
+def count_most_common_lang(text, len_fn=len, patterns=all_patterns, min_word_count=5):
+    """
+    最も多い言語を数える
+    """
+    most_common_lang = 'unknown'
+    for lang, pattern in patterns.items():
+        matches = pattern.findall(text)
+        match_count = len_fn(matches)
+        if match_count >= min_word_count:
+            most_common_lang = lang
+            min_word_count += 1
+    return most_common_lang
 
-def recongnize(text):
-    for text in chunk_text(text):
-        c = count_lang(text)
-        print(text)
-        print(c.most_common()[0][0])
 
-def detect_lang(text, min_word_count=5, max_chunk_length=200):
-    if len(text) < max_chunk_length:
-        return ['*']
-    lang_counter = Counter()
+def detect_lang(text: str, volumes: dict, 
+                patterns = all_patterns, unique_count=False,
+                min_word_count=5, max_chunk_length=200):
+    found_lang_list=[]
+    len_fn = unique_len if unique_count else len
     for text in chunk_text(text, max_length=max_chunk_length):
-        if len(text) < 40:
-            continue
-        counter = count_lang(text, min_word_count=min_word_count)
-        if len(counter) == 0:
-            continue
-        l, c = counter.most_common()[0]
-        if c  > 5:
-            lang_counter.update([l])
-    lang_list = [l for l, c in lang_counter.most_common()]
-    lang_list.sort()
-    return lang_list
+        lang = count_most_common_lang(text, len_fn, 
+                                      patterns=patterns, 
+                                      min_word_count=min_word_count)
+        volumes[lang] = volumes.get(lang, 0) + len(text)
+        if lang != 'unknown':
+            found_lang_list.append(lang)
+    if len(found_lang_list) == 0:
+        return ['unknown']
+    found_lang_list = list(set(found_lang_list))
+    found_lang_list.sort()
+    return found_lang_list
 
 class LangSetFilter(TextFilter):
     """
@@ -375,34 +385,33 @@ class LangSetFilter(TextFilter):
             'record_key|=lang',
             'langset',
             'max_chunk_length|=200',
-            'min_word_count|min_word|=5',
+            'unique_count|count_unique|unique|=True',
+            'min_word_count|min_word|=3',
             '_sample|sample|head|N|=0',
+            '_prefix|prefix|=',
             field=self, dic=self.rec,
         )
+        #self.volumes = {'', 0}
+        self.volumes = Counter()
+        self.counters = Counter()
         if self.langset is not None:
             if isinstance(self.langset, str):
                 self.langset = set(self.langset.split(','))
             else:
                 self.langset = set(self.langset)
         else:
-            adhoc.notice(f"フィルタする言語の指定がないね。こんな感じで指定を langset='en,ja'")
-            if self.sample == 0:
-                self.sample = 10000
-        if self.sample > 0:
-            self.samples = []
+            adhoc.notice(f"言語のフィルタはしません。もし必要なら langset='en,ja' のように")
 
     def __call__(self, text: str, record: dict):
-        detected = detect_lang(text, 
+        if len(text) < 40: return None
+        detected = detect_lang(text, self.volumes,
+                               unique_count=self.unique_count,
                                min_word_count=self.min_word_count, 
                                max_chunk_length=self.max_chunk_length)
+        key = ','.join(detected)
+        self.counters.update([key])
         if self.record_key:
-            record[self.record_key] = ','.join(detected)
-        if self.sample > 0:
-            locale = ','.join(detected)
-            if locale != '*':
-                self.samples.append(locale)
-            if len(self.samples) == self.sample:
-                self.describe()
+            record[self.record_key] = key
         if self.langset is None:
             return text
         for locale in detected:
@@ -411,17 +420,14 @@ class LangSetFilter(TextFilter):
         return None
 
     def describe(self):
-        if self.sample > 0:
-            counter = Counter()
-            sample=len(self.samples)
-            for target in self.samples:
-                counter.update([target])
-            for locale, count in counter.most_common():
-                if locale == '':
-                    locale = 'unknown'
-                adhoc.print(locale.ljust(24), f'{count*100/sample:2.3f}%', f'{count:12d}', face='')
-            self.sample = 0
-            self.samples = None
+        adhoc.describe_counters(self.volumes, 
+                                caption='各言語の出現率', 
+                                output_file=f'{self.prefix}langset.csv',
+                                columns = ['Language', 'Volume', '%'])
+        adhoc.describe_counters(self.counters, 
+                                caption='多言語率', 
+                                output_file=f'{self.prefix}langset_multi.csv',
+                                columns = ['Language', 'Doc', '%'])
 
 def langset(langset, **kwargs):
     return LangSetFilter(langset=langset, **kwargs)
@@ -430,3 +436,4 @@ def filter_langset_cli(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:
         aargs.errors = 'main'
         LangSetFilter(**kwargs).run_for_cli(**kwargs)
+

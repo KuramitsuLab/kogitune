@@ -9,15 +9,6 @@ import sentencepiece as spm
 import kogitune.adhocs as adhoc
 from kogitune.stores.files import list_filenames
 
-def is_model_bpe(model_path):
-    # モデルファイルを読み込む
-    with open(model_path, 'rb') as f:
-        model_data = f.read()
-    # モデルタイプを確認
-    if b'type: BPE' in model_data:
-        return True
-    return False
-
 EOS_TOKEN = '</s>'
 EOS_ID = 0
 UNK_TOKEN = '<unk>'
@@ -33,15 +24,15 @@ VOCAB = [
 
 ]
 
+def extract_vocab_score(tokenizer):
+    state = json.loads(bytes(tokenizer.model.__getstate__()).decode('utf-8'))
+    return clean_vocab(state['vocab'], remove_meta=False)
+
 def extract_vocab_score_from_spiece(model_path):
     sp_model = spm.SentencePieceProcessor()
     sp_model.Load(model_path)
     vocab = [(sp_model.id_to_piece(id), sp_model.get_score(id)) for id in range(sp_model.GetPieceSize())]
     return vocab
-
-def extract_vocab_score(tokenizer):
-    state = json.loads(bytes(tokenizer.model.__getstate__()).decode('utf-8'))
-    return clean_vocab(state['vocab'], remove_meta=False)
 
 def clean_vocab(vocab, remove_meta=True):
     ws = set(piece for piece, _ in vocab)
@@ -89,6 +80,14 @@ def add_vocab_score(vocab, words):
             vocab.append((w, score))
     return vocab
 
+def remove_vocab_score(vocab, words):
+    ws = set(words)
+    new_vocab = []
+    for piece, score in vocab:
+        if piece not in ws:
+            new_vocab.append((piece, score))
+    return new_vocab
+
 def unigram_tokenizer(vocab=VOCAB, unk_id=UNK_ID, byte_fallback=True):
     if byte_fallback:
         vocab = add_vocab_score(vocab, [(f'<0x{n:02X}>', -10.0) for n in range(0,256)])  
@@ -100,10 +99,25 @@ def unigram_tokenizer(vocab=VOCAB, unk_id=UNK_ID, byte_fallback=True):
         decoders.ByteFallback(),
         decoders.Metaspace()
     ])
-    # tokenizer.decoder = decoders.Metaspace()
     if byte_fallback:
         tokenizer.add_special_tokens(['<0x{i:02X}>' for i in range(0, 256)])
     return tokenizer
+
+def create_tokenizer(input_files, vocab, save_path, aargs):
+    add_list = aargs['add_list']
+    if add_list is not None:
+        adhoc.notice('語彙追加', add_list)
+        vocab = add_vocab_score(vocab, add_list)
+
+    remove_list = aargs['remove_list']
+    if remove_list is not None:
+        adhoc.notice('語彙削除', add_list)
+        vocab = remove_vocab_score(vocab, remove_list)
+
+    tokenizer = unigram_tokenizer(vocab, byte_fallback=True)
+    save_tokenizer(tokenizer, save_path=save_path)
+    token_fraction(input_files, save_path)
+    aargs.saved(save_path, f"Tokenizerの保存パス by save_path='{save_path}'")
 
 def save_tokenizer(tokenizer, 
                    save_path=None, 
@@ -123,14 +137,9 @@ def save_tokenizer(tokenizer,
     decoded = fast_tokenizer.decode(encoded)
     print(decoded)
 
-
 ###
 
-def train_unigram_cli(**kwargs):
-    with adhoc.aargs_from(**kwargs) as aargs:
-        files = list_filenames(aargs['files|!!'])
-        save_path = aargs['save_path']
-
+def train_unigram(input_files, aargs):
         tokenizer = unigram_tokenizer(byte_fallback=False)
 
         # トレーナーの設定
@@ -143,15 +152,44 @@ def train_unigram_cli(**kwargs):
         )
 
         with adhoc.start_timer() as timer:
-            adhoc.notice('UnigramModelモデルの訓練', options=aargs)
+            adhoc.notice('Unigramモデルの訓練', options=aargs)
             # トークナイザーのトレーニング
-            tokenizer.train(files, trainer)
+            tokenizer.train(input_files, trainer)
             timer.notice('お疲れ様')
-        
         # 再度、作る？
         vocab = extract_vocab_score(tokenizer)
-        tokenizer = unigram_tokenizer(vocab, byte_fallback=True)
-        save_tokenizer(tokenizer, save_path=save_path)
+        return vocab
+
+def train_unigram_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = list_filenames(aargs['files|!!'])
+        save_path = aargs['save_path|=unigram_tokenizer']
+        with TemporaryFiles(files, aargs['wakachi|=False'], merge=False) as temp:
+            vocab = train_unigram(temp.input_files, aargs)
+            create_tokenizer(temp.input_files, vocab, save_path, aargs)
+
+def train_spm(input_files, aargs):
+    kwargs = adhoc.extract_kwargs(spm.SentencePieceTrainer.train, 
+                                aargs, 
+                                excludes=['save_path', 
+                                            'files', 
+                                            'use_wakachi', 
+                                            'test_sentence'])
+    kwargs['input'] = input_files[0]
+    prefix = kwargs['model_prefix']
+    try:
+        with adhoc.start_timer() as timer:
+            adhoc.notice('SentencePieceモデルの訓練', options=kwargs)
+            spm.SentencePieceTrainer.train(**kwargs)
+            timer.notice('お疲れ様')
+    except OSError as e:
+        adhoc.notice('オプションが間違っている可能性が大', 
+                    _read_here='https://github.com/google/sentencepiece/blob/master/doc/options.md')
+        raise e
+    aargs.saved(f'{prefix}.model', f"SentencePieceモデル model_prefix='{prefix}'")
+    aargs.saved(f'{prefix}.vocab', 'SentencePiece語彙')
+    vocab = extract_vocab_score_from_spiece(f'{prefix}.model')
+    return vocab
 
 def train_spm_cli(**kwargs):
     import sentencepiece as spm
@@ -175,84 +213,109 @@ def train_spm_cli(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:
         files = list_filenames(aargs['files|!!'])
         use_wakachi = aargs['use_wakachi|=False']
-        save_path = aargs['save_path']
-        test=aargs['test|=🦊お疲れ様！']
+        save_path = aargs['save_path|=spm_tokneizer']
         with TemporaryFiles(files, use_wakachi) as temp:
             kwargs = adhoc.extract_kwargs(spm.SentencePieceTrainer.train, 
                                         aargs, 
-                                        excludes=['save_path', 
-                                                    'files', 
-                                                    'use_wakachi', 
-                                                    'test_sentence'])
-            kwargs['input'] = temp.input_file
-            prefix = kwargs['model_prefix']
-            try:
-                with adhoc.start_timer() as timer:
-                    adhoc.notice('SentencePieceモデルの訓練', options=kwargs)
-                    spm.SentencePieceTrainer.train(**kwargs)
-                    timer.notice('お疲れ様')
-            except OSError as e:
-                adhoc.notice('オプションが間違っている可能性が大', 
-                            _read_here='https://github.com/google/sentencepiece/blob/master/doc/options.md')
-                raise e
-            aargs.saved(f'{prefix}.model', f"SentencePieceモデル model_prefix='{prefix}'")
-            aargs.saved(f'{prefix}.vocab', 'SentencePiece語彙')
-            if save_path:
-                vocab = extract_vocab_score_from_spiece(f'{prefix}.model')
-                tokenizer = unigram_tokenizer(vocab)
-                save_tokenizer(tokenizer, save_path=save_path)
+                                        excludes=['save_path', 'files', 'use_wakachi', 
+                                                    'add_list', 'remove_list',
+                                                    'test'])
+            vocab = train_spm(temp.input_files, aargs)
+            create_tokenizer(temp.input_files, vocab, save_path, aargs)
 
 class TemporaryFiles(object):
-    def __init__(self, files, use_wakachi):
-        self.input_file = f'input_{os.getpid()}.txt'
-        self.remove_input_file = not os.path.exists(self.input_file)
+    def __init__(self, files, use_wakachi, merge=True):
+        self.merge = merge
+        self.input_files = []
+        self.remove_files = []
         if use_wakachi:
-            generate_sudachi_file(files, output_file=self.input_file)
+            self.convert_sudachi(files)
         else:
-            generate_input_file(files, output_file=self.input_file)
+            self.convert_nop(files)
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self.remove_input_file:
-            os.remove(self.input_file)
+        for file in self.remove_files:
+            os.remove(file)
 
-def generate_sudachi_file(files, output_file='temp'):
-    try:
-        from sudachipy import tokenizer
-        from sudachipy import dictionary
-    except ModuleNotFoundError as e:
-        print(e)
-        print('pip install sudachipy sudachidict_core')
-        raise e
+    def get_output_stream(self, seq: int, file=None):
+        if self.merge:
+            if file is not None:
+                return file
+        else:
+            if file is not None:
+                file.close()
+        output_file = f'input_{os.getpid()}_{seq}.txt'
+        self.input_files.append(output_file)
+        if not os.path.exists(output_file):
+            self.remove_files.append(output_file)
+        return open(output_file, 'w', encoding='utf-8')
 
-    # 辞書の準備
-    tokenizer_obj = dictionary.Dictionary().create()
+    def convert_nop(self, files):
+        fout = None
+        for i, file in enumerate(files):
+            fout = self.get_output_stream(i, file=fout)
+            with open(file, "r", encoding='utf-8') as fin:
+                for line in fin:
+                    fout.write(line + "\n")
+        if fout is not None:
+            fout.close()
 
-    # 分かち書きを行う関数
-    def wakachi(text):
-        mode = tokenizer.Tokenizer.SplitMode.C  # 分割モードを選択（A, B, Cがある）
-        text = text[:12000]
-        tokens = tokenizer_obj.tokenize(text, mode)
-        return " ".join([t.surface() for t in tokens])
+    def convert_sudachi(self, files):
+        try:
+            from sudachipy import tokenizer
+            from sudachipy import dictionary
+        except ModuleNotFoundError as e:
+            print(e)
+            print('pip install sudachipy sudachidict_core')
+            raise e
 
-    # ファイルを読み込んで分かち書きし、結果を書き出す
-    with open(output_file, "w", encoding="utf-8") as fout:
-        for file in files:
+        # 辞書の準備
+        tokenizer_obj = dictionary.Dictionary().create()
+
+        # 分かち書きを行う関数
+        def wakachi(text):
+            mode = tokenizer.Tokenizer.SplitMode.C  # 分割モードを選択（A, B, Cがある）
+            text = text[:12000]
+            tokens = tokenizer_obj.tokenize(text, mode)
+            return " ".join([t.surface() for t in tokens])
+
+        # ファイルを読み込んで分かち書きし、結果を書き出す
+        fout = None
+        for i, file in enumerate(files):
+            fout = self.get_output_stream(i, file=fout)
             with open(file, "r", encoding='utf-8') as fin:
                 for line in fin:
                     wakachi_line = wakachi(line.strip())
                     fout.write(wakachi_line + "\n")
-    return output_file
+        if fout is not None:
+            fout.close()
 
-def generate_input_file(files, output_file):
-    with open(output_file, "w", encoding="utf-8") as fout:
-        for file in files:
-            with open(file, "r", encoding='utf-8') as fin:
-                for line in fin:
-                    fout.write(line + "\n")
-    return output_file
+PERCENTILES = [.1,.25,.33,.5,.67,.75,.8,.9,.95,.99]
+
+def token_fraction(files, save_path):
+    from transformers import AutoTokenizer
+    import pandas as pd
+    tokenizer = AutoTokenizer.from_pretrained(save_path)
+    text_lengths = []
+    token_lengths = []
+    fractions = []
+    with open(files[0], "r", encoding='utf-8') as fin:
+        for line in fin:
+            text_length = len(line)
+            if text_length > 40:
+                tokens = tokenizer.encode(line)
+                token_length = len(tokens)
+                text_lengths.append(text_length)
+                token_lengths.append(token_length)
+                fractions.append(token_length/text_length)
+    df = pd.DataFrame({'token': token_lengths, 'text': text_lengths, 'token/text': fractions})
+    print(df.describe(percentiles=PERCENTILES))
+    df.to_csv(f'{save_path}/token_fraction.csv', index=False)
+    with open(f'{save_path}/token_fraction_describe.txt', 'w') as w:
+        print(df.describe(percentiles=PERCENTILES), file=w)
 
 
 def train_bpe_cli(**kwargs):
@@ -287,123 +350,4 @@ def train_bpe_cli(**kwargs):
 
         if save_path:
             save_tokenizer(tokenizer, save_path=save_path)
-
-"""
-
-def convert_fast_tokenizer(model_path, save_path='new_tokenizer'):
-    if is_model_bpe(model_path):
-        print('@BPE')
-        from tokenizers import SentencePieceBPETokenizer
-        # sentencepieceモデルを読み込む
-        tokenizer = SentencePieceBPETokenizer.from_file(model_path)
-    else:
-        print('@Unigram')
-        from tokenizers import Tokenizer, models, pre_tokenizers, processors, decoders
-        sp_model = spm.SentencePieceProcessor()
-        sp_model.Load(model_path)
-        vocab = [(sp_model.id_to_piece(id), sp_model.get_score(id)) for id in range(sp_model.GetPieceSize())]
-        tokenizer = Tokenizer(models.Unigram(vocab, 2, byte_fallback=True))
-        # # プレトークナイザーの設定
-        tokenizer.pre_tokenizer = pre_tokenizers.Metaspace()
-        # # デコーダーの設定
-        tokenizer.decoder = decoders.Metaspace()
-
-    fast_tokenizer = PreTrainedTokenizerFast(
-        tokenizer_object=tokenizer,
-        byte_fallback=True,
-        pad_token="<pad>",
-        eos_token="</s>",
-        unk_token="<unk>",
-        mask_token="…",
-    )
-    print(fast_tokenizer.get_vocab())
-    fast_tokenizer.save_pretrained(save_path)
-    test_tokenizer(fast_tokenizer)
-
-
-def remove_prefix_space(w, type=1, score=0.0):
-    if type == 1:
-        if w.startswith('▁') and len(w) > 1:
-            return w[1:]
-    return None
-
-def replace_spm(model_path, replace_fn):
-    os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION']='python'
-    from sentencepiece import sentencepiece_model_pb2 as pb2
-    m = pb2.ModelProto()
-    with open(model_path, 'rb') as f:
-        m.ParseFromString(f.read())
-    voc = set(piece.piece for piece in m.pieces)
-    for id, piece in enumerate(m.pieces):
-        replaced = replace_fn(piece.piece, type=piece.type, score=piece.score)
-        if replaced is not None:
-            #print(id, piece.piece, '=>', replaced, replaced in voc)
-            if replaced not in voc:
-                piece.piece = replaced
-    with open(model_path, 'wb') as f:
-        f.write(m.SerializeToString())
-
-def train_spm_cli(**kwargs):
-    import sentencepiece as spm
-    kwargs = dict (
-        #input='progtext_all.txt',  #data.txt
-        model_prefix='spiece',  #ngmodel
-        vocab_size=32000,
-        # num_threads=72,
-        # train_extremely_large_corpus=True,
-        normalization_rule_name='identity',
-        user_defined_symbols=['\n'],
-        max_sentencepiece_length=8, # 日本語は最大長8
-        split_digits=True,
-        byte_fallback=True,
-        split_by_whitespace=True, # モデル作成時は空白で区切る
-        allow_whitespace_only_pieces=True,
-        remove_extra_whitespaces=False,
-        pad_id=0, eos_id=1, unk_id=2, bos_id=-1,
-        #control_symbols = ['<pad>', '</s>', '<unk>', '…'],
-    ) | kwargs
-    with adhoc.aargs_from(**kwargs) as aargs:
-        files = list_filenames(aargs['files|!!'])
-        use_wakachi = aargs['use_wakachi|=False']
-        save_path = aargs['save_path']
-        test_sentence=aargs['test_sentence|=🦊お疲れ様！']
-        kwargs = adhoc.extract_kwargs(spm.SentencePieceTrainer.train, 
-                                      aargs, 
-                                      excludes=['save_path', 
-                                                'files', 
-                                                'use_wakachi', 
-                                                'test_sentence'])
-        input_file = f'input_{os.getpid()}.txt'
-        remove_input_file = not os.path.exists(input_file)
-        if use_wakachi:
-            generate_wakachi_file(files, output_file=input_file)
-        else:
-            generate_input_file(files, output_file=input_file)
-        kwargs['input'] = input_file
-        prefix = kwargs['model_prefix']
-        try:
-            with adhoc.start_timer() as timer:
-                adhoc.notice('SentencePieceモデルの訓練', options=kwargs)
-                spm.SentencePieceTrainer.train(**kwargs)
-                timer.notice('お疲れ様')
-        except OSError as e:
-            adhoc.notice('オプションが間違っている可能性が大', 
-                         _read_here='https://github.com/google/sentencepiece/blob/master/doc/options.md')
-            raise e
-        finally:
-            if remove_input_file:
-                os.remove(input_file)
-
-        if use_wakachi:
-            replace_spm(f'{prefix}.model', remove_prefix_space)
-        aargs.saved(f'{prefix}.model', f"SentencePieceモデル model_prefix='{prefix}'")
-        aargs.saved(f'{prefix}.vocab', 'SentencePiece語彙')
-        if save_path:
-            convert_fast_tokenizer(f'{prefix}.model', save_path=save_path)
-            aargs.saved(save_path, f"生成されたTokenizerのパス save_path='{save_path}'")
-
-"""
-
-
-
-
+            token_fraction(files, save_path)

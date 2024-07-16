@@ -31,6 +31,8 @@ def train_spm_cli(**kwargs):
     from kogitune.stores.unigrams import train_spm_cli
     train_spm_cli(**kwargs)
 
+## filter 系
+
 def filter_cli(**kwargs):
     from kogitune.filters.filters import filter_cli
     filter_cli(**kwargs)

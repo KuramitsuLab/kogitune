@@ -1,10 +1,12 @@
 
 from .main import aargs_from
 
-if 'get_ipython' in globals():
-    from tqdm.notebook import tqdm
-else:
-    from tqdm import tqdm
+# if 'get_ipython' in globals():
+#     from tqdm.notebook import tqdm
+# else:
+#     from tqdm import tqdm
+
+from tqdm.auto import tqdm
 
 def adhoc_tqdm(iterable, desc=None, total=None, **kwargs):
     with aargs_from(**kwargs) as aargs:
