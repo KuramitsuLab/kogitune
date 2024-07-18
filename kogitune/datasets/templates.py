@@ -205,6 +205,12 @@ def guess_template(sample: dict):
         return {
             "prompt": "{question}\n[選択肢|Choice]: [@(0)|0.|[0]] {choice0} [@(1)|1.|[1]] {choice1} [@(2)|2.|[2]] {choice2} [@(3)|3.|[3]] {choice3} [@(4)|4.|[4]] {choice4}\n",
             "reference": "{label}",
+            "choice": ["0", "1", "2", "3", "4"],
+            "prompt_0": "{question}\n{choice0}",
+            "prompt_1": "{question}\n{choice1}",
+            "prompt_2": "{question}\n{choice2}",
+            "prompt_3": "{question}\n{choice3}",
+            "prompt_4": "{question}\n{choice4}",
         }
     if has_schema(sample, 'question|A|B|C|D|answer'):
         # JMMLU

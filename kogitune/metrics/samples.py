@@ -45,13 +45,17 @@ def load_hfdataset(datapath:str, aargs):
             adhoc.notice("splitの指定がないから、split='test'で進めるよ。")
             dataset = dataset['test']
         else:
-            adhoc.warn(f'splitの指定が必要だよ')
             print(dataset)
+            raise ValueError(f'splitの指定が必要だよ')
+        
     datalist = [{k: v for k, v in item.items()} for item in dataset]
     dataname = basename(datapath)
     if 'name' in dataset_args:
         name = dataset_args['name']
         dataname = f'{dataname}_{name}'
+    split = dataset_args.get('split', 'test')
+    if split != 'test': ## split も追加する
+        dataname = f'{dataname}_{split}'
     return dataname, datalist
 
 def filter_datatag(name):
