@@ -311,8 +311,11 @@ class HFModel(Model):
         from transformers import pipeline
         super().__init__(model_path, aargs)
         self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path)
+        # なぜか必要らしい（↓）
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model, generator_args = load_model_generator_args(model_path, aargs)
+        self.device = next(self.model.parameters()).device
+        adhoc.print('デバイス//DEIVCE', self.device)
         self.generator = pipeline(
             "text-generation",
             model=self.model,
@@ -329,6 +332,7 @@ class HFModel(Model):
 
     def compute_loss(self, input_text: str)->float:
         inputs = self.tokenizer(input_text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
         labels = inputs["input_ids"].clone()
         # 不要なキーを除去
         inputs.pop("token_type_ids", None)

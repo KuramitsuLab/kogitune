@@ -86,7 +86,7 @@ def sample_file_name(datatag, modeltag):
     return f'{datatag}_x_{modeltag}.jsonl'
 
 def parse_tags(sample_file:str):
-    base_name = basename(sample_file).replace('.jsonl', '')
+    base_name = basename(sample_file, skip_dot=True).replace('.jsonl', '')
     if '_x_' not in base_name:
         return base_name, ''
     datatag, _, modeltag = base_name.partition('_x_')
