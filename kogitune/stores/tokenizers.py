@@ -50,11 +50,15 @@ def load_tokenizer(tokenizer: Union[Tokenizer, str] = None, **kwargs):
     with adhoc.from_kwargs(**kwargs) as aargs:
         tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|model_path|={DEFAULT_TOKENIZER}']
         if isinstance(tokenizer, str):
-            tokenizer, local_args = adhoc.parse_path_args(tokenizer)
-            if 'trust_remote_code' not in local_args:
-                local_args['trust_remote_code'] = True
-            if 'use_fast' not in local_args:
-                local_args['use_fast'] = False
+            tokenizer, local_args = adhoc.parse_path_args(tokenizer, parent_args=kwargs)
+            # if 'trust_remote_code' not in local_args:
+            #     local_args['trust_remote_code'] = True
+            # if 'use_fast' not in local_args:
+            #     local_args['use_fast'] = False
+            # デコーダーオンリーアーキテクチャ（GPT系列など）では、
+            # padding_side='left' を使用することが推奨されます。
+            if 'padding_side' not in local_args:
+                local_args['padding_side'] = 'left'
             adhoc.check_kwargs(local_args, AutoTokenizer.from_pretrained, path=tokenizer)
             tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
             adhoc.notice(f'トークンナイザー',

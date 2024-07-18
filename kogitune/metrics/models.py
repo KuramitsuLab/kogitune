@@ -310,7 +310,7 @@ class HFModel(Model):
     def __init__(self, model_path, aargs):
         from transformers import pipeline
         super().__init__(model_path, aargs)
-        self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path)
+        self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path, padding_side='left')
         # なぜか必要らしい（↓）
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model, generator_args = load_model_generator_args(model_path, aargs)
