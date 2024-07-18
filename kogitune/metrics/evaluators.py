@@ -1,7 +1,8 @@
 import evaluate
 import os
-import re
+import math 
 import numpy as np
+from scipy import stats
 
 from .commons import *
 
@@ -19,6 +20,7 @@ class Metric(object):
     
     def __init__(self, **kwargs):
         self.name = 'nop'
+        self.required_key = 'output'
 
     def __repr__(self):
         return self.name
@@ -29,23 +31,34 @@ class Metric(object):
     def evaluate(self, result_list, force_eval=False):
         scores = []
         for record in adhoc.tqdm(result_list, desc=f'{self.name}'):
-            if 'outputs' not in record:
-                break
             if force_eval or self.name not in record:
-                record[self.name] = self.eval_score(record)
-            scores.append(record[self.name])
+                if self.required_key in record:
+                    record[self.name] = self.eval_score(record)
+            if self.name in record:
+                scores.append(record[self.name])
         if len(scores) == 0:
-            adhoc.warn(f'{self.name} スコアが一つもないよ')
+            adhoc.notice(f'{self.name} スコアが一つもないよ')
             return None
         scores = np.array(scores)
-        # np.set_printoptions(precision=2)
-        # print(scores, scores.mean(), scores.min(), scores.max())
         return {
                 'model': '', 
                 'data': '', 
                 'metric': self.name, 
-                'mean': round(scores.mean(), 4), 
-                'scores': list(round(v, 3) for v in scores)}
+                'mean': round(scores.mean(), 3), 
+                'std_dev': round(scores.std(), 3), 
+                'median': round(np.percentile(scores, 50), 3), 
+                'tmean': round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
+                'scores': list(round(v, 2) for v in scores)
+        }
+    
+class metric_perplexity(Metric):
+    def __init__(self, **kwargs):
+        self.name = f'perplexity'
+        self.required_key = 'loss'
+
+    def eval_score(self, record:dict) -> float:
+        return math.exp(record['loss'])
+
             
 class metric_exact_match(Metric):
     """
@@ -54,6 +67,7 @@ class metric_exact_match(Metric):
 
     def __init__(self, strict=True, **kwargs):
         self.name = f'exact_match'
+        self.required_key = 'output'
         self.strict = strict
 
     def exact_match(self, output, reference):
@@ -62,7 +76,7 @@ class metric_exact_match(Metric):
         return 0
 
     def eval_score(self, record:dict) -> float:
-        outputs = record['outputs']
+        outputs = listfy(record['output'])
         reference = record['reference']
         scores = np.array([self.exact_match(output, reference) for output in outputs])
         return scores.mean()
@@ -92,11 +106,12 @@ class metric_pass_at_k(Metric):
     def __init__(self, **kwargs):
         self.k = kwargs.get('k', 1)        
         self.name = f'pass@{self.k}'
+        self.required_key = 'output'
         self.tool = evaluate.load('code_eval')  # code_eval
 
     def eval_score(self, record):
-        test_cases = [record['reference']]
-        extracted_code = [humaneval_extract(record['input'], x) for x in record['outputs']]
+        test_cases = [record['test']]
+        extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
         record['generated_code'] = extracted_code
         candidates = [extracted_code]
         pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
@@ -196,7 +211,7 @@ def evaluate_metric(result_list, metric_path, force_eval=False):
     name = metric_name.replace('@', '_at_')
     name = f'metric_{name}'
     if name not in globals():
-        adhoc.warn(f'{metric_name}が見つかりません')
+        adhoc.notice(f'{metric_name}が見つかりません')
         return None
     metric = globals()[name](**metric_args)
     return metric.evaluate(result_list, force_eval=force_eval)

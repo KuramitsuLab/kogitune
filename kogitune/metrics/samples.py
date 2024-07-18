@@ -6,7 +6,7 @@ from datetime import datetime
 
 from .commons import *
 from ..datasets import load_template
-from .models import load_model
+from .models import load_model_from
 from .evaluators import evaluate_metric
 
 def load_testdata(testdata: str, aargs):
@@ -36,6 +36,9 @@ def load_hfdataset(datapath:str, aargs):
     dataset_args = aargs['dataset_config|dataset_args']
     if dataset_args is None:
         datapath, dataset_args = adhoc.parse_path_args(datapath)
+    if 'dataset_name' in aargs:
+        # dataset_name test_list で設定されるの優先する 
+        dataset_args['name'] = aargs['dataset_name']
     dataset = datasets.load_dataset(datapath, **dataset_args)
     if isinstance(dataset, datasets.dataset_dict.DatasetDict):
         if 'test' in dataset:
@@ -77,6 +80,19 @@ def load_testdata_from(aargs):
     adhoc.print(f'テストデータ({testdata})を確認しておいてね\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=True)
     return datatag, datalist
 
+## sample_file
+
+def sample_file_name(datatag, modeltag):
+    return f'{datatag}_x_{modeltag}.jsonl'
+
+def parse_tags(sample_file:str):
+    base_name = basename(sample_file).replace('.jsonl', '')
+    if '_x_' not in base_name:
+        return base_name, ''
+    datatag, _, modeltag = base_name.partition('_x_')
+    return datatag, modeltag
+
+## 
 
 def load_sample_list(sample_file:str):
     with zopen(sample_file, 'rt') as f:
@@ -102,7 +118,7 @@ def _guess_uniquekey(datalist: List[dict]):
 def prepare_sample_list(sample_file: str, datalist:List[dict], aargs):
     if os.path.exists(sample_file):
         sample_list = load_sample_list(sample_file)
-        if datalist is None or len(sample_list) == len(datalist):
+        if len(sample_list) == len(datalist):
             adhoc.notice(f'既存ファイル {sample_file}に追記するよ')
             return sample_list
     # 新しく sample_list を作る
@@ -151,42 +167,40 @@ def modeltag_from(aargs):
     return modeltag
 
 def generate_from(aargs):
+    eval_type = aargs['eval_type|=generation']
     datatag, datalist = load_testdata_from(aargs)
     template = load_template(sample=datalist[0], aargs=aargs)
-
     modeltag = modeltag_from(aargs)
-    sample_file = f'{datatag}__{modeltag}.jsonl'
-
+    sample_file = sample_file_name(datatag, modeltag)
     sample_list = prepare_sample_list(sample_file, datalist, aargs)
-    if 'input' not in sample_list[0]:
-        template.load_to_sample_list(datalist, sample_list)
+    result_key = template.load_sample(eval_type, datalist, sample_list)
 
     n = aargs['num_return_sequences|n|N|=1']
-    if not needs_generation(sample_list, n):
-        save_sample_list(sample_file, sample_list)      
-        return sample_file
-
-    def saving():
-        save_sample_list(sample_file, sample_list)      
 
     test_run = aargs[f'test_run|head|={len(sample_list)}']
-    if test_run < len(sample_list):
-        adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ試してみます')    
 
-    model = load_model(aargs=aargs)
-    model.configure(template, datalist)
-    adhoc.notice('生成をはじめます', model=model, n=n, generator_args=model.generator_args)
+    model = load_model_from(aargs)
+    if eval_type != 'loss' and eval_type != 'choice':
+        model.configure(template, datalist)
+    test_list = [sample for sample in sample_list if result_key not in sample]
+    if len(test_list) == 0:
+        return sample_file
+    adhoc.notice('生成をはじめます', model=model, eval_type=eval_type, n=n, generator_args=model.generator_args)
+    if test_run < len(test_list):
+        adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ、試してみます')
+        test_list = test_list[:test_run]
     try:
         with adhoc.start_timer() as timer:
-            sample_list = [sample for sample in sample_list[:test_run] if 'outputs' not in sample]
-            model.generate_streaming(sample_list, 
-                                        n=n, 
-                                        saving_func=saving, 
-                                        batch_size=aargs['eval_batch_size|batch_size|=2'])
-            timer.notice('お疲れ様！！ 生成終わりました', total=len(sample_list))
+            model.predict_sample(test_list, 
+                                 eval_type=eval_type, 
+                                 n=n, 
+                                 batch_size=aargs['eval_batch_size|batch_size|=2'])
+            timer.notice('お疲れ様！！ 生成終わりました', total=len(test_list))
     finally:
         save_sample_list(sample_file, sample_list)
     return sample_file
+
+
 
 def get_metric_list(aargs):
     metric_list = aargs['metric_list|metric']
@@ -194,8 +208,9 @@ def get_metric_list(aargs):
 
 def eval_from(datatag, modeltag, aargs):
     metric_list = get_metric_list(aargs)
-    sample_file = f'{datatag}__{modeltag}.jsonl'
+    sample_file = f'{datatag}_x_{modeltag}.jsonl'
     sample_list = load_sample_list(sample_file)
+    print('@', metric_list, sample_file)
     for metric_path in metric_list:
         result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
@@ -203,7 +218,7 @@ def eval_from(datatag, modeltag, aargs):
             result['model'] = modeltag
             result['data'] = datatag
             print(result)
-            result['datetime'] = datetime.now(ZoneInfo("Asia/Tokyo")).isoformat()
+            result['datetime'] = datetime.now().isoformat()
             result['contact'] = getpass.getuser()
             score_file = aargs[f'output_file|={datatag}_score.jsonl']
             save_score(score_file, result)
