@@ -271,8 +271,8 @@ def load_model_generator_args(model_path, aargs):
     if 'trust_remote_code' not in model_args:
         model_args['trust_remote_code'] = True
     # MacOS 上でエラーになる
-    # if 'device_map' not in model_args:
-    #     model_args['device_map'] = "auto"
+    if 'device_map' not in model_args:
+        model_args['device_map'] = "auto"
     if model_args.get('attn_implementation')=="flash_attention_2":
         model_args['torch_dtype'] = torch.bfloat16
     if aargs['use_4bit|=False']:
@@ -311,6 +311,7 @@ class HFModel(Model):
         from transformers import pipeline
         super().__init__(model_path, aargs)
         self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path)
+        self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model, generator_args = load_model_generator_args(model_path, aargs)
         self.generator = pipeline(
             "text-generation",
