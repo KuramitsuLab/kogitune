@@ -39,7 +39,11 @@ def load_hfdataset(datapath:str, aargs):
     if 'dataset_name' in aargs:
         # dataset_name test_list で設定されるの優先する 
         dataset_args['name'] = aargs['dataset_name']
-    dataset = datasets.load_dataset(datapath, **dataset_args)
+    try:
+        dataset = datasets.load_dataset(datapath, **dataset_args)
+    except ValueError as e:
+        adhoc.print('データセットのパラメータが変だよ', e)
+        raise e
     if isinstance(dataset, datasets.dataset_dict.DatasetDict):
         if 'test' in dataset:
             adhoc.notice("splitの指定がないから、split='test'で進めるよ。")

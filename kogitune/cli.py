@@ -204,7 +204,7 @@ def main():
     # メインのパーサーを作成
     namespace = globals()
     subcommands = [name.replace('_cli', '') for name in namespace.keys() if name.endswith('_cli')]
-    with adhoc.parse_main_args(subcommands=subcommands) as aargs:
+    with adhoc.parse_main_args(use_subcmd=subcommands) as aargs:
         aargs.errors = 'main'
         cmd = aargs['subcommand']
         funcname = f'{cmd}_cli'
