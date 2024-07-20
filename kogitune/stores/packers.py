@@ -1,4 +1,7 @@
 from typing import List, Union, Tuple
+import numpy as np
+import pandas as pd
+import random
 from multiprocessing import Pool
 
 import kogitune.adhocs as adhoc
@@ -108,9 +111,58 @@ class Packer(object):
             rec['line_blocks'] = rec.get('line_blocks', 0) + 1
         return end
     
+class NoizePacker(Packer):
+    def __init__(self, tokenizer, aargs):
+        super().__init__(tokenizer, aargs)
+        self.noize_map = self.load_token_noize_prob(aargs['noize_map|noize|!!'])
+        self.mask_token_id = aargs['mask_token_id|mask_id']
+        if self.mask_token_id is None:
+            mask_token = aargs['mask_token|mask']
+            if mask_token is not None:
+                ids = self.tokenizer.convert_tokens_to_ids([mask_token])
+                adhoc.notice('マスクトークン', mask_token, ids)
+                self.mask_token_id = ids[0]
+        self.random_seed = aargs['random_seed|=42']
+
+    def load_token_noize_prob(self, noize_path):
+        noize_ratio = noize_path if isinstance(noize_path, float) else 0.05
+        noize_map = np.full(self.tokenizer.vocab_size, noize_ratio)
+        if isinstance(noize_path, str):
+            df = pd.read_csv(noize_path)
+            for w, r in zip(df['token'], df['ratio']):
+                ids = self.tokenizer.convert_tokens_to_ids([w])
+                noize_map[ids[0]] = r
+            adhoc.notice(f'平均ノイズ確率 {noize_map.mean()}', filepath=noize_path)
+        noize_map[self.tokenizer.eos_token_id] = 0.0
+        return noize_map
+
+    def encode_text(self, text, rec, include_eos=True):
+        tokens = super().encode_text(text, rec, include_eos=include_eos)
+        random.seed(self.random_seed)
+        new_tokens=[tokens[0]]
+        if self.mask_token_id is None:
+            for t in tokens[1:]:
+                if random.random() > self.noize_map[t]:
+                    new_tokens.append(t)
+            rec['noize_tokens'] = rec.get('noize_tokens', 0) + (len(tokens) - len(new_tokens))
+        else:
+            masked=0
+            for t in tokens[1:]:
+                if random.random() > self.noize_map[t]:
+                    new_tokens.append(t)
+                elif new_tokens[-1] != self.mask_token_id:
+                    new_tokens.append(self.mask_token_id)
+                    masked+=1
+            rec['noize_tokens'] = rec.get('noize_tokens', 0) + (len(tokens) - (len(new_tokens)-masked))
+            rec['masked_tokens'] = rec.get('masked_tokens', 0) + masked
+        self.random_seed = random.randint(0, 2**31)
+        return new_tokens
+
 def find_packer(tokenizer, aargs):
     data_type = aargs['datatype|data_type|=text']
     if data_type == 'text':
+        if 'noize_map' in aargs or 'noize' in aargs:
+            return NoizePacker(tokenizer, aargs)
         return Packer(tokenizer, aargs)
     else: # ファインチューニング用
         # packer = SimpleTextpacker(tokenizer, args)
@@ -190,37 +242,32 @@ def store_files(files: List[str], tokenizer=None, **kwargs):
     return str(os.path.abspath(store_path))
 
 def make_report(rec, block_size):
+    u = lambda x: adhoc.format_unit(x)
     ss = []
     texts = rec['texts']
-    ss.append(f'文書数//texts {adhoc.format_unit(texts, scale=1000)}')
     chars = rec['chars']
-    ss.append(f'文字数//chars {adhoc.format_unit(chars, scale=1000)}')
-    if texts != 0:
-        ss.append(f'平均文字数(chars/texts) {adhoc.format_unit(round(chars/texts,3), scale=1000)}')
     tokens = rec['tokens']
-    ss.append(f'トークン数//tokens {adhoc.format_unit(tokens, scale=1000)}')
-    if chars != 0:
-        ss.append(f'トークン効率(tokens/chars) {adhoc.format_unit(round(tokens/chars,3), scale=1000)}')
-    if texts != 0:
-        ss.append(f'平均トークン数(tokens/texts) {adhoc.format_unit(round(tokens/texts,3), scale=1000)}')
-    blocks = rec['blocks']
-    ss.append(f'ブロック数//blocks {adhoc.format_unit(blocks, scale=1000)}')
-    ss.append(f'有効トークン数 {adhoc.format_unit(blocks * block_size, scale=1000)}')
-    ss.append(f'トークン有効率 {blocks * block_size*100/tokens:.2f}%')
+    ss.append(f'文書数//texts {u(texts)} 文字数//chars {u(chars)} トークン数 {u(tokens)}')
+    if texts > 0:
+        ss.append(f'平均文字数(chars/texts) {u(round(chars/texts,3))} トークン効率(tokens/chars) {u(round(tokens/chars,3))} 平均トークン数(tokens/texts) {u(round(tokens/texts,3))}')
     trancated_tokens = rec.get('trancated_tokens', 0)
     if trancated_tokens > 0:
-        ss.append(f'切り詰め//trancated {adhoc.format_unit(trancated_tokens, scale=1000)}トークン')
-        ss.append(f'切り詰め率 {trancated_tokens*100/tokens:.2f}%')
+        ss.append(f'切り詰め {trancated_tokens*100/tokens:.2f}% {u(trancated_tokens)}トークン')
     padding_tokens = rec.get('padding_tokens', 0)
     if padding_tokens > 0:
-        ss.append(f'パッディング//padding {adhoc.format_unit(padding_tokens, scale=1000)}トークン')
-        ss.append(f'パッディング率 {padding_tokens*100/tokens:.2f}%')
+        ss.append(f'パッディング {padding_tokens*100/tokens:.2f}% {u(padding_tokens)}トークン')
     overlap_tokens = rec.get('overlap_tokens', 0) 
     if overlap_tokens > 0:
-        ss.append(f'オーバラップ//overlap_tokens {adhoc.format_unit(overlap_tokens, scale=1000)}トークン')
-        ss.append(f'オーバーラップ率 {overlap_tokens*100/tokens:.2f}%')
+        ss.append(f'オーバーラップ {overlap_tokens*100/tokens:.2f}% {u(overlap_tokens)}トークン')
+    noize_tokens = rec.get('noize_tokens', 0) 
+    if noize_tokens > 0:
+        ss.append(f'ノイズ率 {noize_tokens*100/tokens:.2f}% {u(noize_tokens)}トークン')
+    masked_tokens = rec.get('masked_tokens', 0) 
+    if masked_tokens > 0:
+        ss.append(f'マスク率 {masked_tokens*100/tokens:.2f}% {u(masked_tokens)}トークン')
+    blocks = rec['blocks']
+    ss.append(f'ブロック数 {u(blocks)} トークン数 {u(blocks * block_size)} 有効率 {blocks * block_size*100/tokens:.2f}%')
     line_blocks = rec.get('line_blocks',0)
-    ss.append(f'行頭ブロック {adhoc.format_unit(line_blocks, scale=1000)}ブロック')
-    ss.append(f'行頭ブロック率 {line_blocks*100/blocks:.2f}%')
+    ss.append(f'行頭ブロック {line_blocks*100/blocks:.2f}% {u(line_blocks)}ブロック')
     adhoc.print('\n'.join(ss),face='')
     

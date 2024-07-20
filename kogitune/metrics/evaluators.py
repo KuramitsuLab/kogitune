@@ -18,8 +18,8 @@ class Metric(object):
     evaluate them based on specified metrics, and calculate scores.
     """
     
-    def __init__(self, **kwargs):
-        self.name = 'nop'
+    def __init__(self, name, **kwargs):
+        self.name = name
         self.required_key = 'output'
 
     def __repr__(self):
@@ -27,6 +27,9 @@ class Metric(object):
 
     def eval_score(self, record:dict)->float:
         return 0.0
+
+    def calc_scores(self, scores: np.ndarray, results: dict):
+        return results
 
     def evaluate(self, result_list, force_eval=False):
         scores = []
@@ -40,35 +43,39 @@ class Metric(object):
             adhoc.notice(f'{self.name} スコアが一つもないよ')
             return None
         scores = np.array(scores)
-        return {
-                'model': '', 
-                'data': '', 
-                'metric': self.name, 
-                'mean': round(scores.mean(), 3), 
-                'std_dev': round(scores.std(), 3), 
-                'median': round(np.percentile(scores, 50), 3), 
-                'tmean': round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
-                'scores': list(round(v, 2) for v in scores)
+        results = {
+            'model': '', 
+            'data': '', 
+            'metric': self.name, 
+            'mean': round(scores.mean(), 3), 
         }
+        results = self.calc_scores(scores, results)
+        if 'scores' not in results: 
+            results['scores'] = list(round(v, 2) for v in scores)
+        return results
+        #         'scores': 
+        # }
     
 class metric_perplexity(Metric):
     def __init__(self, **kwargs):
-        self.name = f'perplexity'
+        super(Metric).__init__('perplexity', **kwargs)
         self.required_key = 'loss'
 
     def eval_score(self, record:dict) -> float:
         return math.exp(record['loss'])
 
+    def calc_scores(self, scores, results):
+        results['std_dev'] = round(scores.std(), 3) 
+        results['tmean'] = round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
             
 class metric_exact_match(Metric):
     """
     コード評価用Evaluatorクラス。HuggingFaceのevaluate-metric/code_evalを使用してスコアを算出する。
     """
 
-    def __init__(self, strict=True, **kwargs):
-        self.name = f'exact_match'
-        self.required_key = 'output'
-        self.strict = strict
+    def __init__(self, **kwargs):
+        super(Metric).__init__('exact_match', **kwargs)
+        self.strict = kwargs.get('strict', True)
 
     def exact_match(self, output, reference):
         if (self.strict and reference == output) or reference in output:
@@ -80,7 +87,6 @@ class metric_exact_match(Metric):
         reference = record['reference']
         scores = np.array([self.exact_match(output, reference) for output in outputs])
         return scores.mean()
-
 
 # HumanEval pass@1
 #
@@ -104,8 +110,8 @@ class metric_pass_at_k(Metric):
     """
 
     def __init__(self, **kwargs):
-        self.k = kwargs.get('k', 1)        
-        self.name = f'pass@{self.k}'
+        self.k = kwargs.get('k', 1)
+        super(Metric).__init__(f'pass@{self.k}')
         self.required_key = 'output'
         self.tool = evaluate.load('code_eval')  # code_eval
 
@@ -119,6 +125,19 @@ class metric_pass_at_k(Metric):
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
+
+class metric_f1(Metric):
+    def __init__(self, **kwargs):
+        super(Metric).__init__('perplexity', **kwargs)
+        self.required_key = 'loss'
+
+    def eval_score(self, record:dict) -> float:
+        return math.exp(record['loss'])
+
+    def calc_scores(self, scores, results):
+        results['std_dev'] = round(scores.std(), 3) 
+        results['tmean'] = round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
+
 
 """
 # 日本語用のtokenizer

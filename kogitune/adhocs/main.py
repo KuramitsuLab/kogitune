@@ -105,15 +105,14 @@ def parse_argv(argv: List[str], expand_config='config'):
 
 def parse_main_args(use_subcmd=False, use_environ=True, expand_config='config'):
     env = use_os_environ() if use_environ else None    
-    if use_subcmd:
-        if len(sys.argv) == 1:
-            print(f'{sys.argv[0]} requires subcommands')
-            sys.exit(0)
+    if use_subcmd and len(sys.argv) > 1:
         args = parse_argv(sys.argv[2:], expand_config=expand_config)
-        args['subcommdn'] = sys.argv[1]
+        args['subcommand'] = sys.argv[1]
     else:
         args = parse_argv(sys.argv[1:], expand_config=expand_config)
-    return AdhocArguments(args, env, caller='main')
+    aargs = AdhocArguments(args, env, caller='main')
+    aargs.errors='main'
+    return aargs
 
 import importlib
 
