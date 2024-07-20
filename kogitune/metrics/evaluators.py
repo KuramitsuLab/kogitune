@@ -138,40 +138,57 @@ class metric_f1(Metric):
         results['std_dev'] = round(scores.std(), 3) 
         results['tmean'] = round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
 
+from .similarites import (
+    jaccard_similarity, cosine_similarity, 
+    bleu_score, rouge_l, levenshtein_similarity, 
+    simple_tokenize,
+)
+
+class metric_editsim(Metric):
+    def __init__(self, **kwargs):
+        super(Metric).__init__('editsim', **kwargs)
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        record['scores'] = [levenshtein_similarity(candidate, reference) 
+                          for candidate in listfy(record['output'])]
+        scores = np.array(record['scores'])
+        return scores.mean()
+
+    def calc_scores(self, scores, results):
+        results['std_dev'] = round(scores.std(), 3) 
+
+
+class metric_jaccard(Metric):
+    def __init__(self, **kwargs):
+        super(Metric).__init__('jaccard', **kwargs)
+        self.tokenize = simple_tokenize
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        scores = np.array([jaccard_similarity(candidate, reference, tokenize=self.tokenize) 
+                          for candidate in listfy(record['output'])])
+        return scores.mean()
+
+    def calc_scores(self, scores, results):
+        results['std_dev'] = round(scores.std(), 3) 
+
+class metric_cosine(Metric):
+    def __init__(self, **kwargs):
+        super(Metric).__init__('cosine', **kwargs)
+        self.tokenize = simple_tokenize
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        scores = np.array([cosine_similarity(candidate, reference, tokenize=self.tokenize) 
+                          for candidate in listfy(record['output'])])
+        return scores.mean()
+
+    def calc_scores(self, scores, results):
+        results['std_dev'] = round(scores.std(), 3) 
+
 
 """
-# 日本語用のtokenizer
-# Python: 正規表現による簡易版形態素解析
-# https://qiita.com/kinoshita_yuri/items/e15f143981f1616994ed
-    
-def tokenize_japaneses(text):
-    pJA = re.compile(r"/|[A-Z]+|[a-z]+|[ァ-ンー]+|[ぁ-ん-]+|[ァ-ヶ]+|[一-龍]+|[。、]|/")
-    text_m = []
-    m = pJA.findall(text)
-    for row in m:
-        if re.compile(r'^[あ-ん]+$').fullmatch(row):
-            if row[0] in 'はがのにへともでを':
-                prefix = row[0]
-                token = row[1:]
-                text_m.append(prefix)
-                if (len(token) > 0):
-                    text_m.append(token)
-            elif row[-2:] in 'のでからまで':
-                token = row[0:-2]
-                suffix = row[-2:]
-                text_m.append(token)
-                text_m.append(suffix)
-            elif row[-1:] in 'もはがでを':
-                token = row[0:-1]
-                suffix = row[-1:]
-                text_m.append(token)
-                text_m.append(suffix)
-            else:
-                text_m.append(row)
-        else:
-            text_m.append(row)
-    return text_m
-
 class BLEUEvaluator(Evaluator):
     # def calculate(self, dataset, record):
 
