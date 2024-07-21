@@ -1,4 +1,4 @@
-from .replaces_utils import *
+from .patterns import *
 
 ### コード用
 

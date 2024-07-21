@@ -11,40 +11,51 @@ def beta_cli(**kwargs):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
 
-def count_lines_cli(**kwargs):
-    from kogitune.stores.files import extract_linenum_from_filename, rename_with_linenum, get_linenum
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        for file in aargs['files']:
-            n = extract_linenum_from_filename(file)
-            if n is None:
-                n = get_linenum(file)
-                file = rename_with_linenum(file, n)
+def split_lines_cli(**kwargs):
+    from kogitune.stores.files import split_lines_cli
+    split_lines_cli(**kwargs)
 
-def maxmin_cli(**kwargs):
-    from kogitune.filters import maxmin
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        files = aargs.pop('files|!!ファイルを一つ以上与えてください')
-        score_path = aargs.pop('score_path|score|eval|!!scoreを設定してください')
-        output_path = aargs.pop('output_file|output')
-        sample = aargs.pop('histogram_sample|sample|head|=10000')
-        kwargs = aargs.as_dict()
-        if 'record_key' not in kwargs:
-            kwargs['record_key'] = 'score'
-        text_filter = maxmin(score_path, histogram_sample=sample, **kwargs)
-        text_filter.from_jsonl(files, output_path=output_path, N=sample, num_workers=1)
+def rename_linenum_cli(**kwargs):
+    from kogitune.stores.files import rename_linenum_cli
+    rename_linenum_cli(**kwargs)
+
+def train_bpe_cli(**kwargs):
+    from kogitune.stores.unigrams import train_bpe_cli
+    train_bpe_cli(**kwargs)
+
+def train_unigram_cli(**kwargs):
+    from kogitune.stores.unigrams import train_unigram_cli
+    train_unigram_cli(**kwargs)
+
+def train_spm_cli(**kwargs):
+    from kogitune.stores.unigrams import train_spm_cli
+    train_spm_cli(**kwargs)
+
+## filter 系
 
 def filter_cli(**kwargs):
-    from kogitune.filters import load_filter
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        files = aargs['files|!!ファイルを一つ以上与えてください']
-        filter_config = aargs['filter_config|!!filter_configを設定してください']
-        text_filter = load_filter(filter_config)
-        output_file = aargs['output_file']
-        if output_file is None:
-            adhoc.notice('output_fileの指定がないから、少しだけ処理して表示するよ')
-        text_filter.from_jsonl(files, output_path=output_file)
+    from kogitune.filters.filters import filter_cli
+    filter_cli(**kwargs)
+    
+def replace_cli(**kwargs):
+    from kogitune.filters.replaces import replace_cli
+    replace_cli(**kwargs)
+
+def filter_maxmin_cli(**kwargs):
+    from kogitune.filters.maxmins import filter_maxmin_cli
+    filter_maxmin_cli(**kwargs)
+
+def filter_langset_cli(**kwargs):
+    from kogitune.filters.languages import filter_langset_cli
+    filter_langset_cli(**kwargs)
 
 ## store 系
+
+def pack_cli(**kwargs):
+    from .stores import store_files
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        files = aargs['files|!!ファイルを一つ以上与えてください']
+        store_files(files, skip_validation=False)
 
 def store_cli(**kwargs):
     from .stores import store_files
@@ -107,8 +118,8 @@ def freeze_cli(**kwargs):
 
 def token_stat_cli(**kwargs):
     import pandas as pd
-    from .trainers import DatasetComposer
-    with DatasetComposer(prefetch=0, **kwargs) as dc:
+    from .trainers import DatasetRecipe
+    with DatasetRecipe(prefetch=0, **kwargs) as dc:
         dc.with_format("numpy")
         tokenizer = dc.get_tokenizer()
         token_ids = list(range(0, tokenizer.vocab_size))
@@ -171,15 +182,36 @@ def finetune_cli(**kwargs):
 
 
 def chain_eval_cli(**kwargs):
-    from kogitune.metrics import chain_eval_cli
+    from kogitune.metrics.chaineval import chain_eval_cli
     chain_eval_cli(**kwargs)
 
+def eval_cli(**kwargs):
+    from kogitune.metrics.chaineval import chain_eval_cli
+    chain_eval_cli(**kwargs)
+
+def eval_loss_cli(**kwargs):
+    from kogitune.metrics.chaineval import eval_loss_cli
+    eval_loss_cli(**kwargs)
+
+def eval_choice_cli(**kwargs):
+    from kogitune.metrics.chaineval import eval_choice_cli
+    eval_choice_cli(**kwargs)
+
+
+
+def launch(subcommand, **kwargs):
+    fname = f'{subcommand}_cli'
+    if '.' in fname:
+        cls = adhoc.load_class(fname)
+    else:
+        cls = adhoc.load_class(f'kogitune.cli.{fname}')
+    cls(**kwargs)
 
 def main():
     # メインのパーサーを作成
     namespace = globals()
     subcommands = [name.replace('_cli', '') for name in namespace.keys() if name.endswith('_cli')]
-    with adhoc.parse_main_args(subcommands=subcommands) as aargs:
+    with adhoc.parse_main_args(use_subcmd=subcommands) as aargs:
         cmd = aargs['subcommand']
         funcname = f'{cmd}_cli'
         namespace[funcname]()

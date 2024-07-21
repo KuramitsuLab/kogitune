@@ -174,7 +174,6 @@ class DatasetStore(object):
             file_ext = self.file_ext,
             compressed=compressed,
             files = self.checked_files,
-            logs = adhoc.get_log(),
         )
         with open(self.config_file, "w") as w:
             json.dump(config, w, indent=2)

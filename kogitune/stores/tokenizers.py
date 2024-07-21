@@ -39,9 +39,9 @@ def tokenizer_as_json(tokenizer: Tokenizer):
     return dict(
         name_or_path=tokenizer.name_or_path,
         vocab_size=tokenizer.vocab_size,
-        special_tokens = tokenizer_special_tokens(tokenizer),
         eos_token_id = tokenizer.eos_token_id,
         pad_token_id = tokenizer.pad_token_id,
+        special_tokens = tokenizer_special_tokens(tokenizer),
         hash=tokenizer_hash(tokenizer), 
     )
 
@@ -50,17 +50,21 @@ def load_tokenizer(tokenizer: Union[Tokenizer, str] = None, **kwargs):
     with adhoc.from_kwargs(**kwargs) as aargs:
         tokenizer = tokenizer or aargs[f'tokenizer_path|tokenizer|model_path|={DEFAULT_TOKENIZER}']
         if isinstance(tokenizer, str):
-            tokenizer, local_args = adhoc.parse_path_args(tokenizer)
-            if 'trust_remote_code' not in local_args:
-                local_args['trust_remote_code'] = True
-            if 'use_fast' not in local_args:
-                local_args['use_fast'] = False
+            tokenizer, local_args = adhoc.parse_path_args(tokenizer, parent_args=kwargs)
+            # if 'trust_remote_code' not in local_args:
+            #     local_args['trust_remote_code'] = True
+            # if 'use_fast' not in local_args:
+            #     local_args['use_fast'] = False
+            # デコーダーオンリーアーキテクチャ（GPT系列など）では、
+            # padding_side='left' を使用することが推奨されます。
+            if 'padding_side' not in local_args:
+                local_args['padding_side'] = 'left'
             adhoc.check_kwargs(local_args, AutoTokenizer.from_pretrained, path=tokenizer)
             tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
-    adhoc.print(f'トークンナイザーをロードしたよ',
-                tokenizer_as_json(tokenizer),
-                verbose='tokenizer', 
-                once=f'tokenizer={tokenizer.name_or_path}')
+            adhoc.notice(f'トークンナイザー',
+                        tokenizer=tokenizer_as_json(tokenizer),
+                        verbose='tokenizer', 
+                        once=f'tokenizer={tokenizer.name_or_path}')
     return tokenizer
 
 

@@ -2,7 +2,7 @@ from typing import List
 import re
 import ast
 from kogitune.stores.files import filelines, zopen
-from .scores_ja import *
+from .utils_ja import *
 from .replaces import *
 
 single_pattern = re.compile(r'\'\'\'[\s\S]*?\'\'\'', re.DOTALL | re.MULTILINE)

@@ -1,11 +1,10 @@
 import evaluate
 import os
-import re
+import math 
 import numpy as np
+from scipy import stats
 
 from .commons import *
-
-os.environ["HF_ALLOW_CODE_EVAL"] = "1"
 
 # =====================
 # Base Class
@@ -17,8 +16,10 @@ class Metric(object):
     evaluate them based on specified metrics, and calculate scores.
     """
     
-    def __init__(self, **kwargs):
-        self.name = 'nop'
+    def __init__(self, name, **kwargs):
+        self.name = name
+        self.required_key = 'output'
+        self.scale = 100
 
     def __repr__(self):
         return self.name
@@ -26,35 +27,70 @@ class Metric(object):
     def eval_score(self, record:dict)->float:
         return 0.0
 
+    def calc_scores(self, scores: np.ndarray, results: dict):
+        data = scores * self.scale
+        # 標本サイズ
+        n = len(data)
+        # 標本平均
+        mean = np.mean(data)
+        # 標本標準偏差
+        std_dev = np.std(data, ddof=1)
+        # 標準エラー
+        se = std_dev / np.sqrt(n)
+        # 信頼水準（95%信頼区間）
+        confidence_level = 0.95
+        # 自由度
+        df = n - 1
+        # t分布の臨界値
+        t_critical = stats.t.ppf((1 + confidence_level) / 2, df)
+        # 信頼区間の計算
+        margin_of_error = t_critical * se
+        confidence_interval = (mean - margin_of_error, mean + margin_of_error)
+        results['mean'] = round(mean, 2)
+        results['stderr'] = round(se, 2)
+        results['CI95%'] = confidence_interval
+        return results
+
     def evaluate(self, result_list, force_eval=False):
         scores = []
         for record in adhoc.tqdm(result_list, desc=f'{self.name}'):
-            if 'outputs' not in record:
-                break
             if force_eval or self.name not in record:
-                record[self.name] = self.eval_score(record)
-            scores.append(record[self.name])
+                if self.required_key in record:
+                    record[self.name] = self.eval_score(record)
+            if self.name in record:
+                scores.append(record[self.name])
         if len(scores) == 0:
-            adhoc.warn(f'{self.name} スコアが一つもないよ')
+            adhoc.notice(f'{self.name} スコアが一つもないよ')
             return None
         scores = np.array(scores)
-        # np.set_printoptions(precision=2)
-        # print(scores, scores.mean(), scores.min(), scores.max())
-        return {
-                'model': '', 
-                'data': '', 
-                'metric': self.name, 
-                'mean': round(scores.mean(), 4), 
-                'scores': list(round(v, 3) for v in scores)}
-            
+        results = {
+            'model': '', 
+            'data': '', 
+            'metric': self.name, 
+        }
+        results = self.calc_scores(scores, results)
+        if 'scores' not in results: 
+            results['scores'] = list(round(v, 2) for v in scores)
+        return results
+    
+class metric_perplexity(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('perplexity', **kwargs)
+        self.required_key = 'loss'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return math.exp(record['loss'])
+
+    
 class metric_exact_match(Metric):
     """
     コード評価用Evaluatorクラス。HuggingFaceのevaluate-metric/code_evalを使用してスコアを算出する。
     """
 
-    def __init__(self, strict=True, **kwargs):
-        self.name = f'exact_match'
-        self.strict = strict
+    def __init__(self, **kwargs):
+        super(Metric).__init__('exact_match', **kwargs)
+        self.strict = kwargs.get('strict', True)
 
     def exact_match(self, output, reference):
         if (self.strict and reference == output) or reference in output:
@@ -62,11 +98,10 @@ class metric_exact_match(Metric):
         return 0
 
     def eval_score(self, record:dict) -> float:
-        outputs = record['outputs']
+        outputs = listfy(record['output'])
         reference = record['reference']
         scores = np.array([self.exact_match(output, reference) for output in outputs])
         return scores.mean()
-
 
 # HumanEval pass@1
 #
@@ -83,6 +118,19 @@ def humaneval_extract(prompt, generated_text):
     return prompt + "\n" + generated_text[:min_stop_index]
 
 
+# {"0": [[0, {"task_id": 0, "passed": false, "result": "failed: name 'df_product_full' is not defined", "completion_id": 0}]]},
+
+def extract_passed_result(d, result_list):
+    if isinstance(d, dict):
+        if 'passed' in d and 'result' in d:
+            result_list.append(d)
+        else:
+            for _, v in d.items():
+                extract_passed_result(v, result_list)
+    if isinstance(d, list):
+        for v in d:
+            extract_passed_result(v, result_list)
+
 class metric_pass_at_k(Metric):
     """
     コード評価用Evaluatorクラス
@@ -90,54 +138,64 @@ class metric_pass_at_k(Metric):
     """
 
     def __init__(self, **kwargs):
-        self.k = kwargs.get('k', 1)        
-        self.name = f'pass@{self.k}'
+        self.k = kwargs.get('k', 1)
+        super().__init__(f'pass@{self.k}', **kwargs)
+        self.required_key = 'output'
+        os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         self.tool = evaluate.load('code_eval')  # code_eval
 
     def eval_score(self, record):
-        test_cases = [record['reference']]
-        extracted_code = [humaneval_extract(record['input'], x) for x in record['outputs']]
-        record['generated_code'] = extracted_code
+        test_cases = [record['test']]
+        extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
         candidates = [extracted_code]
         pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
+        record['generated_code'] = extracted_code
         record[f'{self.name}_results'] = results
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
 
-"""
-# 日本語用のtokenizer
-# Python: 正規表現による簡易版形態素解析
-# https://qiita.com/kinoshita_yuri/items/e15f143981f1616994ed
-    
-def tokenize_japaneses(text):
-    pJA = re.compile(r"/|[A-Z]+|[a-z]+|[ァ-ンー]+|[ぁ-ん-]+|[ァ-ヶ]+|[一-龍]+|[。、]|/")
-    text_m = []
-    m = pJA.findall(text)
-    for row in m:
-        if re.compile(r'^[あ-ん]+$').fullmatch(row):
-            if row[0] in 'はがのにへともでを':
-                prefix = row[0]
-                token = row[1:]
-                text_m.append(prefix)
-                if (len(token) > 0):
-                    text_m.append(token)
-            elif row[-2:] in 'のでからまで':
-                token = row[0:-2]
-                suffix = row[-2:]
-                text_m.append(token)
-                text_m.append(suffix)
-            elif row[-1:] in 'もはがでを':
-                token = row[0:-1]
-                suffix = row[-1:]
-                text_m.append(token)
-                text_m.append(suffix)
-            else:
-                text_m.append(row)
-        else:
-            text_m.append(row)
-    return text_m
+from .similarites import (
+    jaccard_similarity, cosine_similarity, 
+    bleu_score, rouge_l, levenshtein_similarity, 
+    simple_tokenize,
+)
 
+class metric_editsim(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('editsim', **kwargs)
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        record['scores'] = [levenshtein_similarity(candidate, reference) 
+                          for candidate in listfy(record['output'])]
+        scores = np.array(record['scores'])
+        return scores.mean()
+
+class metric_jaccard(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('jaccard', **kwargs)
+        self.tokenize = simple_tokenize
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        scores = np.array([jaccard_similarity(candidate, reference, tokenize=self.tokenize) 
+                          for candidate in listfy(record['output'])])
+        return scores.mean()
+
+class metric_cosine(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('cosine', **kwargs)
+        self.tokenize = simple_tokenize
+
+    def eval_score(self, record:dict) -> float:
+        reference = record['reference']
+        scores = np.array([cosine_similarity(candidate, reference, tokenize=self.tokenize) 
+                          for candidate in listfy(record['output'])])
+        return scores.mean()
+
+
+"""
 class BLEUEvaluator(Evaluator):
     # def calculate(self, dataset, record):
 
@@ -189,14 +247,15 @@ class F1Evaluator(Evaluator):
         return total_score
 """
 
+
 #######################
 
 def evaluate_metric(result_list, metric_path, force_eval=False):
-    metric_name, metric_args = parse_path_arguments(metric_path)
+    metric_name, metric_args = adhoc.parse_path_args(metric_path)
     name = metric_name.replace('@', '_at_')
     name = f'metric_{name}'
     if name not in globals():
-        adhoc.warn(f'{metric_name}が見つかりません')
+        adhoc.notice(f'{metric_name}が見つかりません')
         return None
     metric = globals()[name](**metric_args)
     return metric.evaluate(result_list, force_eval=force_eval)

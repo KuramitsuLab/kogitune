@@ -27,9 +27,7 @@ def extract_format_keys(s):
 #test_string = "価格は{price:.2f}円で、数量は{quantity}個です。割引率は{discount:.2%}です。"
 #extract_format_keys(test_string)
 
-
-
-class TemplateProcessor:
+class TemplateProcessor(object):
     def __init__(self, **kwargs):
         self.prompt = kwargs.get('prompt', '')
         self.output = kwargs.get('output', kwargs.get('reference', ''))
@@ -47,6 +45,15 @@ class TemplateProcessor:
             self.random_choice = False
         self.options = kwargs
 
+    def has_option(self, key):
+        return key in self.options
+
+    def create(self, key, sample:dict):
+        text = self.options[key].format(**sample)
+        if self.enforce_da:
+            text = da(text, random_choice=self.random_choice)
+        return text
+
     def create_prompt(self, sample:dict):
         prompt = self.prompt.format(**sample)
         if self.enforce_da:
@@ -62,15 +69,45 @@ class TemplateProcessor:
     def create_reference(self, sample:dict):
         return self.create_output(sample)
 
-    def load_to_sample_list(self, datalist, sample_list):
+    def load_sample(self, eval_type:str,
+                    datalist:List[dict], 
+                    sample_list:List[dict]):
         assert len(datalist) == len(sample_list)
         for i in range(len(datalist)):
             source = datalist[i]
             sample = sample_list[i]
-            if 'input' not in sample:
-                sample['input'] = self.create_prompt(source)
-            if 'reference' not in sample:
-                sample['reference'] = self.create_output(source)
+            if eval_type == 'choice':
+                result_key = self._load_choice(source, sample)
+            elif eval_type == 'loss':
+                result_key = self._load_loss(source, sample)
+            else:
+                result_key = self._load_generation(source, sample)
+        return result_key
+
+    def _load_generation(self, source, sample):
+        if 'input' not in sample:
+            sample['input'] = self.create_prompt(source)
+        if 'reference' not in sample:
+            sample['reference'] = self.create_output(source)
+        if self.has_option('test'):
+            sample['test'] = self.create('test', source)
+        return 'output'
+
+    def _load_loss(self, source, sample):
+        input_text = self.create_prompt(source)
+        reference = self.create_reference(source)
+        sep = '' if input_text.endswith('\n') else '\n'
+        sample['input'] = f'{input_text}{sep}{reference}'
+        return 'loss'
+
+    def _load_choice(self, source, sample):
+        if 'choice' not in self.options:
+            adhoc.notice('テンプレートにchoiceがありません')
+            raise ValueError()
+        sample['choice'] = self.options['choice']
+        sample['input'] = [self.create(f'prompt_{choice}', source) for choice in self.options['choice']]
+        sample['reference'] = self.create_output(source)
+        return 'output'
 
     def create_instruction(self, sample:dict):
         prompt = self.create_prompt(sample)
@@ -123,23 +160,6 @@ class TemplateProcessor:
             return int(np.percentile(output, q=q))+1
         return int(np.percentile(total, q=q))+1
 
-    # def extract(self, text:str) -> str:
-    #     if isinstance(text, list):
-    #         return [self.extract(t) for t in text]
-    #     if self.begin or self.end:
-    #         lines = text.splitlines()
-    #         extracted = []
-    #         inclusion = False if self.begin else True
-    #         for line in lines:
-    #             if self.end and line.startswith(self.end):
-    #                 break
-    #             if self.begin and line.startswith(self.begin):
-    #                 inclusion = True
-    #             if inclusion:
-    #                 extracted.append(line)
-    #         return '\n'.join(extracted)
-    #     return text
-
     def filter(self, dataset, tokenizer, max_length=None, min_length=None, head=None, return_as_dict=False):
         sample_list = []
         for sample in dataset:
@@ -173,20 +193,38 @@ def guess_template(sample: dict):
             "prompt": "{instruction}\n{input}",
             "reference": "{output}",
         }
-    if has_schema(sample, 'prompt|test|entry_point'):
+    if has_schema(sample, 'prompt|test|entry_point|canonical_solution'):
         # HumanEval
         return {
             "prompt": "{prompt}",
-            "reference": "\n{test}\n\ncheck({entry_point})\n",
+            "reference": "{canonical_solution}\n",
+            "test": "\n{test}\n\ncheck({entry_point})\n",
         }
     if has_schema(sample, 'question|choice0|choice1|choice2|choice3|choice4|label'):
         # JCommonSenseQA
         return {
             "prompt": "{question}\n[選択肢|Choice]: [@(0)|0.|[0]] {choice0} [@(1)|1.|[1]] {choice1} [@(2)|2.|[2]] {choice2} [@(3)|3.|[3]] {choice3} [@(4)|4.|[4]] {choice4}\n",
             "reference": "{label}",
+            "choice": ["0", "1", "2", "3", "4"],
+            "prompt_0": "{question}\n{choice0}",
+            "prompt_1": "{question}\n{choice1}",
+            "prompt_2": "{question}\n{choice2}",
+            "prompt_3": "{question}\n{choice3}",
+            "prompt_4": "{question}\n{choice4}",
+        }
+    if has_schema(sample, 'question|A|B|C|D|answer'):
+        # JMMLU
+        return {
+            "prompt": "{question}\n[選択肢|Choice]: [@(A)|A.|[A]] {A} [@(B)|B.|[B]] {B} [@(C)|C.|[C]] {C} [@(D)|D.|[D]] {D} \n",
+            "reference": "{answer}",
+            "choice": ["A", "B", "C", "D"],
+            "prompt_A": "{question}\n{A}",
+            "prompt_B": "{question}\n{B}",
+            "prompt_C": "{question}\n{C}",
+            "prompt_D": "{question}\n{D}",
         }
     if has_schema(sample, 'in|out'):
-        # KOGITUNE 標準形式
+        # Kogitune 標準形式
         return {
             "prompt": "{in}",
             "reference": "{out}",
@@ -210,10 +248,9 @@ def load_template(sample=None, **kwargs):
             if isinstance(sample, dict):
                 template_args = guess_template(sample)
         if template_args is None:
-            adhoc.warn(unset_key='template')
+            aargs['template_config|!!']
         template = TemplateProcessor(**template_args)
         if sample:
             template.test_template(sample)
     return template
-
 

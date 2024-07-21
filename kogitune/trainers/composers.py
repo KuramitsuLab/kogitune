@@ -240,7 +240,7 @@ def prepare_dataset(url_list, max_length, cache_dir, aargs, tokenizer=None, pref
     global_args = {'datatype': datatype, 'split': split}
     datasets = []
     for url in url_list:
-        url, local_args = adhoc.parse_path_args(url, include_urlinfo=True, global_args=global_args)
+        url, local_args = adhoc.parse_path_args(url, parent_args=global_args, include_urlinfo=True)
         url = safe_dir(url)
         if url.endswith('.gz') or url.endswith('.zst') or url.endswith('.jsonl') or url.endswith('.txt'):
             tokenizer = adhoc.load_tokenizer(tokenizer=tokenizer)
@@ -481,6 +481,7 @@ class DatasetRecipe():
             adhoc.print(f'ステップ {global_step:,} イテレーション {global_count:,} トークン数 {adhoc.format_unit(total_tokens)} {total_tokens:,}')
 
     def __enter__(self):
+        self.aargs.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):

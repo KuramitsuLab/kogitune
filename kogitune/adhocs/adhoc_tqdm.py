@@ -1,13 +1,15 @@
 
-from .arguments import from_kwargs
+from .main import aargs_from
 
-if 'get_ipython' in globals():
-    from tqdm.notebook import tqdm
-else:
-    from tqdm import tqdm
+# if 'get_ipython' in globals():
+#     from tqdm.notebook import tqdm
+# else:
+#     from tqdm import tqdm
+
+from tqdm.auto import tqdm
 
 def adhoc_tqdm(iterable, desc=None, total=None, **kwargs):
-    with from_kwargs(**kwargs) as aargs:
+    with aargs_from(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(iterable, desc=desc, total=total)
@@ -35,7 +37,7 @@ def adhoc_progress_bar(desc=None, total=None, **kwargs):
         for n in range(10):
             pbar.update()
     """
-    with from_kwargs(**kwargs) as aargs:
+    with aargs_from(**kwargs) as aargs:
         enabled_tqdm = aargs['enabled_tqdm|tqdm|=true']
         if enabled_tqdm:
             return tqdm(desc=desc, total=total)

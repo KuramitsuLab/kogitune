@@ -45,6 +45,14 @@ def basename(path:str, skip_dot=False):
 def get_filename_by_pid(prefix='cache'):
     return f'{prefix}{os.getpid()}'
 
+def get_alphapid():
+    pid = os.getpid() + 17576
+    ss=[]
+    while pid >= 26:
+        ss.append(chr(ord('A') + pid % 26))
+        pid //=26
+    return ''.join(ss)[:3]
+
 ## file 
 
 def zopen(filepath, mode='rt'):
@@ -58,31 +66,35 @@ def zopen(filepath, mode='rt'):
 
 ## linenum
 
-fileline_pattern = re.compile(r"L(\d{3,})\D")
+linenum_pattern = re.compile(r"_L(\d{2,})\D")
 
-def extract_linenum_from_filename(filepath):
-    matched = fileline_pattern.search(filepath)
+def extract_linenum(filepath: str):
+    matched = linenum_pattern.search(filepath)
     if matched:
         return int(matched.group(1))
     return None
 
-def rename_with_linenum(filepath: str, N: int, ext='json', rename=True):
-    extracted = extract_linenum_from_filename(filepath)
-    if extracted:
-        newpath = filepath.replace(f'L{extracted}', f'L{N}')
+def rename_linenum(filepath: str, N: int, rename=False):
+    linenum = extract_linenum(filepath)
+    sub = '' if N == 0 else f'_L{N}'
+    if linenum is None:
+        newfilepath = filepath.replace(f'.', f'{sub}.', 1)
     else:
-        newpath = filepath.replace(f'.', f'_L{N}.', 1)
+        newfilepath = filepath.replace(f'_L{linenum}', sub)
     if rename:
-        if os.path.exists(newpath):
-            os.remove(newpath)
+        if os.path.exists(newfilepath):
+            os.remove(newfilepath)
         if os.path.exists(filepath):
-            os.rename(filepath, newpath)
-    return newpath
+            os.rename(filepath, newfilepath)
+    return newfilepath
+
+def remove_linenum(filepath: str, rename=False):
+    return rename_linenum(filepath, 0, rename=rename)
 
 def get_linenum(filepath):
-    ret = extract_linenum_from_filename(filepath)
-    if ret is not None:
-        return ret
+    linenum = extract_linenum(filepath)
+    if linenum is not None:
+        return linenum
     if filepath.endswith('.gz'):
         ret = subprocess.run(f"gzcat {filepath} | wc -l", shell=True, stdout=subprocess.PIPE , stderr=subprocess.PIPE ,encoding="utf-8")
     elif filepath.endswith('.zst'):
@@ -93,7 +105,6 @@ def get_linenum(filepath):
         return int(ret.stdout)
     except:
         pass
-
     with zopen(filepath) as f:
         c=0
         line = f.readline()
@@ -154,22 +165,23 @@ def filelines(filenames:Union[str,List[str]], N=-1, json_template=None, line_rea
         pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
         with zopen(filename) as f:
             line = f.readline()
-            c=0
-            while line:
+            c=1
+            pbar.update()
+            while line and c < N:
                 line = reader_fn(line)
-                c+=1
-                pbar.update()
                 yield line
-                if N != -1 and c >= N:
-                    break
                 line = f.readline()
+                c += 1
+                pbar.update()
+            pbar.close()
             yield line
-        pbar.close()
 
 def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_template=None, line_reader = 'strip'):
-    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     if isinstance(filenames, str):
         filenames = filenames.split('|')
+    if filenames[0].endswith('.jsonl'):
+        line_reader='jsonl'
+    reader_fn = adhoc_line_reader(json_template=json_template, line_reader=line_reader)
     for i, filename in enumerate(filenames):
         N = get_linenum(filename) if N==-1 else N
         pbar = adhoc.progress_bar(total=N, desc=f'{filename}[{i+1}/{len(filenames)}]')
@@ -190,3 +202,40 @@ def read_multilines(filenames:Union[str,List[str]], bufsize=4096, N=-1, json_tem
             yield buffer
         pbar.close()
 
+def rename_linenum_cli(**kwargs):
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        for file in aargs['files']:
+            n = extract_linenum(file)
+            if n is None:
+                n = get_linenum(file)
+                file = rename_linenum(file, n)
+
+def split_file(input_file, lines_per_file):
+    file_number = 1
+    current_line_count = 0
+    output_file = rename_linenum(input_file, N=0, rename=False)
+    base, _, ext = output_file.partition('.')
+    output_file = f'{base}_{file_number:03d}.{ext}'
+    w = zopen(output_file, 'w')
+    pbar = adhoc.progress_bar(total=lines_per_file, desc=output_file)
+    with zopen(input_file, 'r') as infile:
+        for line in infile:
+            if current_line_count >= lines_per_file:
+                pbar.close()
+                w.close()
+                file_number += 1
+                current_line_count = 0
+                output_file = f'{base}_{file_number:03d}.{ext}'
+                w = zopen(output_file, 'w')
+                pbar = adhoc.progress_bar(total=lines_per_file, desc=output_file)
+            w.write(line)
+            current_line_count += 1
+            pbar.update()
+    w.close()
+
+def split_lines_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        files = list_filenames(aargs['files|!!'])
+        lines_per_file = aargs['lines_per_file|lines|max|N|=1000000']        
+        for file in files:
+            split_file(file, lines_per_file)

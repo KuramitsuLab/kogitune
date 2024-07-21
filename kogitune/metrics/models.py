@@ -1,6 +1,10 @@
-from typing import List
-import os, time
+from typing import List, Union
+import os
+import math
+import numpy as np
 import torch
+import torch.nn.functional as F
+
 import json
 from .commons import *
 from ..datasets.templates import TemplateProcessor
@@ -46,15 +50,22 @@ GENERATOR_ARGS = [
 ]
 
 def model_generator_args_from_path(model_path, aargs):
-    generator_args = aargs.get('generator_config|generator_kwargs|generator_args', {})
-    AdhocArguments.copy_keys_from_to(GENERATOR_ARGS, aargs, generator_args)    
-    model_path, model_args = parse_path_arguments(model_path)
-    AdhocArguments.move_keys_from_to(GENERATOR_ARGS, model_args, generator_args)
+    generator_args = aargs['generator_config|generator_kwargs|generator_args'] or {}
+    adhoc.copy_dict_keys(aargs, generator_args, *GENERATOR_ARGS)    
+    model_path, model_args = adhoc.parse_path_args(model_path)
+    adhoc.move_dict_keys(model_args, generator_args, *GENERATOR_ARGS)
     return model_path, model_args, generator_args
 
 # =====================
 # Base Classes
 # =====================
+
+def list_tqdm(list_or_value, desc=None):
+    if not isinstance(list_or_value, (list,tuple)):
+        list_or_value = [list_or_value]
+    if len(list_or_value) == 1:
+        return list_or_value
+    return adhoc.tqdm(list_or_value, desc=desc)
 
 class Model(object):
     def __init__(self, model_path, aargs):
@@ -63,11 +74,16 @@ class Model(object):
         """
         self.model_path = model_path
         self.model_tag = aargs[f'model_tag|tag|={basename(model_path)}']
-        self.tokenzier_path = None
+        self.verbose_count = aargs['verbose_count|=5']
         self.generator_args = {}
 
     def __repr__(self):
         return self.model_path
+
+    def verbose(self, *args):
+        if self.verbose_count > 0:
+            adhoc.print(*args, face='🔍')
+            self.verbose_count -= 1
 
     def configure(self, template: TemplateProcessor, datalist:List[dict]):
         genargs = self.generator_args
@@ -76,37 +92,50 @@ class Model(object):
             genargs['max_new_tokens'] = max_new_tokens
             adhoc.notice(f'max_new_tokens={max_new_tokens}を設定したよ')
 
-    def generate_list(self, prompt: str, n=1) -> List[str]:
-        return [self.generate_text(prompt) for _ in range(n)]
+    def compute_loss(self, input_text)->float:
+        return np.nan
 
-    def generate_streaming(self, sample_list:List[dict], n=1, saving_func=None, batch_size=1):
-        elapsed_time = 0
-        saved_time = time.time()
-        for sample in adhoc.tqdm(sample_list, desc=f'{self}'):
-            start_time = time.time()
-            sample['outputs'] = self.generate_list(sample['input'], n=n)
-            sample['output'] = sample['outputs'][0]
-            end_time = time.time()
-            sample['time'] = round(end_time - start_time, 3)
-            elapsed_time += sample['time']
-            if saving_func and end_time - saved_time > 60 * 5:
-                saved_time = end_time
-                saving_func()
-        return elapsed_time
+    def generate(self, input_text:str, n=1, **kwargs)->Union[List[str],str]:
+        return '' if n == 1 else [''] * n
 
+    def compute_sample_loss(self, sample_list: Union[List[dict], dict]):
+        for sample in list_tqdm(sample_list, desc=f'{self}'):
+            input_text = sample['input']
+            sample['loss'] = self.compute_loss(input_text)
+            self.verbose(sample)
+                
+    def compute_sample_choice(self, sample_list: Union[List[dict], dict]):
+        for sample in list_tqdm(sample_list, desc=f'{self}'):
+            input_list = sample['input']
+            scores = [self.compute_loss(input_text) for input_text in input_list]
+            sample['scores'] = scores
+            sample['loss'] = min(scores)
+            predicted_idx = scores.index(min(scores))
+            sample['input'] = input_list[predicted_idx]
+            sample['output'] = sample['choice'][predicted_idx]
+            del sample['choice']
+            self.verbose(sample)
 
-class TestModel(Model):
+    def generate_sample(self, sample_list: Union[List[dict], dict], n=1, **kwargs):
+        for sample in list_tqdm(sample_list, desc=f'{self}'):
+            input_text = sample['input']
+            sample['output'] = self.generate(input_text, n=n, **kwargs)
+            self.verbose(sample)
 
-    def generate_list(self, prompt: str, n=1) -> List[str]:
-        test_results = [f"{prompt}\n###Output\n{i}\n" for i in range(n)]
-        return test_results
+    def predict_sample(self, sample_list: Union[List[dict],dict], eval_type=None, n=1, **kwargs):
+        if eval_type == 'choice':
+            self.compute_sample_choice(sample_list)
+        elif eval_type == 'loss':
+            self.compute_sample_loss(sample_list)
+        else:
+            self.generate_sample(sample_list, n=n, **kwargs)
 
 class OpenAIModel(Model):
     def __init__(self, model_path, aargs):
         super().__init__(model_path, aargs)
         try:
             from openai import OpenAI
-            self.client = OpenAI(api_key=aargs['openai_api_key|api_key'])
+            self.client = OpenAI(api_key=aargs['openai_api_key|api_key|!!'])
         except ModuleNotFoundError as e:
             ## モジュールが見つからない場合は、
             ## OpenAIを実行するまでエラーを出さない
@@ -119,15 +148,15 @@ class OpenAIModel(Model):
         }
         self.generator_args = default_args
 
-    def generate_list(self, prompt: str, n=1) -> List[str]:
+    def generate(self, input_text: str, n=1, **kwargs):
         response = self.client.chat.completions.create(
             model=self.model_path,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": input_text}],
             n=n,
             **self.generator_args
         )
         responses = [choice.message.content for choice in response.choices]
-        return responses
+        return responses[0] if n == 1 else responses
 
 class BedrockModel(Model):
     def __init__(self, model_path, aargs):
@@ -244,8 +273,8 @@ def load_model_generator_args(model_path, aargs):
     if 'trust_remote_code' not in model_args:
         model_args['trust_remote_code'] = True
     # MacOS 上でエラーになる
-    # if 'device_map' not in model_args:
-    #     model_args['device_map'] = "auto"
+    if torch.cuda.is_available() and 'device_map' not in model_args:
+        model_args['device_map'] = "auto"
     if model_args.get('attn_implementation')=="flash_attention_2":
         model_args['torch_dtype'] = torch.bfloat16
     if aargs['use_4bit|=False']:
@@ -283,15 +312,17 @@ class HFModel(Model):
     def __init__(self, model_path, aargs):
         from transformers import pipeline
         super().__init__(model_path, aargs)
-        self.tokenizer = adhoc.load_tokenizer()
-        # print('@pad_id', self.tokenizer.pad_token, self.tokenizer.pad_token_id)
-        # self.tokenizer.pad_token = self.tokenizer.eos_token
-        model, generator_args = load_model_generator_args(model_path, aargs)
+        self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path, padding_side='left')
+        # なぜか必要らしい（↓）
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.model, generator_args = load_model_generator_args(model_path, aargs)
+        self.device = next(self.model.parameters()).device
+        adhoc.print('デバイス//DEIVCE', self.device)
         self.generator = pipeline(
             "text-generation",
-            model=model,
+            model=self.model,
             tokenizer=self.tokenizer,
-            use_auth_token=aargs['hf_token'],
+            use_auth_token=aargs['HF_TOKEN|hf_token'],
         )
         if 'max_length' in generator_args and 'max_new_tokens' in generator_args:
             del generator_args['max_length']
@@ -301,76 +332,94 @@ class HFModel(Model):
             generator_args['pad_token_id'] = self.tokenizer.eos_token_id
         self.generator_args = generator_args
 
-    def generate_text(self, prompt: str) -> List[str]:
-        return self.generate_list(prompt, n=1)[0]
+    def compute_loss(self, input_text: str)->float:
+        inputs = self.tokenizer(input_text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        labels = inputs["input_ids"].clone()
+        # 不要なキーを除去
+        inputs.pop("token_type_ids", None)
+        with torch.no_grad():
+            outputs = self.model(**inputs, labels=labels)
+            loss = outputs.loss
+        return loss.item()
 
-    def generate_list(self, prompt: str, n=1) -> List[str]:
-        # pipelineなしで実装----------------------------------
-        # input_ids = self.tokenizer.encode(prompt, return_tensors="pt").to(self.device)
-        # generated_ids = self.model.generate(input_ids, **self.model_args)
-        # return self.tokenizer.decode(generated_ids[0], skip_special_tokens=True)
-        # ----------------------------------
-        generated_texts = self.generator(prompt, 
-                                         ### ここは何を指定するのか？
-                                        num_return_sequences = n,
-                                        **self.generator_args)
-        generated_texts_list = [item['generated_text'] for item in generated_texts]
-        return generated_texts_list
+    def compute_next_token_prob(self, input_text: str, token_ids=None):
+        inputs = self.tokenizer(input_text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = self.model(inputs)
+            logits = outputs.logits
 
-    def generate_streaming(self, sample_list: List[dict], n=1, saving_func=None, batch_size=1) -> List[str]:
-        elapsed_time = 0
-        saved_time = time.time()
-        outputs = self.generator(data_stream(sample_list, desc=f'{self}'), 
-                        num_return_sequences = n, batch_size=batch_size,
-                        **self.generator_args)
-        start_time = time.time()
+        # 次のトークンの確率を計算
+        next_token_logits = logits[:, -1, :]
+        probs = F.softmax(next_token_logits, dim=-1)
+
+        # yes_token_id = self.tokenizer.encode('yes')[0]
+        # "yes" の予測確率を取得
+        # yes_prob = probs[0, yes_token_id].item()
+        if token_ids is None:
+            return [probs[0, token_id].item() for token_id in range(self.tokenizer.vocab_size)]
+        else:
+            return [probs[0, token_id].item() for token_id in token_ids]
+
+    def generate_sample(self, sample_list: Union[List[dict], dict], n=1, **kwargs) -> List[str]:
+        args = self.generator_args | dict(
+            num_return_sequences = n, 
+            batch_size=kwargs.get('batch_size', 2),
+        )
+        sample_list = listfy(sample_list)
+        outputs = self.generator(data_stream(sample_list, desc=f'{self}'), **args)
         for i, results in enumerate(outputs):
             sample = sample_list[i]
-            sample['outputs'] = [item['generated_text'] for item in results]
-            sample['output'] = sample['outputs'][0]
-            end_time = time.time()
-            sample['time'] = round((end_time - start_time)/batch_size, 3)
-            elapsed_time += (end_time - start_time)
-            if saving_func and end_time - saved_time > 300:
-                saved_time = end_time
-                saving_func()
-            start_time = time.time()
-        return elapsed_time
+            sample['output'] = [item['generated_text'] for item in results]
+            if len(sample['output']) == 1:
+                sample['output'] = sample['output'][0]
 
+class vLLMModel(Model):
+    def __init__(self, model_path, aargs):
+        from vllm import LLM, SamplingParams
+        super().__init__(model_path, aargs)
+        self.llm = LLM(model=model_path)
+        self.SamplingParams = SamplingParams
+        self.generator_args = {}
 
-def get_modeltag(aargs:AdhocArguments):
-    model_path = aargs['model_path|!!model_pathを設定しましょ']
-    if ':' in model_path:
-        _, _, model_path = model_path.partition(':')
-    model_path = basename(model_path, skip_dot=True)
-    if 'checkpoint' in model_path and model_path.endswith('000'):
-        model_path = f'{model_path[:-3]}k'
-    modeltag = aargs['model_tag|modeltag']
-    if modeltag is None:
-        if model_path.startswith('checkpoint-'):
-            adhoc.warn('modeltagを設定した方がいいよ！')
-        return model_path
-    else:
-        if model_path.startswith('checkpoint-'):
-            checkpoint = model_path.replace('checkpoint-', '')
-            modeltag = f'{modeltag}_cp{checkpoint}'
-    return modeltag
+    def compute_sample_loss(self, sample_list: Union[List[dict], dict]):
+        sampling_params = self.SamplingParams(**self.generator_args)
+        sample_list = listfy(sample_list)
+        prompts = [sample['input'] for sample in sample_list]
+        outputs = self.llm.generate(prompts, sampling_params)
+        for i, output in enumerate(outputs):
+            sample = sample_list[i]
+            sample['loss'] = math.log(output.outputs[0].perplexity)
 
-def load_model_with_aargs(aargs:AdhocArguments):
-    model_path = aargs['model_path|!!model_pathを設定しましょ']
+    def generate_sample(self, sample_list: Union[List[dict], dict], n=1, **kwargs) -> List[str]:
+        args = self.generator_args | dict(
+            n = n, 
+        )
+        sampling_params = self.SamplingParams(**args)
+        sample_list = listfy(sample_list)
+        prompts = [sample['input'] for sample in sample_list]
+        outputs = self.llm.generate(prompts, sampling_params)
+        for i, output in enumerate(outputs):
+            sample = sample_list[i]
+            sample['output'] = [item.text for item in output.outputs]
+            if n == 1:
+                sample['output'] = sample['output'][0]
+        
+def load_model_from(aargs):
+    model_path = aargs['model_path|!!']
     if model_path.startswith("openai:"):
         return OpenAIModel(model_path[7:], aargs)
     elif model_path.startswith("bedrock:"):
         return BedrockModel(model_path[8:], aargs)
     elif model_path.startswith("hf:"):
         return HFModel(model_path[3:], aargs)
+    elif model_path.startswith("vllm:"):
+        return vLLMModel(model_path[5:], aargs)
     else:
         return HFModel(model_path, aargs)
 
 def load_model(**kwargs):
-    aargs = kwargs.get('aargs')
-    if isinstance(aargs, AdhocArguments):
-        return load_model_with_aargs(aargs)
-    with adhoc.from_main(**kwargs) as aargs:
-        return load_model_with_aargs(aargs)
+    with adhoc.aargs_from(**kwargs) as aargs:
+        return load_model_from(aargs)
 
