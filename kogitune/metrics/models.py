@@ -3,6 +3,8 @@ import os
 import math
 import numpy as np
 import torch
+import torch.nn.functional as F
+
 import json
 from .commons import *
 from ..datasets.templates import TemplateProcessor
@@ -271,7 +273,7 @@ def load_model_generator_args(model_path, aargs):
     if 'trust_remote_code' not in model_args:
         model_args['trust_remote_code'] = True
     # MacOS 上でエラーになる
-    if 'device_map' not in model_args:
+    if torch.cuda.is_available() and 'device_map' not in model_args:
         model_args['device_map'] = "auto"
     if model_args.get('attn_implementation')=="flash_attention_2":
         model_args['torch_dtype'] = torch.bfloat16
@@ -320,7 +322,7 @@ class HFModel(Model):
             "text-generation",
             model=self.model,
             tokenizer=self.tokenizer,
-            use_auth_token=aargs['hf_token'],
+            use_auth_token=aargs['HF_TOKEN|hf_token'],
         )
         if 'max_length' in generator_args and 'max_new_tokens' in generator_args:
             del generator_args['max_length']
@@ -340,6 +342,25 @@ class HFModel(Model):
             outputs = self.model(**inputs, labels=labels)
             loss = outputs.loss
         return loss.item()
+
+    def compute_next_token_prob(self, input_text: str, token_ids=None):
+        inputs = self.tokenizer(input_text, return_tensors="pt")
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        with torch.no_grad():
+            outputs = self.model(inputs)
+            logits = outputs.logits
+
+        # 次のトークンの確率を計算
+        next_token_logits = logits[:, -1, :]
+        probs = F.softmax(next_token_logits, dim=-1)
+
+        # yes_token_id = self.tokenizer.encode('yes')[0]
+        # "yes" の予測確率を取得
+        # yes_prob = probs[0, yes_token_id].item()
+        if token_ids is None:
+            return [probs[0, token_id].item() for token_id in range(self.tokenizer.vocab_size)]
+        else:
+            return [probs[0, token_id].item() for token_id in token_ids]
 
     def generate_sample(self, sample_list: Union[List[dict], dict], n=1, **kwargs) -> List[str]:
         args = self.generator_args | dict(

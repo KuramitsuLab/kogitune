@@ -180,6 +180,11 @@ def finetune_cli(**kwargs):
     from kogitune.trainers import finetune_cli
     finetune_cli(**kwargs)
 
+
+def chain_eval_cli(**kwargs):
+    from kogitune.metrics.chaineval import chain_eval_cli
+    chain_eval_cli(**kwargs)
+
 def eval_cli(**kwargs):
     from kogitune.metrics.chaineval import chain_eval_cli
     chain_eval_cli(**kwargs)
@@ -191,6 +196,8 @@ def eval_loss_cli(**kwargs):
 def eval_choice_cli(**kwargs):
     from kogitune.metrics.chaineval import eval_choice_cli
     eval_choice_cli(**kwargs)
+
+
 
 def launch(subcommand, **kwargs):
     fname = f'{subcommand}_cli'

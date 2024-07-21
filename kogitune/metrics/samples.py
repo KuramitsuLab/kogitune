@@ -1,5 +1,6 @@
 from typing import List, Union
 import os
+import numpy as np
 import json
 import getpass
 from datetime import datetime
@@ -218,7 +219,7 @@ def eval_from(datatag, modeltag, aargs):
     metric_list = get_metric_list(aargs)
     sample_file = f'{datatag}_x_{modeltag}.jsonl'
     sample_list = load_sample_list(sample_file)
-    print('@', metric_list, sample_file)
+    adhoc.print('@', metric_list, sample_file)
     for metric_path in metric_list:
         result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
@@ -230,6 +231,10 @@ def eval_from(datatag, modeltag, aargs):
             result['contact'] = getpass.getuser()
             score_file = aargs[f'output_file|={datatag}_score.jsonl']
             save_score(score_file, result)
+            metric_name = result['metric']
+            update_leadersboard(modeltag, f'{datatag}/{metric_name}', result['mean'], 
+                                aargs['leadersboard|=leadersboard.csv'])
+
 
 def save_score(score_file, result:dict):
     directory = os.path.dirname(score_file)
@@ -238,3 +243,28 @@ def save_score(score_file, result:dict):
 
     with open(score_file, 'a', encoding='utf-8') as w:
         print(json.dumps(result, ensure_ascii=False), file=w)
+
+def update_leadersboard(model, key, score, filepath='leadersboard.csv'):
+    import pandas as pd
+    found = False
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+        json_list = df.to_dict(orient='records')
+        for d in json_list:
+            if d['model'] == model:
+                d[key] = score
+                scores = [v for k, v in d.items()]
+                d['score'] = np.array(scores[2:]).mean()
+                found = True
+    else:
+        json_list = []
+    if found == False:
+        json_list.append({
+            'model': model, 
+            'score': score,
+            key: score,
+        })
+    df = pd.DataFrame(json_list).sort_values(by='score', ascending=False)
+    df.to_csv(filepath, index=False)
+    adhoc.print(df, face='')
+

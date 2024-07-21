@@ -254,4 +254,3 @@ def load_template(sample=None, **kwargs):
             template.test_template(sample)
     return template
 
-

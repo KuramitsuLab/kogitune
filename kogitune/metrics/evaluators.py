@@ -6,8 +6,6 @@ from scipy import stats
 
 from .commons import *
 
-os.environ["HF_ALLOW_CODE_EVAL"] = "1"
-
 # =====================
 # Base Class
 # =====================
@@ -21,6 +19,7 @@ class Metric(object):
     def __init__(self, name, **kwargs):
         self.name = name
         self.required_key = 'output'
+        self.scale = 100
 
     def __repr__(self):
         return self.name
@@ -29,6 +28,27 @@ class Metric(object):
         return 0.0
 
     def calc_scores(self, scores: np.ndarray, results: dict):
+        data = scores * self.scale
+        # 標本サイズ
+        n = len(data)
+        # 標本平均
+        mean = np.mean(data)
+        # 標本標準偏差
+        std_dev = np.std(data, ddof=1)
+        # 標準エラー
+        se = std_dev / np.sqrt(n)
+        # 信頼水準（95%信頼区間）
+        confidence_level = 0.95
+        # 自由度
+        df = n - 1
+        # t分布の臨界値
+        t_critical = stats.t.ppf((1 + confidence_level) / 2, df)
+        # 信頼区間の計算
+        margin_of_error = t_critical * se
+        confidence_interval = (mean - margin_of_error, mean + margin_of_error)
+        results['mean'] = round(mean, 2)
+        results['stderr'] = round(se, 2)
+        results['CI95%'] = confidence_interval
         return results
 
     def evaluate(self, result_list, force_eval=False):
@@ -47,27 +67,22 @@ class Metric(object):
             'model': '', 
             'data': '', 
             'metric': self.name, 
-            'mean': round(scores.mean(), 3), 
         }
         results = self.calc_scores(scores, results)
         if 'scores' not in results: 
             results['scores'] = list(round(v, 2) for v in scores)
         return results
-        #         'scores': 
-        # }
     
 class metric_perplexity(Metric):
     def __init__(self, **kwargs):
-        super(Metric).__init__('perplexity', **kwargs)
+        super().__init__('perplexity', **kwargs)
         self.required_key = 'loss'
+        self.scale = 1
 
     def eval_score(self, record:dict) -> float:
         return math.exp(record['loss'])
 
-    def calc_scores(self, scores, results):
-        results['std_dev'] = round(scores.std(), 3) 
-        results['tmean'] = round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
-            
+    
 class metric_exact_match(Metric):
     """
     コード評価用Evaluatorクラス。HuggingFaceのevaluate-metric/code_evalを使用してスコアを算出する。
@@ -103,6 +118,19 @@ def humaneval_extract(prompt, generated_text):
     return prompt + "\n" + generated_text[:min_stop_index]
 
 
+# {"0": [[0, {"task_id": 0, "passed": false, "result": "failed: name 'df_product_full' is not defined", "completion_id": 0}]]},
+
+def extract_passed_result(d, result_list):
+    if isinstance(d, dict):
+        if 'passed' in d and 'result' in d:
+            result_list.append(d)
+        else:
+            for _, v in d.items():
+                extract_passed_result(v, result_list)
+    if isinstance(d, list):
+        for v in d:
+            extract_passed_result(v, result_list)
+
 class metric_pass_at_k(Metric):
     """
     コード評価用Evaluatorクラス
@@ -111,32 +139,21 @@ class metric_pass_at_k(Metric):
 
     def __init__(self, **kwargs):
         self.k = kwargs.get('k', 1)
-        super(Metric).__init__(f'pass@{self.k}')
+        super().__init__(f'pass@{self.k}', **kwargs)
         self.required_key = 'output'
+        os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         self.tool = evaluate.load('code_eval')  # code_eval
 
     def eval_score(self, record):
         test_cases = [record['test']]
         extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
-        record['generated_code'] = extracted_code
         candidates = [extracted_code]
         pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
+        record['generated_code'] = extracted_code
         record[f'{self.name}_results'] = results
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
-
-class metric_f1(Metric):
-    def __init__(self, **kwargs):
-        super(Metric).__init__('perplexity', **kwargs)
-        self.required_key = 'loss'
-
-    def eval_score(self, record:dict) -> float:
-        return math.exp(record['loss'])
-
-    def calc_scores(self, scores, results):
-        results['std_dev'] = round(scores.std(), 3) 
-        results['tmean'] = round(stats.trim_mean(scores, proportiontocut=0.1), 3),  # 上下10%をトリム
 
 from .similarites import (
     jaccard_similarity, cosine_similarity, 
@@ -146,7 +163,7 @@ from .similarites import (
 
 class metric_editsim(Metric):
     def __init__(self, **kwargs):
-        super(Metric).__init__('editsim', **kwargs)
+        super().__init__('editsim', **kwargs)
 
     def eval_score(self, record:dict) -> float:
         reference = record['reference']
@@ -155,13 +172,9 @@ class metric_editsim(Metric):
         scores = np.array(record['scores'])
         return scores.mean()
 
-    def calc_scores(self, scores, results):
-        results['std_dev'] = round(scores.std(), 3) 
-
-
 class metric_jaccard(Metric):
     def __init__(self, **kwargs):
-        super(Metric).__init__('jaccard', **kwargs)
+        super().__init__('jaccard', **kwargs)
         self.tokenize = simple_tokenize
 
     def eval_score(self, record:dict) -> float:
@@ -170,12 +183,9 @@ class metric_jaccard(Metric):
                           for candidate in listfy(record['output'])])
         return scores.mean()
 
-    def calc_scores(self, scores, results):
-        results['std_dev'] = round(scores.std(), 3) 
-
 class metric_cosine(Metric):
     def __init__(self, **kwargs):
-        super(Metric).__init__('cosine', **kwargs)
+        super().__init__('cosine', **kwargs)
         self.tokenize = simple_tokenize
 
     def eval_score(self, record:dict) -> float:
@@ -183,9 +193,6 @@ class metric_cosine(Metric):
         scores = np.array([cosine_similarity(candidate, reference, tokenize=self.tokenize) 
                           for candidate in listfy(record['output'])])
         return scores.mean()
-
-    def calc_scores(self, scores, results):
-        results['std_dev'] = round(scores.std(), 3) 
 
 
 """
@@ -239,6 +246,7 @@ class F1Evaluator(Evaluator):
         total_score = self.metric.compute(predictions=predictions, references=references)["f1"]
         return total_score
 """
+
 
 #######################
 
