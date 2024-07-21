@@ -312,9 +312,12 @@ class HFModel(Model):
     def __init__(self, model_path, aargs):
         from transformers import pipeline
         super().__init__(model_path, aargs)
-        self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path, padding_side='left')
+        tokenizer_args = dict(padding_side='left')
+        self.tokenizer = adhoc.load_tokenizer(tokenizer=model_path, **tokenizer_args)
         # なぜか必要らしい（↓）
         self.tokenizer.pad_token = self.tokenizer.eos_token
+        # if 'max_length' in aargs:
+        #     self.tokenizer.trancation = True
         self.model, generator_args = load_model_generator_args(model_path, aargs)
         self.device = next(self.model.parameters()).device
         adhoc.print('デバイス//DEIVCE', self.device)
@@ -326,6 +329,8 @@ class HFModel(Model):
         )
         if 'max_length' in generator_args and 'max_new_tokens' in generator_args:
             del generator_args['max_length']
+        # if 'max_length' in generator_args:
+        #     generator_args['trancation'] = True
         if 'return_full_text' not in generator_args:
             generator_args['return_full_text'] = False
         if 'pad_token_id' not in generator_args:
@@ -423,3 +428,26 @@ def load_model(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:
         return load_model_from(aargs)
 
+# CLI
+
+IPSUM='Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
+
+def test_model_cli(**kwargs):
+    with adhoc.from_kwargs(**kwargs) as aargs:
+        if 'max_new_tokens' not in aargs:
+            aargs['max_new_tokens'] = 256
+        model = load_model_from(aargs)
+        print(model)
+        prompt = aargs['test_prompt|prompt']
+        if prompt is None:
+            adhoc.print("プロンプトは、test_prompt='Lorem ipsum ...'で変更できるよ")
+            prompt=IPSUM
+        sample_list = [{
+            'input': prompt
+        }]
+        model.generate_sample(sample_list)
+        for sample in sample_list:
+            input = sample['input']
+            output = sample['output']
+            adhoc.print(f'[入力//INPUT]\n{input}')
+            adhoc.print(f'[出力//OUTPUT]\n{output}')

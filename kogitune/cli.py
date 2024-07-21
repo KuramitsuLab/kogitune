@@ -6,7 +6,7 @@ def update_cli(**kwargs):
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U -q git+https://github.com/kuramitsulab/kogitune.git')
 
-def beta_cli(**kwargs):
+def update_beta_cli(**kwargs):
     adhoc.print('KOGITUNEをベータ版に更新します。\npip3 install -U git+https://github.com/kkuramitsu/kogitune.git')
     os.system('pip3 uninstall -y kogitune')
     os.system('pip3 install -U -q git+https://github.com/kkuramitsu/kogitune.git')
@@ -18,6 +18,8 @@ def split_lines_cli(**kwargs):
 def rename_linenum_cli(**kwargs):
     from kogitune.stores.files import rename_linenum_cli
     rename_linenum_cli(**kwargs)
+
+# tokenizer
 
 def train_bpe_cli(**kwargs):
     from kogitune.stores.unigrams import train_bpe_cli
@@ -134,10 +136,13 @@ def token_stat_cli(**kwargs):
                 for token_id in example['labels']:
                     counts[token_id] += 1
         output_file = dc.aargs['output_file|output|=token_stat.csv']
-        df = pd.DataFrame({'tokens': vocabs, 'counts': counts})
+        df = pd.DataFrame({'token': vocabs, 'count': counts})
         print(df['counts'].describe())
         df.to_csv(output_file)
         adhoc.print(f"トークンの出現回数を output_file='{output_file}' に保存しました。ふむふむ")
+
+## 事前学習系
+
 
 def scratch_cli(**kwargs):
     from kogitune.trainers.scratch import generate_scratch
@@ -148,7 +153,6 @@ def pretrain_cli(**kwargs):
     import torch
     torch.backends.cuda.matmul.allow_tf32=True
     from kogitune.trainers import DatasetComposer
-
     with DatasetComposer(**kwargs) as dc:
         dc.train()
 
@@ -158,28 +162,22 @@ def data_cli(**kwargs):
         datalist = load_data(aargs)
 
 def test_model_cli(**kwargs):
-    from kogitune.metrics import load_model
-    IPSUM='Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
+    from kogitune.metrics.models import test_model_cli
+    test_model_cli(**kwargs)
 
-    with adhoc.from_kwargs(**kwargs) as aargs:
-        model = load_model(aargs=aargs)
-        print(model)
-        prompt = aargs['test_prompt|prompt']
-        if prompt is None:
-            adhoc.print('test_prompt でプロンプトは変更できるよ')
-            prompt=IPSUM
-        output = model.generate_text(prompt)
-        adhoc.warn(f'test_prompt="{prompt}"\n===\n{output}\n')
+def generate_cli(**kwargs):
+    from kogitune.metrics.models import test_model_cli
+    test_model_cli(**kwargs)
 
 def convert_dataset_cli(**kwargs):
     from kogitune.datasets.convertors import convert_dataset_cli
     convert_dataset_cli(**kwargs)
 
-
 def finetune_cli(**kwargs):
     from kogitune.trainers import finetune_cli
     finetune_cli(**kwargs)
 
+## 評価系
 
 def chain_eval_cli(**kwargs):
     from kogitune.metrics.chaineval import chain_eval_cli
