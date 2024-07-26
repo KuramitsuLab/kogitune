@@ -73,6 +73,7 @@ class Model(object):
         Base class for abstracting a pretrained model.
         """
         self.model_path = model_path
+        self.tokenizer = None
         self.model_tag = aargs[f'model_tag|tag|={basename(model_path)}']
         self.verbose_count = aargs['verbose_count|=5']
         self.generator_args = {}
@@ -85,11 +86,12 @@ class Model(object):
             adhoc.print(*args, face='🔍')
             self.verbose_count -= 1
 
-    def configure(self, template: TemplateProcessor, datalist:List[dict]):
+    def configure(self, template: TemplateProcessor, datalist:List[dict], aargs):
         genargs = self.generator_args
         if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
-            max_new_tokens = template.calc_length(datalist, return_max_new_tokens=True)
+            max_new_tokens = template.calc_length(datalist, tokenizer=self.tokenizer, return_max_new_tokens=True)
             genargs['max_new_tokens'] = max_new_tokens
+            aargs['max_new_tokens'] = max_new_tokens
             adhoc.notice(f'max_new_tokens={max_new_tokens}を設定したよ')
 
     def compute_loss(self, input_text)->float:
@@ -283,18 +285,18 @@ def load_model_generator_args(model_path, aargs):
         model = load_hfmodel(model_path, model_args)
     return model, generator_args
 
-def get_generator_kwargs(aargs: adhoc.Arguments):
-    kwargs = dict(
-        do_sample = aargs['do_sample=|True'],
-        temperature = aargs['temperature|=0.2'],
-        top_p = aargs['top_p|=0.95'],
-        return_full_text = aargs['return_full_text|=False'],
-    )
-    if 'max_length' in aargs:
-        kwargs['max_length'] = aargs['max_length']
-    else:
-        kwargs["max_new_tokens"] = aargs['max_new_tokens|max_tokens|=512']
-    return kwargs
+# def get_generator_kwargs(aargs: adhoc.Arguments):
+#     kwargs = dict(
+#         do_sample = aargs['do_sample|=False'],
+#         temperature = aargs['temperature|=0.2'],
+#         top_p = aargs['top_p|=0.95'],
+#         return_full_text = aargs['return_full_text|=False'],
+#     )
+#     if 'max_length' in aargs:
+#         kwargs['max_length'] = aargs['max_length']
+#     else:
+#         kwargs["max_new_tokens"] = aargs['max_new_tokens|max_tokens|=512']
+#     return kwargs
 
 # define data streamer
 

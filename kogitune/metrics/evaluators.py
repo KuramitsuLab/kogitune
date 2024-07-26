@@ -89,7 +89,7 @@ class metric_exact_match(Metric):
     """
 
     def __init__(self, **kwargs):
-        super(Metric).__init__('exact_match', **kwargs)
+        super().__init__('exact_match', **kwargs)
         self.strict = kwargs.get('strict', True)
 
     def exact_match(self, output, reference):
@@ -150,7 +150,9 @@ class metric_pass_at_k(Metric):
         candidates = [extracted_code]
         pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
         record['generated_code'] = extracted_code
-        record[f'{self.name}_results'] = results
+        result_list = []
+        extract_passed_result(results, result_list)
+        record[f'results_{self.name}'] = result_list
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k

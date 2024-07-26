@@ -40,6 +40,8 @@ def load_hfdataset(datapath:str, aargs):
     if 'dataset_name' in aargs:
         # dataset_name test_list で設定されるの優先する 
         dataset_args['name'] = aargs['dataset_name']
+    if 'trust_remote_code' in dataset_args:
+        dataset_args['trust_remote_code'] = True
     try:
         dataset = datasets.load_dataset(datapath, **dataset_args)
     except ValueError as e:
@@ -86,19 +88,19 @@ def load_testdata_from(aargs):
         adhoc.transform_keys(datalist, transform)
 
     dumpdata = json.dumps(datalist[0], indent=4, ensure_ascii=False)
-    adhoc.print(f'テストデータ({testdata})を確認しておいてね\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=True)
+    adhoc.print(f'テストデータ({testdata})を確認しておいてね\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=testdata)
     return datatag, datalist
 
 ## sample_file
 
 def sample_file_name(datatag, modeltag):
-    return f'{datatag}_x_{modeltag}.jsonl'
+    return f'{modeltag}_x_{datatag}.jsonl'
 
 def parse_tags(sample_file:str):
     base_name = basename(sample_file, skip_dot=True).replace('.jsonl', '')
     if '_x_' not in base_name:
         return base_name, ''
-    datatag, _, modeltag = base_name.partition('_x_')
+    modeltag, _, datatag = base_name.partition('_x_')
     return datatag, modeltag
 
 ## 
@@ -127,7 +129,7 @@ def _guess_uniquekey(datalist: List[dict]):
 def prepare_sample_list(sample_file: str, datalist:List[dict], aargs):
     if os.path.exists(sample_file):
         sample_list = load_sample_list(sample_file)
-        if len(sample_list) == len(datalist):
+        if len(sample_list) == len(datalist) and aargs['overwrite|=False'] != True:
             adhoc.notice(f'既存ファイル {sample_file}に追記するよ')
             return sample_list
     # 新しく sample_list を作る
@@ -143,10 +145,17 @@ def prepare_sample_list(sample_file: str, datalist:List[dict], aargs):
     else:
         sample_list = [{'chain_id': f'index/{n}'} for n in range(len(datalist))]
 
-    chain_key = aargs['chain_key|merge_key|chain|merge']
-    if chain_key is not None and chain_key in datalist[0]:
+    chain_keys = adhoc.list_values(aargs['chain_keys|chain_key|chain'])
+    for chain_key in chain_keys:
+        if chain_key not in datalist[0]:
+            adhoc.notice(f'FIXME: No such chain_key: {chain_key}')
+            continue
         for source, sample in zip(datalist, sample_list):
             sample[chain_key] = source[chain_key]
+
+    add_dict = aargs['additional_dataset|add_dict']
+    if add_dict is not None:
+        sample_list = [sample | add_dict for sample in sample_list]
 
     save_sample_list(sample_file, sample_list)
     return sample_list
@@ -189,11 +198,11 @@ def generate_from(aargs):
     test_run = aargs[f'test_run|head|={len(sample_list)}']
 
     model = load_model_from(aargs)
-    if eval_type != 'loss' and eval_type != 'choice':
-        model.configure(template, datalist)
     test_list = [sample for sample in sample_list if result_key not in sample]
     if len(test_list) == 0:
         return sample_file
+    if eval_type != 'loss' and eval_type != 'choice':
+        model.configure(template, datalist, aargs)
     adhoc.notice('生成をはじめます', model=model, eval_type=eval_type, n=n, generator_args=model.generator_args)
     if test_run < len(test_list):
         adhoc.print(f'とりあえず、先頭のhead={test_run}件のみ、試してみます')
@@ -209,6 +218,44 @@ def generate_from(aargs):
         save_sample_list(sample_file, sample_list)
     return sample_file
 
+def backup_sample(sample, key):
+    if key in sample:
+        for i in range(10):
+            newkey = f'{key}.{i}'
+            if newkey not in sample:
+                break
+        sample[newkey] = sample[key]
+
+def selfcheck_from(aargs):
+    check_aargs = adhoc.ChainMap(
+        {'do_sample': False, 'num_return_sequences': 1, 'n': 1},
+        parent = aargs,
+    )
+    adhoc.notice('SelfCheck用の参照を作成します', check_aargs=check_aargs)
+    sample_file = generate_from(check_aargs)
+    sample_list = load_sample_list(sample_file)
+    for sample in sample_list:
+        if 'output' in sample:  # head を指定した場合、output が足りなくなる
+            backup_sample(sample, 'reference')
+            sample['reference'] = sample['output']
+            del sample['output']
+    save_sample_list(sample_file, sample_list)
+    n = aargs['num_return_sequences|n|N|=1']
+    if n == 1:
+        aargs['num_return_sequences'] = 8
+    if 'temperature' not in aargs:
+        aargs['temerature'] = 0.8
+    if 'do_sample' not in aargs:
+        aargs['do_sample'] = True
+
+def back_translation(sample_file, instruction):
+    sample_list = load_sample_list(sample_file)
+    for sample in sample_list:
+        if 'output' in sample:  # head を指定した場合、output が足りなくなる
+            backup_sample(sample, 'input')
+            sample['input'] = instruction + '\n\n' + sample['output']
+            del sample['output']
+    save_sample_list(sample_file, sample_list)
 
 
 def get_metric_list(aargs):
@@ -217,24 +264,26 @@ def get_metric_list(aargs):
 
 def eval_from(datatag, modeltag, aargs):
     metric_list = get_metric_list(aargs)
-    sample_file = f'{datatag}_x_{modeltag}.jsonl'
+    sample_file = sample_file_name(datatag, modeltag)
     sample_list = load_sample_list(sample_file)
-    adhoc.print('@', metric_list, sample_file)
+    adhoc.notice('評価を始めます', metric_list, sample_file)
     for metric_path in metric_list:
         result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
             save_sample_list(sample_file, sample_list)
             result['model'] = modeltag
             result['data'] = datatag
-            print(result)
+            adhoc.notice(result)
             result['datetime'] = datetime.now().isoformat()
             result['contact'] = getpass.getuser()
-            score_file = aargs[f'output_file|={datatag}_score.jsonl']
+            score_file = aargs[f'score_file|output_file|={datatag}_score.jsonl']
             save_score(score_file, result)
+            adhoc.saved(score_file, "スコアの記録")
             metric_name = result['metric']
-            update_leadersboard(modeltag, f'{datatag}/{metric_name}', result['mean'], 
-                                aargs['leadersboard|=leadersboard.csv'])
-
+            testname = datatag if metric_name == 'exact_match' else f'{datatag}/{metric_name}'
+            filepath = aargs['leadersboard|=leadersboard.csv']
+            update_leadersboard(modeltag, testname, result['mean'], filepath=filepath)
+            adhoc.saved(filepath, "リーダーズボード//Leaders Board")
 
 def save_score(score_file, result:dict):
     directory = os.path.dirname(score_file)
@@ -266,5 +315,19 @@ def update_leadersboard(model, key, score, filepath='leadersboard.csv'):
         })
     df = pd.DataFrame(json_list).sort_values(by='score', ascending=False)
     df.to_csv(filepath, index=False)
-    adhoc.print(df, face='')
+    adhoc.print(df.transpose(), face='')
 
+def import_output_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        from_file = aargs['from_file|!!']
+        output_key = aargs['output_key|!!']
+        result_list = load_sample_list(from_file)
+        for file in adhoc.list_values(aargs['files']):
+            source_list = load_sample_list(file)
+            imported_list = []
+            for sample, source in zip(result_list, source_list):
+                sample = sample.copy()
+                sample['output'] = source[output_key]
+                imported_list.append(sample)
+            file = file.replace('.jsonl', '') + '_imported.jsonl'
+            save_sample_list(file, imported_list)

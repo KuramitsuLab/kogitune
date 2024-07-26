@@ -5,6 +5,11 @@ from .da import da
 import numpy as np
 import datasets
 
+
+
+
+
+
 # パターンに一致するすべての部分を検索
 
 SEC_IN = '### instruction\n'
@@ -69,7 +74,8 @@ class TemplateProcessor(object):
     def create_reference(self, sample:dict):
         return self.create_output(sample)
 
-    def load_sample(self, eval_type:str,
+    def load_sample(self, 
+                    eval_type:str,
                     datalist:List[dict], 
                     sample_list:List[dict]):
         assert len(datalist) == len(sample_list)
@@ -80,6 +86,8 @@ class TemplateProcessor(object):
                 result_key = self._load_choice(source, sample)
             elif eval_type == 'loss':
                 result_key = self._load_loss(source, sample)
+            elif eval_type == 'back':
+                result_key = self._load_back(source, sample)
             else:
                 result_key = self._load_generation(source, sample)
         return result_key
@@ -107,6 +115,14 @@ class TemplateProcessor(object):
         sample['choice'] = self.options['choice']
         sample['input'] = [self.create(f'prompt_{choice}', source) for choice in self.options['choice']]
         sample['reference'] = self.create_output(source)
+        return 'output'
+
+    def _load_back(self, source, sample):
+        if 'back' not in self.options:
+            adhoc.notice('テンプレートにbackがありません')
+            raise ValueError()
+        sample['input'] = self.create('back_translation', source)
+        sample['test'] = self.create('test', source)
         return 'output'
 
     def create_instruction(self, sample:dict):
@@ -148,9 +164,10 @@ class TemplateProcessor(object):
             prompt.append(prompt_length)
             output.append(output_length)
             total.append(prompt_length+output_length)
-        adhoc.notice('データセットのトークン長を調べてみたよ')
-        data = {'prompt': prompt, 'output': output, 'total': total}
-        print(pd.DataFrame(data).describe(percentiles=[.8, .9, .95]))
+        if max(output) > 256:
+            adhoc.notice('データセットのトークン長を調べてみたよ')
+            data = {'prompt': prompt, 'output': output, 'total': total}
+            print(pd.DataFrame(data).describe(percentiles=[.8, .9, .95]))
         if q < 1:
             q = int(q*100)
         if return_max_new_tokens:
@@ -199,6 +216,7 @@ def guess_template(sample: dict):
             "prompt": "{prompt}",
             "reference": "{canonical_solution}\n",
             "test": "\n{test}\n\ncheck({entry_point})\n",
+            "back_translation": "{instruction}\n\n{prompt}{canonical_solution}\n",
         }
     if has_schema(sample, 'question|choice0|choice1|choice2|choice3|choice4|label'):
         # JCommonSenseQA
@@ -223,11 +241,10 @@ def guess_template(sample: dict):
             "prompt_C": "{question}\n{C}",
             "prompt_D": "{question}\n{D}",
         }
-    if has_schema(sample, 'in|out'):
+    if has_schema(sample, 'prompt'):
         # Kogitune 標準形式
         return {
-            "prompt": "{in}",
-            "reference": "{out}",
+            "prompt": "{prompt}",
         }
     return None
 

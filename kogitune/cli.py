@@ -179,6 +179,7 @@ def finetune_cli(**kwargs):
 
 ## 評価系
 
+
 def chain_eval_cli(**kwargs):
     from kogitune.metrics.chaineval import chain_eval_cli
     chain_eval_cli(**kwargs)
@@ -195,6 +196,10 @@ def eval_choice_cli(**kwargs):
     from kogitune.metrics.chaineval import eval_choice_cli
     eval_choice_cli(**kwargs)
 
+def import_output_cli(**kwargs):
+    "実験結果をインポートする"
+    from kogitune.metrics.samples import import_output_cli
+    import_output_cli(**kwargs)
 
 
 def launch(subcommand, **kwargs):
