@@ -40,4 +40,4 @@ def extract_python_code(text):
         if code is not None:
             result.append(code)
         i += next
-    return result
+    return '\n'.join(result)

@@ -5,11 +5,6 @@ from .da import da
 import numpy as np
 import datasets
 
-
-
-
-
-
 # パターンに一致するすべての部分を検索
 
 SEC_IN = '### instruction\n'
@@ -83,8 +78,10 @@ class TemplateProcessor(object):
             source = datalist[i]
             sample = sample_list[i]
             if eval_type == 'choice':
+                sample['eval_type'] = eval_type
                 result_key = self._load_choice(source, sample)
             elif eval_type == 'loss':
+                sample['eval_type'] = eval_type
                 result_key = self._load_loss(source, sample)
             elif eval_type == 'back':
                 result_key = self._load_back(source, sample)
@@ -204,6 +201,14 @@ def has_schema(data: dict, keys:str):
     return True
 
 def guess_template(sample: dict):
+    if has_schema(sample, 'instruction|test|entry_point'):
+        # MIHE形式 仮
+        return {
+            "prompt": "{instruction}\n",
+            "prompt_cot": "{instruction}\n{example}\n",
+            "reference": "{prompt}{canonical_solution}",
+            "test": "\n{test}\n\ncheck({entry_point})\n",
+        }
     if has_schema(sample, 'instruction|input|output'):
         # Alpaca形式
         return {

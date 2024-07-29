@@ -51,7 +51,11 @@ class Metric(object):
         results['CI95%'] = confidence_interval
         return results
 
+    def precheck(self, result_list):
+        pass
+
     def evaluate(self, result_list, force_eval=False):
+        self.precheck(result_list)
         scores = []
         for record in adhoc.tqdm(result_list, desc=f'{self.name}'):
             if force_eval or self.name not in record:
@@ -106,9 +110,9 @@ class metric_exact_match(Metric):
 # HumanEval pass@1
 #
 
+from .pythons import extract_python_code
+
 def humaneval_extract(prompt, generated_text):
-    # if generated_text == '':
-    #     return 'Empty Code!!'
     stop_sequences=["\nclass", "\ndef", "\n#", "\n@", "\nprint", "\nif", "\n```"]
     min_stop_index = len(generated_text)
     for seq in stop_sequences:
@@ -143,13 +147,23 @@ class metric_pass_at_k(Metric):
         self.required_key = 'output'
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         self.tool = evaluate.load('code_eval')  # code_eval
+        self.completion = True
+
+    def precheck(self, record_list):
+        counts = [1 for record in record_list if 'def ' in record['input']]
+        if len(counts) != len(record_list):
+            adhoc.print('コード補完ではないね')
+            self.completion = False
 
     def eval_score(self, record):
         test_cases = [record['test']]
-        extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
+        if self.completion:
+            extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
+        else:
+            extracted_code = [extract_python_code(x) for x in listfy(record['output'])]
         candidates = [extracted_code]
         pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
-        record['generated_code'] = extracted_code
+        record['generated_code'] = extracted_code[0] if len(extracted_code) == 1 else extracted_code
         result_list = []
         extract_passed_result(results, result_list)
         record[f'results_{self.name}'] = result_list
