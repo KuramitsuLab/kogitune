@@ -211,13 +211,13 @@ def guess_template(sample: dict):
         # MIHE形式 仮
         if contains_japanese(sample['text']):
             return {
-                "prompt": "次の仕様を満たすようにPython関数を完成させてください。\n{text}\n\ndef {function_signature}:\n",
+                "prompt": "次の仕様を満たすようにPython関数を完成させてください。\n\n{text}\n\ndef {function_signature}:\n",
                 "reference": "{prompt}{canonical_solution}",
                 "test": "from typing import List, Tuple, Optional\n\n{test}\n\ncheck({entry_point})\n",
             }
         else:
             return {
-                "prompt": "Complete a Python function to meet the following specifications.\n{text}\n\ndef {function_signature}:\n",
+                "prompt": "Complete a Python function to meet the following specifications.\n\n{text}\n\ndef {function_signature}:\n",
                 "reference": "{prompt}{canonical_solution}",
                 "test": "from typing import List, Tuple, Optional\n\n{test}\n\ncheck({entry_point})\n",
             }
