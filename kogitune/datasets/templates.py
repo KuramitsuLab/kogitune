@@ -200,20 +200,38 @@ def has_schema(data: dict, keys:str):
             return False
     return True
 
+def contains_japanese(text: str) -> bool:
+    for char in text:
+        if '\u3040' <= char <= '\u30FF' or '\u4E00' <= char <= '\u9FFF' or '\uFF66' <= char <= '\uFF9D':
+            return True
+    return False
+
 def guess_template(sample: dict):
-    if has_schema(sample, 'instruction|test|entry_point'):
+    if has_schema(sample, 'instruction|text|function_signature|test|entry_point'):
         # MIHE形式 仮
-        return {
-            "prompt": "{instruction}\n",
-            "prompt_cot": "{instruction}\n{example}\n",
-            "reference": "{prompt}{canonical_solution}",
-            "test": "\n{test}\n\ncheck({entry_point})\n",
-        }
+        if contains_japanese(sample['text']):
+            return {
+                "prompt": "次の仕様を満たすようにPython関数を完成させてください。\n{text}\n\ndef {function_signature}:\n",
+                "reference": "{prompt}{canonical_solution}",
+                "test": "from typing import List, Tuple, Optional\n\n{test}\n\ncheck({entry_point})\n",
+            }
+        else:
+            return {
+                "prompt": "Complete a Python function to meet the following specifications.\n{text}\n\ndef {function_signature}:\n",
+                "reference": "{prompt}{canonical_solution}",
+                "test": "from typing import List, Tuple, Optional\n\n{test}\n\ncheck({entry_point})\n",
+            }
     if has_schema(sample, 'instruction|input|output'):
         # Alpaca形式
         return {
             "prompt": "{instruction}\n{input}",
             "reference": "{output}",
+        }
+    if has_schema(sample, 'question|answer|answer_number|equation_solution'):
+        # MSGM形式
+        return {
+            "prompt": "{question}",
+            "reference": "{answer_number}",
         }
     if has_schema(sample, 'prompt|test|entry_point|canonical_solution'):
         # HumanEval
