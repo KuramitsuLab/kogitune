@@ -41,3 +41,14 @@ def extract_python_code(text):
             result.append(code)
         i += next
     return '\n'.join(result)
+
+
+def extract_from_code_completion(prompt, generated_text):
+    stop_sequences=["\nclass", "\ndef", "\n#", "\n@", "\nprint", "\nif", "\n```"]
+    min_stop_index = len(generated_text)
+    for seq in stop_sequences:
+        stop_index = generated_text.find(seq)
+        if stop_index != -1 and stop_index < min_stop_index:
+            min_stop_index = stop_index
+    code = prompt + "\n" + generated_text[:min_stop_index]
+    return extract_python_code(code)

@@ -3,6 +3,7 @@ import re
 from .commons import *
 from .da import da
 import numpy as np
+import random
 import datasets
 
 # パターンに一致するすべての部分を検索
@@ -79,7 +80,7 @@ class TemplateProcessor(object):
             sample = sample_list[i]
             if eval_type == 'choice':
                 sample['eval_type'] = eval_type
-                result_key = self._load_choice(source, sample)
+                result_key = self.make_choice(source, sample)
             elif eval_type == 'loss':
                 sample['eval_type'] = eval_type
                 result_key = self._load_loss(source, sample)
@@ -105,14 +106,30 @@ class TemplateProcessor(object):
         sample['input'] = f'{input_text}{sep}{reference}'
         return 'loss'
 
-    def _load_choice(self, source, sample):
-        if 'choice' not in self.options:
-            adhoc.notice('テンプレートにchoiceがありません')
-            raise ValueError()
-        sample['choice'] = self.options['choice']
-        sample['input'] = [self.create(f'prompt_{choice}', source) for choice in self.options['choice']]
-        sample['reference'] = self.create_output(source)
-        return 'output'
+    def make_choice(self, source, sample):
+        if 'prompt_n' in self.options:
+            ## 数を当てる問題から選択肢を作る
+            prompt_n = source['prompt_n']
+            reference = source['reference']
+            assert reference.isdigit()
+            number = int(reference)
+            random_numbers = set([number, number-1, number+1, number*2, number//2, number*10, number//10])
+            while len(random_numbers) < 5:
+                random_numbers.add(random.randint(0, number*3+1))
+            random_numbers.remove(number)
+            random_numbers = [number] + list(random.sample(random_numbers, 4))
+            print('@@', random_numbers)
+            sample['choice'] = random_numbers
+            sample['input'] = [f'{prompt_n}{n}' for n in random_numbers]
+            sample['reference'] = reference
+            return 'output'
+        if 'choice' in self.options:
+            sample['choice'] = self.options['choice']
+            sample['input'] = [self.create(f'prompt_{choice}', source) for choice in self.options['choice']]
+            sample['reference'] = self.create_output(source)
+            return 'output'
+        adhoc.notice('テンプレートにchoiceがありません')
+        raise ValueError()
 
     def _load_back(self, source, sample):
         if 'back' not in self.options:
@@ -229,10 +246,19 @@ def guess_template(sample: dict):
         }
     if has_schema(sample, 'question|answer|answer_number|equation_solution'):
         # MSGM形式
-        return {
-            "prompt": "{question}",
-            "reference": "{answer_number}",
-        }
+        if contains_japanese(sample['question']):
+            return {
+                "prompt": "{question}\n答えは、",
+                "prompt_0shot": "2時間の分数は？\n答えは、120\n\n{question}\n答えは、",
+                "reference": "{answer_number}",
+                "prompt_n": "{question}\n答えは、",
+            }
+        else:
+            return {
+                "prompt": "{question}\nThe answer is ",
+                "reference": "{answer_number}",
+            }
+
     if has_schema(sample, 'prompt|test|entry_point|canonical_solution'):
         # HumanEval
         return {

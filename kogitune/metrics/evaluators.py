@@ -86,20 +86,32 @@ class metric_perplexity(Metric):
     def eval_score(self, record:dict) -> float:
         return math.exp(record['loss'])
 
-    
+import re
+
+def extract_number(text):
+    # 正規表現を使用して文字列から数字を抽出
+    match = re.search(r'\d+', text)
+    if match:
+        return f'{int(match.group())}'
+    else:
+        return ''
+
 class metric_exact_match(Metric):
     """
-    コード評価用Evaluatorクラス。HuggingFaceのevaluate-metric/code_evalを使用してスコアを算出する。
+    完全一致による評価尺度
     """
 
     def __init__(self, **kwargs):
         super().__init__('exact_match', **kwargs)
         self.strict = kwargs.get('strict', True)
 
+
     def exact_match(self, output, reference):
-        if (self.strict and reference == output) or reference in output:
-            return 1
-        return 0
+        if self.strict:
+            if reference.isdigit():
+                output = extract_number(output)
+            return reference == output
+        return reference in output
 
     def eval_score(self, record:dict) -> float:
         outputs = listfy(record['output'])
@@ -107,19 +119,13 @@ class metric_exact_match(Metric):
         scores = np.array([self.exact_match(output, reference) for output in outputs])
         return scores.mean()
 
+
+
 # HumanEval pass@1
 #
 
-from .pythons import extract_python_code
+from .pythons import extract_python_code, extract_from_code_completion
 
-def humaneval_extract(prompt, generated_text):
-    stop_sequences=["\nclass", "\ndef", "\n#", "\n@", "\nprint", "\nif", "\n```"]
-    min_stop_index = len(generated_text)
-    for seq in stop_sequences:
-        stop_index = generated_text.find(seq)
-        if stop_index != -1 and stop_index < min_stop_index:
-            min_stop_index = stop_index
-    return prompt + "\n" + generated_text[:min_stop_index]
 
 
 # {"0": [[0, {"task_id": 0, "passed": false, "result": "failed: name 'df_product_full' is not defined", "completion_id": 0}]]},
@@ -158,7 +164,7 @@ class metric_pass_at_k(Metric):
     def eval_score(self, record):
         test_cases = [record['test']]
         if self.completion:
-            extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
+            extracted_code = [extract_from_code_completion(record['input'], x) for x in listfy(record['output'])]
         else:
             extracted_code = [extract_python_code(x) for x in listfy(record['output'])]
         candidates = [extracted_code]
