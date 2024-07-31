@@ -109,18 +109,17 @@ class TemplateProcessor(object):
     def make_choice(self, source, sample):
         if 'prompt_n' in self.options:
             ## 数を当てる問題から選択肢を作る
-            prompt_n = source['prompt_n']
-            reference = source['reference']
+            prompt_n = self.create('prompt_n', source)
+            reference = self.create_reference(source)
             assert reference.isdigit()
             number = int(reference)
             random_numbers = set([number, number-1, number+1, number*2, number//2, number*10, number//10])
             while len(random_numbers) < 5:
                 random_numbers.add(random.randint(0, number*3+1))
             random_numbers.remove(number)
-            random_numbers = [number] + list(random.sample(random_numbers, 4))
-            print('@@', random_numbers)
-            sample['choice'] = random_numbers
-            sample['input'] = [f'{prompt_n}{n}' for n in random_numbers]
+            random_numbers = [number] + list(random.sample(list(random_numbers), 4))
+            sample['choice'] = [str(x) for x in random_numbers]
+            sample['input'] = [f'{prompt_n}{n}\n' for n in random_numbers]
             sample['reference'] = reference
             return 'output'
         if 'choice' in self.options:

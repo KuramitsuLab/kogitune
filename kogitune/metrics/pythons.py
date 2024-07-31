@@ -1,4 +1,5 @@
 import ast
+import traceback
 
 def get_syntax_error_line(code):
     try:
@@ -42,7 +43,6 @@ def extract_python_code(text):
         i += next
     return '\n'.join(result)
 
-
 def extract_from_code_completion(prompt, generated_text):
     stop_sequences=["\nclass", "\ndef", "\n#", "\n@", "\nprint", "\nif", "\n```"]
     min_stop_index = len(generated_text)
@@ -52,3 +52,34 @@ def extract_from_code_completion(prompt, generated_text):
             min_stop_index = stop_index
     code = prompt + "\n" + generated_text[:min_stop_index]
     return extract_python_code(code)
+
+TEMPLATE_CODE_FIX = '''\
+The following error has occurred. 
+Please fix the code so that it can be executed without errors.
+
+### Error
+{error_message}
+{stack_trace}
+
+### Code
+{code}
+
+'''
+
+def get_code_fix_prompt(code_str, test_code):
+    if isinstance(code_str, list):
+        return [get_code_fix_prompt(x, test_code) for x in code_str]
+    try:
+        # コードを実行
+        exec(code_str+test_code)
+        return None
+    except Exception as e:
+        # エラーが発生した場合、エラーメッセージとスタックトレースを回収
+        error_message = str(e)
+        stack_trace = traceback.format_exc()
+        prompt = TEMPLATE_CODE_FIX.format(
+            error_message=error_message, 
+            stack_trace=stack_trace[:256], 
+            code=code_str+test_code)
+        return prompt
+

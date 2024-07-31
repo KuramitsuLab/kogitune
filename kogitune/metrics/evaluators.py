@@ -124,7 +124,11 @@ class metric_exact_match(Metric):
 # HumanEval pass@1
 #
 
-from .pythons import extract_python_code, extract_from_code_completion
+from .pythons import (
+    extract_python_code, 
+    extract_from_code_completion,
+    get_code_fix_prompt
+)
 
 
 
@@ -173,6 +177,7 @@ class metric_pass_at_k(Metric):
         result_list = []
         extract_passed_result(results, result_list)
         record[f'results_{self.name}'] = result_list
+        print('@@@', get_code_fix_prompt(record['generated_code'], record['test']))
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
