@@ -93,9 +93,14 @@ def load_testdata_from(aargs):
 
 ## sample_file
 
-def sample_file_name(datatag, modeltag):
-    return f'{modeltag}_x_{datatag}.jsonl'
-
+def sample_file_name(datatag, modeltag, eval_type=None):
+    if eval_type is None or eval_type == 'generation':
+        subdir = f'{modeltag}'
+    else:
+        subdir = f'{modeltag}_{eval_type}'
+    os.makedirs(subdir, exist_ok=True)
+    return f'{subdir}/{modeltag}_x_{datatag}.jsonl'
+    
 def parse_tags(sample_file:str):
     base_name = basename(sample_file, skip_dot=True).replace('.jsonl', '')
     if '_x_' not in base_name:
