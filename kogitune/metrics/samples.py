@@ -37,9 +37,9 @@ def load_hfdataset(datapath:str, aargs):
     dataset_args = aargs['dataset_config|dataset_args']
     if dataset_args is None:
         datapath, dataset_args = adhoc.parse_path_args(datapath)
-    if 'dataset_name' in aargs:
+    if 'dataset_name' in aargs or 'dataset_subset' in aargs:
         # dataset_name test_list で設定されるの優先する 
-        dataset_args['name'] = aargs['dataset_name']
+        dataset_args['name'] = aargs['dataset_name|dataset_subset']
     if 'trust_remote_code' in dataset_args:
         dataset_args['trust_remote_code'] = True
     try:
@@ -49,7 +49,7 @@ def load_hfdataset(datapath:str, aargs):
         raise e
     if isinstance(dataset, datasets.dataset_dict.DatasetDict):
         if 'test' in dataset:
-            adhoc.notice("splitの指定がないから、split='test'で進めるよ。")
+            adhoc.verbose_print("splitの指定がないから、split='test'で進めるよ。")
             dataset = dataset['test']
         else:
             print(dataset)
@@ -267,6 +267,7 @@ def eval_from(datatag, modeltag, aargs):
     sample_file = sample_file_name(datatag, modeltag)
     sample_list = load_sample_list(sample_file)
     adhoc.notice('評価を始めます', metric_list, sample_file)
+    filepath = aargs['leaderboard|leadersboard|=leaderboard.csv']
     for metric_path in metric_list:
         result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=False'])
         if result:
@@ -281,19 +282,18 @@ def eval_from(datatag, modeltag, aargs):
             adhoc.saved(score_file, "スコアの記録")
             metric_name = result['metric']
             testname = datatag if metric_name == 'exact_match' else f'{datatag}/{metric_name}'
-            filepath = aargs['leadersboard|=leadersboard.csv']
-            update_leadersboard(modeltag, testname, result['mean'], filepath=filepath)
-            adhoc.saved(filepath, "リーダーズボード//Leaders Board")
+            update_leaderboard(modeltag, testname, result['mean'], filepath=filepath)
+            adhoc.saved(filepath, "リーダーズボード//LeaderBoard")
+    show_leaderboard(filepath)
 
 def save_score(score_file, result:dict):
     directory = os.path.dirname(score_file)
     if not os.path.exists(directory) and directory != '':
         os.makedirs(directory)
-
     with open(score_file, 'a', encoding='utf-8') as w:
         print(json.dumps(result, ensure_ascii=False), file=w)
 
-def update_leadersboard(model, key, score, filepath='leadersboard.csv'):
+def update_leaderboard(model, key, score, filepath='leaderboard.csv'):
     import pandas as pd
     found = False
     if os.path.exists(filepath):
@@ -315,7 +315,18 @@ def update_leadersboard(model, key, score, filepath='leadersboard.csv'):
         })
     df = pd.DataFrame(json_list).sort_values(by='score', ascending=False)
     df.to_csv(filepath, index=False)
-    adhoc.print(df.transpose(), face='')
+    # 表示オプションの設定
+    pd.set_option('display.width', 512)  # DataFrame全体の幅を設定
+    pd.set_option('display.max_colwidth', 16)  # 各列の最大幅を設定
+
+def show_leaderboard(filepath='leaderboard.csv'):
+    if os.path.exists(filepath):
+        import pandas as pd
+        df = pd.read_csv(filepath)
+        # 表示オプションの設定
+        pd.set_option('display.width', 512)  # DataFrame全体の幅を設定
+        pd.set_option('display.max_colwidth', 16)  # 各列の最大幅を設定
+        adhoc.print(df.transpose(), face='')
 
 def import_output_cli(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:

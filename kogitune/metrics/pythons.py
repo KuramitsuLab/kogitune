@@ -1,3 +1,4 @@
+import sys
 import ast
 import traceback
 
@@ -57,29 +58,60 @@ TEMPLATE_CODE_FIX = '''\
 The following error has occurred. 
 Please fix the code so that it can be executed without errors.
 
-### Error
-{error_message}
-{stack_trace}
-
 ### Code
 {code}
 
+### Error
+{error_message}
+{stack_trace}
+{error_message}
+
 '''
+
+def get_error_line_number():
+    stack_trace = traceback.format_exc()
+    # スタックトレースの最後の呼び出し部分から行番号を抽出
+    tb_lines = stack_trace.splitlines()
+    line_number = len(tb_lines)
+    # print('@@@', stack_trace)
+    for line in tb_lines:
+        if 'File "<string>"' in line and ", line" in line:
+            # 行番号を抽出
+            try:
+                _,_,linenum = line.partition(", line ")
+                linenum,_,_ = linenum.partition(',')
+                line_number = int(linenum)
+            except:
+                pass
+    return line_number
+
+def format_error_lines(code, line_number):
+    code_lines = code.strip().split('\n')
+    formatted_code = ""
+    for i, line in enumerate(code_lines, 1):
+        if i == line_number:
+            formatted_code += f"----> {i} {line}\n"
+        elif line_number - 2 <= i <= line_number + 1:
+            formatted_code += f"      {i} {line}\n"
+    return formatted_code
 
 def get_code_fix_prompt(code_str, test_code):
     if isinstance(code_str, list):
         return [get_code_fix_prompt(x, test_code) for x in code_str]
+    code = (code_str+test_code).strip()
     try:
         # コードを実行
-        exec(code_str+test_code)
-        return None
+        exec(code)
+        return ''
     except Exception as e:
         # エラーが発生した場合、エラーメッセージとスタックトレースを回収
-        error_message = str(e)
-        stack_trace = traceback.format_exc()
+        error_message = f'{type(e).__name__}: {str(e)}'
+        # _, _, tb = sys.exc_info()
+        line_number = get_error_line_number()
+        formatted_code = format_error_lines(code, line_number)
         prompt = TEMPLATE_CODE_FIX.format(
             error_message=error_message, 
-            stack_trace=stack_trace[:256], 
-            code=code_str+test_code)
+            stack_trace=formatted_code, 
+            code=code_str)
         return prompt
 

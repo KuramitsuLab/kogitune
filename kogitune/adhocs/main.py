@@ -196,3 +196,7 @@ def aargs_from(args: dict = None, **kwargs) -> AdhocArguments:
     caller_frame = inspect.stack()[1].function
     return AdhocArguments(args, parent=aargs, caller=caller_frame)
 
+def verbose_print(*args, **kwargs):
+    aargs = get_stack_aargs()
+    if aargs['verbose|=False']:
+        aargs_print(*args, **kwargs)

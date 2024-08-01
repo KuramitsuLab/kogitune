@@ -126,6 +126,7 @@ def aargs_print(*args, **kwargs):
     if len(LOGFILE_STACK) > 0:
         LOGFILE_STACK[-1].print(f'{face}{text}', end=end)
 
+
 def list_kwargs(**kwargs):
     ss = []
     for key, value in kwargs.items():

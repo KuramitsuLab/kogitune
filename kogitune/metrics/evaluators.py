@@ -141,7 +141,7 @@ def extract_passed_result(d, result_list):
         else:
             for _, v in d.items():
                 extract_passed_result(v, result_list)
-    if isinstance(d, list):
+    if isinstance(d, (list, tuple)):
         for v in d:
             extract_passed_result(v, result_list)
 
@@ -176,8 +176,9 @@ class metric_pass_at_k(Metric):
         record['generated_code'] = extracted_code[0] if len(extracted_code) == 1 else extracted_code
         result_list = []
         extract_passed_result(results, result_list)
-        record[f'results_{self.name}'] = result_list
-        print('@@@', get_code_fix_prompt(record['generated_code'], record['test']))
+        record[f'results_{self.name}'] = result_list[0] if len(result_list) == 1 else result_list
+        if pass_at_k[self.name] == 0.0:
+            record['repair_prompt'] = get_code_fix_prompt(record['generated_code'], record['test'])
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
