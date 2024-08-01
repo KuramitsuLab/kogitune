@@ -130,7 +130,10 @@ class NoizePacker(Packer):
         if isinstance(noize_path, str):
             df = pd.read_csv(noize_path)
             for w, r in zip(df['token'], df['ratio']):
+                if not isinstance(w, str):
+                    continue
                 ids = self.tokenizer.convert_tokens_to_ids([w])
+                # print('@', w, ids[0], r)
                 noize_map[ids[0]] = r
             adhoc.notice(f'平均ノイズ確率 {noize_map.mean()}', filepath=noize_path)
         noize_map[self.tokenizer.eos_token_id] = 0.0
