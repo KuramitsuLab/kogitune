@@ -115,12 +115,12 @@ def load_sample_list(sample_file:str):
         sample_list = [json.loads(line) for line in f]
         return sample_list
 
-def save_sample_list(sample_file:str, sample_list :List[dict]):
+def save_sample_list(sample_file:str, sample_list :List[dict], mode='w'):
     directory = os.path.dirname(sample_file)
     if not os.path.exists(directory) and directory != '':
         os.makedirs(directory)
 
-    with open(sample_file, 'w', encoding='utf-8') as w:
+    with open(sample_file, mode=mode, encoding='utf-8') as w:
         for result in sample_list:
             assert(isinstance(result, dict))
             print(json.dumps(result, ensure_ascii=False), file=w)
@@ -189,12 +189,38 @@ def modeltag_from(aargs):
             modeltag = f'{modeltag}_cp{checkpoint}'
     return modeltag
 
+def join_text(s, s2):
+    if s.endswith('\n'):
+        return f'{s}{s2}'
+    return f'{s}\n{s2}'
+
+def jsonlfy_dataset_cli(**kwargs):
+    with adhoc.aargs_from(**kwargs) as aargs:
+        datatag, datalist = load_testdata_from(aargs)
+        template = load_template(sample=datalist[0], aargs=aargs)
+        sample_file = f'text_{datatag}.jsonl'
+        sample_list = prepare_sample_list(sample_file, datalist, aargs)
+        output_file = aargs['output_file']
+        template.load_sample('loss', datalist, sample_list)
+        for sample in sample_list:
+            sample.pop('chain_id', None)
+            sample.pop('eval_type', None)
+            if output_file:
+                sample['source'] = datatag
+            sample['text'] = sample.pop('input')
+                
+        if output_file:
+            save_sample_list(output_file, sample_list, mode='a')
+            os.remove(sample_file)
+        else:
+            save_sample_list(sample_file, sample_list)
+    
 def generate_from(aargs):
     eval_type = aargs['eval_type|=generation']
     datatag, datalist = load_testdata_from(aargs)
     template = load_template(sample=datalist[0], aargs=aargs)
     modeltag = modeltag_from(aargs)
-    sample_file = sample_file_name(datatag, modeltag)
+    sample_file = sample_file_name(datatag, modeltag, eval_type=eval_type)
     sample_list = prepare_sample_list(sample_file, datalist, aargs)
     result_key = template.load_sample(eval_type, datalist, sample_list)
 
@@ -267,9 +293,9 @@ def get_metric_list(aargs):
     metric_list = aargs['metric_list|metric']
     return adhoc.list_values(metric_list)
 
-def eval_from(datatag, modeltag, aargs):
+def eval_from(sample_file, aargs):
     metric_list = get_metric_list(aargs)
-    sample_file = sample_file_name(datatag, modeltag)
+    datatag, modeltag = parse_tags(sample_file)
     sample_list = load_sample_list(sample_file)
     adhoc.notice('評価を始めます', metric_list, sample_file)
     filepath = aargs['leaderboard|leadersboard|=leaderboard.csv']

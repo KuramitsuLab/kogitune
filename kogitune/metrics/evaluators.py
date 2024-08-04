@@ -145,6 +145,18 @@ def extract_passed_result(d, result_list):
         for v in d:
             extract_passed_result(v, result_list)
 
+import signal
+
+# タイムアウトの例外を定義
+class TimeoutException(Exception):
+    pass
+
+# タイムアウト時に呼び出されるハンドラー
+def timeout_handler(signum, frame):
+    raise TimeoutException("タイムアウトしました！")
+
+# original_handler = signal.getsignal(signal.SIGALRM)
+
 class metric_pass_at_k(Metric):
     """
     コード評価用Evaluatorクラス
@@ -156,6 +168,8 @@ class metric_pass_at_k(Metric):
         super().__init__(f'pass@{self.k}', **kwargs)
         self.required_key = 'output'
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
+        # シグナルにハンドラーを設定
+        signal.signal(signal.SIGALRM, timeout_handler)
         self.tool = evaluate.load('code_eval')  # code_eval
         self.completion = True
 
@@ -172,8 +186,21 @@ class metric_pass_at_k(Metric):
         else:
             extracted_code = [extract_python_code(x) for x in listfy(record['output'])]
         candidates = [extracted_code]
-        pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
         record['generated_code'] = extracted_code[0] if len(extracted_code) == 1 else extracted_code
+        #print('@@@', record['generated_code'])
+        try:
+            signal.alarm(30)
+            pass_at_k, results = self.tool.compute(
+                references=test_cases, 
+                predictions=candidates, 
+                k=[self.k])
+            signal.alarm(0)
+        except TimeoutException as e:
+            adhoc.verbose_print('タイムアウトしました.')
+            adhoc.verbose_print(record['generated_code'], face='')
+            #record[f'results_{self.name}'] = 
+            return 0.0
+    
         result_list = []
         extract_passed_result(results, result_list)
         record[f'results_{self.name}'] = result_list[0] if len(result_list) == 1 else result_list
@@ -278,7 +305,7 @@ class F1Evaluator(Evaluator):
 
 #######################
 
-def evaluate_metric(result_list, metric_path, force_eval=False):
+def evaluate_metric(result_list, metric_path, force_eval=True):
     metric_name, metric_args = adhoc.parse_path_args(metric_path)
     name = metric_name.replace('@', '_at_')
     name = f'metric_{name}'

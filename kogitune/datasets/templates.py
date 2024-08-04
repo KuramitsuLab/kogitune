@@ -78,14 +78,14 @@ class TemplateProcessor(object):
                 result_key = self.make_choice(source, sample)
             elif eval_type == 'loss':
                 sample['eval_type'] = eval_type
-                result_key = self._load_loss(source, sample)
+                result_key = self.make_loss(source, sample)
             elif eval_type == 'back':
                 result_key = self._load_back(source, sample)
             else:
-                result_key = self._load_generation(source, sample)
+                result_key = self.make_generation(source, sample)
         return result_key
 
-    def _load_generation(self, source, sample):
+    def make_generation(self, source, sample):
         if 'input' not in sample:
             sample['input'] = self.format_prompt(source)
         if 'reference' not in sample:
@@ -94,11 +94,10 @@ class TemplateProcessor(object):
             sample['test'] = self.format('test', source)
         return 'output'
 
-    def _load_loss(self, source, sample):
-        input_text = self.format_prompt(source)
-        reference = self.format_reference(source)
-        sep = '' if input_text.endswith('\n') else '\n'
-        sample['input'] = f'{input_text}{sep}{reference}'
+    def make_loss(self, source, sample):
+        input_text = self.format('prompt', source)
+        reference = self.format('reference', source)
+        sample['input'] = f'{input_text}{reference}'
         return 'loss'
 
     def make_choice(self, source, sample):

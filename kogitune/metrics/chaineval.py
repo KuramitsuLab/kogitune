@@ -26,8 +26,7 @@ def chain_eval(aargs):
         if sample_file not in sample_files:
             sample_files.append(sample_file)
     for sample_file in sample_files:
-        datatag, modeltag = parse_tags(sample_file)
-        eval_from(datatag, modeltag, aargs)
+        eval_from(sample_file, aargs)
 
 def back_eval(aargs):
     sample_files = aargs['files'] or []
@@ -43,8 +42,7 @@ def back_eval(aargs):
         if sample_file not in sample_files:
             sample_files.append(sample_file)
     for sample_file in sample_files:
-        datatag, modeltag = parse_tags(sample_file)
-        eval_from(datatag, modeltag, aargs)
+        eval_from(sample_file, aargs)
 
 
 def chain_eval_cli(**kwargs):

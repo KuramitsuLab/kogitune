@@ -201,6 +201,11 @@ def import_output_cli(**kwargs):
     from kogitune.metrics.samples import import_output_cli
     import_output_cli(**kwargs)
 
+def jsonlfy_dataset_cli(**kwargs):
+    "実験結果をインポートする"
+    from kogitune.metrics.samples import jsonlfy_dataset_cli
+    jsonlfy_dataset_cli(**kwargs)
+
 
 def launch(subcommand, **kwargs):
     fname = f'{subcommand}_cli'
