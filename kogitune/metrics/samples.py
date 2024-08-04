@@ -300,7 +300,7 @@ def eval_from(sample_file, aargs):
     adhoc.notice('評価を始めます', metric_list, sample_file)
     filepath = aargs['leaderboard|leadersboard|=leaderboard.csv']
     for metric_path in metric_list:
-        result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=False'])
+        result = evaluate_metric(sample_list, metric_path, force_eval=aargs['force_eval|=True'])
         if result:
             save_sample_list(sample_file, sample_list)
             result['model'] = modeltag

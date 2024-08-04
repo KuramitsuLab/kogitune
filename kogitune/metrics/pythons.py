@@ -1,6 +1,15 @@
 import sys
 import ast
 import traceback
+import signal
+
+# タイムアウトの例外を定義
+class TimeoutException(Exception):
+    pass
+
+# タイムアウト時に呼び出されるハンドラー
+def timeout_handler(signum, frame):
+    raise TimeoutException("タイムアウトしました！")
 
 def get_syntax_error_line(code):
     try:
@@ -99,9 +108,14 @@ def get_code_fix_prompt(code_str, test_code):
     if isinstance(code_str, list):
         return [get_code_fix_prompt(x, test_code) for x in code_str]
     code = (code_str+test_code).strip()
+    original_handler = signal.getsignal(signal.SIGALRM)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    
     try:
+        signal.alarm(10)
         # コードを実行
         exec(code)
+        signal.alarm(0)
         return ''
     except Exception as e:
         # エラーが発生した場合、エラーメッセージとスタックトレースを回収
@@ -114,4 +128,6 @@ def get_code_fix_prompt(code_str, test_code):
             stack_trace=formatted_code, 
             code=code_str)
         return prompt
+    finally:
+        signal.signal(signal.SIGALRM, original_handler)
 
