@@ -370,7 +370,7 @@ def show_leaderboard(filepath='leaderboard.csv'):
         df = pd.read_csv(filepath)
         # 表示オプションの設定
         pd.set_option('display.width', 512)  # DataFrame全体の幅を設定
-        pd.set_option('display.max_colwidth', 16)  # 各列の最大幅を設定
+        pd.set_option('display.max_colwidth', 24)  # 各列の最大幅を設定
         adhoc.print(df.transpose(), face='')
 
 def import_output_cli(**kwargs):

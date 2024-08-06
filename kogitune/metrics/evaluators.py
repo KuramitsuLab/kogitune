@@ -88,6 +88,22 @@ class metric_perplexity(Metric):
 
 metric_ppl = metric_perplexity
 
+import zlib
+
+class metric_ppl_zlib(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('ppl/zlib', **kwargs)
+        self.required_key = 'loss'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        text = record['input']
+        encoded = text.encode("utf-8", errors='ignore')
+        compressed = zlib.compress(encoded, level=9)    
+        return math.exp(record['loss']) / max(1, len(compressed))
+
+metric_ppl = metric_perplexity
+
 class metric_loss(Metric):
     def __init__(self, **kwargs):
         super().__init__('loss', **kwargs)
@@ -97,6 +113,25 @@ class metric_loss(Metric):
     def eval_score(self, record:dict) -> float:
         return record['loss']
 
+class metric_mink_prob(Metric):
+    def __init__(self, **kwargs):
+        self.k = str(kwargs.get('k', 20))
+        super().__init__(f'min{self.k}_prob', **kwargs)
+        self.required_key = 'mink_prob'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['mink_prob'][self.k]
+
+class metric_mink_plus(Metric):
+    def __init__(self, **kwargs):
+        self.k = str(kwargs.get('k', 20))
+        super().__init__(f'min{self.k}++', **kwargs)
+        self.required_key = 'mink_plus'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['mink_plus'][self.k]
 
 
 import re
@@ -296,7 +331,7 @@ class F1Evaluator(Evaluator):
 
 def evaluate_metric(result_list, metric_path, force_eval=True):
     metric_name, metric_args = adhoc.parse_path_args(metric_path)
-    name = metric_name.replace('@', '_at_')
+    name = metric_name.replace('@', '_at_').replace('/', '_').lower()
     name = f'metric_{name}'
     if name not in globals():
         adhoc.notice(f'{metric_name}が見つかりません')

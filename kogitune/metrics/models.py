@@ -83,7 +83,7 @@ class Model(object):
 
     def verbose(self, *args):
         if self.verbose_count > 0:
-            adhoc.print(*args, face='🔍')
+            adhoc.verbose_print(*args, face='👀')
             self.verbose_count -= 1
 
     def configure(self, template: TemplateProcessor, datalist:List[dict], aargs):
@@ -349,6 +349,46 @@ class HFModel(Model):
             outputs = self.model(**inputs, labels=labels)
             loss = outputs.loss
         return loss.item()
+
+    def compute_sample_loss(self, sample_list: Union[List[dict], dict]):
+        for sample in list_tqdm(sample_list, desc=f'{self}'):
+            input_text = sample['input']
+            input_ids = torch.tensor(self.tokenizer.encode(input_text)).unsqueeze(0)
+            input_ids = input_ids.to(self.model.device)
+            # inputs = self.tokenizer(input_text, return_tensors="pt")
+            # inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            # labels = inputs["input_ids"].clone()
+            # 不要なキーを除去
+            # inputs.pop("token_type_ids", None)
+            with torch.no_grad():
+                outputs = self.model(input_ids, labels=input_ids)
+                # outputs = self.model(**inputs, labels=labels)
+                loss, logits = outputs[:2]
+            sample['loss'] = loss.item() # log-likelihood
+            # mink and mink++
+            input_ids = input_ids[0][1:].unsqueeze(-1)
+            probs = F.softmax(logits[0, :-1], dim=-1)
+            log_probs = F.log_softmax(logits[0, :-1], dim=-1)
+            token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
+            mu = (probs * log_probs).sum(-1)
+            sigma = (probs * torch.square(log_probs)).sum(-1) - torch.square(mu)
+            ## mink
+            scores={}
+            for k in range(10, 101, 10):
+                k_length = int(len(token_log_probs) * k // 100)
+                topk = np.sort(token_log_probs.cpu())[:k_length]
+                scores[k] = -np.mean(topk).item()
+            sample['mink_prob'] = scores
+            ## mink++
+            scores={}
+            mink_plus = (token_log_probs - mu) / sigma.sqrt()
+            for k in range(10, 101, 10):
+                k_length = int(len(mink_plus) * k // 100)
+                topk = np.sort(mink_plus.cpu())[:k_length]
+                scores[k] = -np.mean(topk).item()
+            sample['mink_plus'] = scores
+            self.verbose(sample)
+
 
     def compute_next_token_prob(self, input_text: str, token_ids=None):
         inputs = self.tokenizer(input_text, return_tensors="pt")
