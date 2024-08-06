@@ -86,6 +86,19 @@ class metric_perplexity(Metric):
     def eval_score(self, record:dict) -> float:
         return math.exp(record['loss'])
 
+metric_ppl = metric_perplexity
+
+class metric_loss(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('loss', **kwargs)
+        self.required_key = 'loss'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['loss']
+
+
+
 import re
 
 def extract_number(text):
@@ -129,8 +142,6 @@ from .pythons import (
     extract_from_code_completion,
     get_code_fix_prompt
 )
-
-
 
 # {"0": [[0, {"task_id": 0, "passed": false, "result": "failed: name 'df_product_full' is not defined", "completion_id": 0}]]},
 

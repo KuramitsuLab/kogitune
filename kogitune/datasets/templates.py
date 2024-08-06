@@ -283,6 +283,12 @@ def guess_template(sample: dict):
             "prompt_C": "{question}\n{C}",
             "prompt_D": "{question}\n{D}",
         }
+    if has_schema(sample, 'text'):
+        # Kogitune 事前学習形式
+        return {
+            "prompt": "{text}",
+            "reference": "",
+        }
     if has_schema(sample, 'prompt'):
         # Kogitune 標準形式
         return {

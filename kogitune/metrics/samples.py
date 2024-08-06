@@ -32,6 +32,18 @@ def load_jsonl(datapath:str, aargs):
         raise e
     return basename(datapath), datalist
 
+def load_csv(datapath:str, aargs):
+    datalist = []
+    try:
+        import pandas as pd
+        df = pd.read_csv(datapath)
+        df.columns = [str(name).lower().replace(' ', '_') for name in df.columns]
+        datalist = df.to_dict(orient='records')
+    except FileNotFoundError as e:
+        raise e
+    return basename(datapath), datalist
+
+
 def load_hfdataset(datapath:str, aargs):
     import datasets
     dataset_args = aargs['dataset_config|dataset_args']
@@ -74,6 +86,8 @@ def load_testdata_from(aargs):
     testdata = aargs['testdata|testdata|dataset|!!']
     if '.json' in testdata:
         dataname, datalist = load_jsonl(testdata, aargs)
+    elif '.csv' in testdata:
+        dataname, datalist = load_csv(testdata, aargs)
     elif testdata.startswith('dummy:'):
         dataname, datalist = load_testdata(testdata[3:], aargs)
     elif testdata.startswith('hf:'):
