@@ -196,6 +196,14 @@ def eval_choice_cli(**kwargs):
     from kogitune.metrics.chaineval import eval_choice_cli
     eval_choice_cli(**kwargs)
 
+def self_check_cli(**kwargs):
+    from kogitune.metrics.chaineval import selfcheck_cli
+    selfcheck_cli(**kwargs)
+
+def selfcheck_cli(**kwargs):
+    from kogitune.metrics.chaineval import selfcheck_cli
+    selfcheck_cli(**kwargs)
+
 def import_output_cli(**kwargs):
     "実験結果をインポートする"
     from kogitune.metrics.samples import import_output_cli

@@ -49,6 +49,11 @@ def chain_eval_cli(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:
         chain_eval(aargs)
 
+def selfcheck_cli(**kwargs):
+    kwargs = kwargs | dict(selfcheck=True)
+    with adhoc.aargs_from(**kwargs) as aargs:
+        chain_eval(aargs)
+
 def eval_loss_cli(**kwargs):
     kwargs = kwargs | dict(eval_type='loss', metric='perplexity')
     with adhoc.aargs_from(**kwargs) as aargs:
@@ -58,6 +63,5 @@ def eval_choice_cli(**kwargs):
     kwargs = kwargs | dict(eval_type='choice', metric='exact_match')
     with adhoc.aargs_from(**kwargs) as aargs:
         chain_eval(aargs)
-
 
 
