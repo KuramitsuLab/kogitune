@@ -156,11 +156,15 @@ class OpenAIModel(Model):
         # #            "max_tokens": aargs['max_new_tokens|max_length|=256'], 
         #         }
         self.generator_args = generator_args
+        if 'do_sample' in self.generator_args:
+            self.generator_args.pop('do_sample')
 
     def generate(self, input_text: str, n=1, **kwargs):
         if 'max_new_tokens' in self.generator_args:
             # すごくアドホックな解決策
             self.generator_args['max_tokens'] = self.generator_args.pop('max_new_tokens')
+        if 'num_return_sequences' in self.generator_args:
+            self.generator_args.pop('num_return_sequences')
         response = self.client.chat.completions.create(
             model=self.model_path,
             messages=[{"role": "user", "content": input_text}],
