@@ -99,7 +99,7 @@ def load_testdata_from(aargs):
 
     transform = aargs['dataset_transform|transform']
     if transform is not None:
-        adhoc.transform_keys(datalist, transform)
+        datalist = adhoc.transform_keys(datalist, transform)
 
     dumpdata = json.dumps(datalist[0], indent=4, ensure_ascii=False)
     adhoc.print(f'テストデータ({testdata})を確認しておいてね\n  features: {list(datalist[0].keys())}\n  num_rows: {len(datalist)}\n{dumpdata}', once=testdata)

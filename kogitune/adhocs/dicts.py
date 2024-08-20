@@ -163,9 +163,12 @@ def transform_keys(dict_list: Union[List[dict], dict], transform:str):
     for key in keys:
         key, _, format = key.partition('=')
         transforms.append((key, format))
+    #print('@', transforms)
     if isinstance(dict_list, dict):
+        as_dict = True
         new_list = [dict_list.copy()]
     else:
+        as_dict = False
         new_list = [d.copy() for d in dict_list]
     for data in new_list:
         for key, format in transforms:
@@ -175,7 +178,7 @@ def transform_keys(dict_list: Union[List[dict], dict], transform:str):
                 data[key] = format.format(**data)
             else:
                 data[key] = data[format]
-    return new_list[0] if isinstance(dict_list, dict) else new_list
+    return new_list[0] if as_dict else new_list
 
 
 def filter_as_json(data: dict):
