@@ -148,9 +148,9 @@ class OpenAIModel(Model):
             raise e
         # Default arguments for OpenAI API
         default_args = {
-            "temperature": aargs['temperature|=0.2'],
+            "temperature": aargs['temperature|=0.0'],
             "top_p": aargs['top_p|=0.95'],
-            "max_tokens": aargs['max_tokens|max_length|=512'], 
+            "max_tokens": aargs['max_new_tokens|max_length|=256'], 
         }
         self.generator_args = default_args
 
