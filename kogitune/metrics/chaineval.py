@@ -20,8 +20,6 @@ def chain_eval(aargs):
     sample_files = aargs['files'] or []
     for local_args in test_list(aargs):
         local_aargs = adhoc.ChainMap(local_args, aargs)
-        if aargs['self_check|selfcheck|=False']:
-            selfcheck_from(local_aargs)
         sample_file = generate_from(local_aargs)
         if sample_file not in sample_files:
             sample_files.append(sample_file)
@@ -44,13 +42,12 @@ def back_eval(aargs):
     for sample_file in sample_files:
         eval_from(sample_file, aargs)
 
-
 def chain_eval_cli(**kwargs):
     with adhoc.aargs_from(**kwargs) as aargs:
         chain_eval(aargs)
 
 def selfcheck_cli(**kwargs):
-    kwargs = kwargs | dict(selfcheck=True)
+    kwargs = dict(max_new_tokens=128) | kwargs | dict(selfcheck=True)
     with adhoc.aargs_from(**kwargs) as aargs:
         chain_eval(aargs)
 

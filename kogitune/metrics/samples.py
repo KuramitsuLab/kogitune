@@ -97,7 +97,7 @@ def load_testdata_from(aargs):
 
     datatag = aargs['datatag'] if 'datatag' in aargs else filter_datatag(dataname)
 
-    transform = aargs['transform_keys|transform']
+    transform = aargs['dataset_transform|transform']
     if transform is not None:
         adhoc.transform_keys(datalist, transform)
 
@@ -238,6 +238,39 @@ def generate_from(aargs):
     sample_list = prepare_sample_list(sample_file, datalist, aargs)
     result_key = template.load_sample(eval_type, datalist, sample_list)
 
+    if aargs['selfcheck|self_check|=False']:
+        # SelfCheckGPT-Style の評価 
+        n = 1
+        check_aargs = adhoc.ChainMap(
+            {'do_sample': False, 'num_return_sequences': 1, 'n': 1},
+            parent = aargs,
+        )
+        model = load_model_from(check_aargs)
+        test_list = [sample for sample in sample_list if 'selfcheck' not in sample]
+        if len(test_list) > 0:
+            model.configure(template, datalist, aargs)
+            adhoc.notice('SelfCheck用のreferenceを作ります', model=model, n=n, generator_args=model.generator_args)
+            model.predict_sample(test_list, 
+                                 eval_type=eval_type, 
+                                 n=n, 
+                                 batch_size=aargs['eval_batch_size|batch_size|=2'])
+            for sample in sample_list:
+                if 'output' in sample:  # head を指定した場合、output が足りなくなる
+                    backup_sample(sample, 'reference')
+                    sample['reference'] = sample['output']
+                    sample['selfcheck'] = True
+                    del sample['output']
+            save_sample_list(sample_file, sample_list)
+        n = aargs['num_return_sequences|n|N|=1']
+        if n == 1:
+            adhoc.notice('num_return_sequencesを設定してね. num_return_sequences=6')
+            aargs['num_return_sequences'] = 6
+        if 'temperature' not in aargs:
+            adhoc.notice('temperatureを設定してね. temperature=0.8')
+            aargs['temperature'] = 0.8
+        if 'do_sample' not in aargs:
+            aargs['do_sample'] = True
+
     n = aargs['num_return_sequences|n|N|=1']
 
     test_run = aargs[f'test_run|head|={len(sample_list)}']
@@ -283,6 +316,7 @@ def selfcheck_from(aargs):
         if 'output' in sample:  # head を指定した場合、output が足りなくなる
             backup_sample(sample, 'reference')
             sample['reference'] = sample['output']
+            print('@', sample['reference'])
             del sample['output']
     save_sample_list(sample_file, sample_list)
     n = aargs['num_return_sequences|n|N|=1']
