@@ -93,7 +93,9 @@ class Model(object):
     def configure(self, template: TemplateProcessor, datalist:List[dict], aargs):
         genargs = self.generator_args
         if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
-            max_new_tokens = template.calc_length(datalist, tokenizer=self.tokenizer, return_max_new_tokens=True)
+            max_new_tokens = template.calc_length(datalist, 
+                                                  tokenizer=self.tokenizer, 
+                                                  return_max_new_tokens=True)
             genargs['max_new_tokens'] = max_new_tokens
             aargs['max_new_tokens'] = max_new_tokens
             adhoc.notice(f'max_new_tokens={max_new_tokens}を設定したよ')
@@ -138,6 +140,7 @@ class Model(object):
 
 class OpenAIModel(Model):
     def __init__(self, model_path, aargs):
+        model_path, model_args, generator_args = model_generator_args_from_path(model_path, aargs)
         super().__init__(model_path, aargs)
         try:
             from openai import OpenAI
@@ -147,12 +150,12 @@ class OpenAIModel(Model):
             ## OpenAIを実行するまでエラーを出さない
             raise e
         # Default arguments for OpenAI API
-        default_args = {
-            "temperature": aargs['temperature|=0.0'],
-            "top_p": aargs['top_p|=0.95'],
-#            "max_tokens": aargs['max_new_tokens|max_length|=256'], 
-        }
-        self.generator_args = default_args
+        #         default_args = {
+        #             "temperature": aargs['temperature|=0.0'],
+        #             "top_p": aargs['top_p|=0.95'],
+        # #            "max_tokens": aargs['max_new_tokens|max_length|=256'], 
+        #         }
+        self.generator_args = generator_args
 
     def generate(self, input_text: str, n=1, **kwargs):
         if 'max_new_tokens' in self.generator_args:
