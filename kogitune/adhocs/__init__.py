@@ -25,6 +25,7 @@ from .main import (
     launch_subcommand, 
     aargs_from,
     aargs_from as from_kwargs,
+    verbose_print,
 )
 
 from .inspects import (

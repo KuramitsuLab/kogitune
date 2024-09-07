@@ -61,10 +61,8 @@ def load_tokenizer(tokenizer: Union[Tokenizer, str] = None, **kwargs):
                 local_args['padding_side'] = 'left'
             adhoc.check_kwargs(local_args, AutoTokenizer.from_pretrained, path=tokenizer)
             tokenizer = AutoTokenizer.from_pretrained(tokenizer, **local_args)
-            adhoc.notice(f'トークンナイザー',
-                        tokenizer=tokenizer_as_json(tokenizer),
-                        verbose='tokenizer', 
-                        once=f'tokenizer={tokenizer.name_or_path}')
+            adhoc.print(f'トークンナイザー {tokenizer.name_or_path}', tokenizer_as_json(tokenizer),
+                        once=f'{tokenizer.name_or_path}')
     return tokenizer
 
 

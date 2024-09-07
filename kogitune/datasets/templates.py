@@ -3,6 +3,7 @@ import re
 from .commons import *
 from .da import da
 import numpy as np
+import random
 import datasets
 
 # パターンに一致するすべての部分を検索
@@ -48,28 +49,24 @@ class TemplateProcessor(object):
     def has_option(self, key):
         return key in self.options
 
-    def create(self, key, sample:dict):
+    def format(self, key, sample:dict):
+        assert key in self.options
         text = self.options[key].format(**sample)
         if self.enforce_da:
             text = da(text, random_choice=self.random_choice)
         return text
 
-    def create_prompt(self, sample:dict):
-        prompt = self.prompt.format(**sample)
-        if self.enforce_da:
-            prompt = da(prompt, random_choice=self.random_choice)
-        return prompt
+    def format_prompt(self, sample:dict):
+        return self.format('prompt', sample)
     
-    def create_output(self, sample:dict):
-        output = self.output.format(**sample)
-        if self.enforce_da:
-            output = da(output, random_choice=self.random_choice)
-        return output
+    def format_output(self, sample:dict):
+        return self.format('reference', sample)
 
-    def create_reference(self, sample:dict):
-        return self.create_output(sample)
+    def format_reference(self, sample:dict):
+        return self.format('reference', sample)
 
-    def load_sample(self, eval_type:str,
+    def load_sample(self, 
+                    eval_type:str,
                     datalist:List[dict], 
                     sample_list:List[dict]):
         assert len(datalist) == len(sample_list)
@@ -77,41 +74,67 @@ class TemplateProcessor(object):
             source = datalist[i]
             sample = sample_list[i]
             if eval_type == 'choice':
-                result_key = self._load_choice(source, sample)
+                sample['eval_type'] = eval_type
+                result_key = self.make_choice(source, sample)
             elif eval_type == 'loss':
-                result_key = self._load_loss(source, sample)
+                sample['eval_type'] = eval_type
+                result_key = self.make_loss(source, sample)
+            elif eval_type == 'back':
+                result_key = self._load_back(source, sample)
             else:
-                result_key = self._load_generation(source, sample)
+                result_key = self.make_generation(source, sample)
         return result_key
 
-    def _load_generation(self, source, sample):
+    def make_generation(self, source, sample):
         if 'input' not in sample:
-            sample['input'] = self.create_prompt(source)
+            sample['input'] = self.format_prompt(source)
         if 'reference' not in sample:
-            sample['reference'] = self.create_output(source)
+            sample['reference'] = self.format_output(source)
         if self.has_option('test'):
-            sample['test'] = self.create('test', source)
+            sample['test'] = self.format('test', source)
         return 'output'
 
-    def _load_loss(self, source, sample):
-        input_text = self.create_prompt(source)
-        reference = self.create_reference(source)
-        sep = '' if input_text.endswith('\n') else '\n'
-        sample['input'] = f'{input_text}{sep}{reference}'
+    def make_loss(self, source, sample):
+        input_text = self.format('prompt', source)
+        reference = self.format('reference', source)
+        sample['input'] = f'{input_text}{reference}'
         return 'loss'
 
-    def _load_choice(self, source, sample):
-        if 'choice' not in self.options:
-            adhoc.notice('テンプレートにchoiceがありません')
+    def make_choice(self, source, sample):
+        if 'prompt_n' in self.options:
+            ## 数を当てる問題から選択肢を作る
+            prompt_n = self.format('prompt_n', source)
+            reference = self.format_reference(source)
+            assert reference.isdigit()
+            number = int(reference)
+            random_numbers = set([number, number-1, number+1, number*2, number//2, number*10, number//10])
+            while len(random_numbers) < 5:
+                random_numbers.add(random.randint(0, number*3+1))
+            random_numbers.remove(number)
+            random_numbers = [number] + list(random.sample(list(random_numbers), 4))
+            sample['choice'] = [str(x) for x in random_numbers]
+            sample['input'] = [f'{prompt_n}{n}\n' for n in random_numbers]
+            sample['reference'] = reference
+            return 'output'
+        if 'choice' in self.options:
+            sample['choice'] = self.options['choice']
+            sample['input'] = [self.format(f'prompt_{choice}', source) for choice in self.options['choice']]
+            sample['reference'] = self.format_output(source)
+            return 'output'
+        adhoc.notice('テンプレートにchoiceがありません')
+        raise ValueError()
+
+    def _load_back(self, source, sample):
+        if 'back' not in self.options:
+            adhoc.notice('テンプレートにbackがありません')
             raise ValueError()
-        sample['choice'] = self.options['choice']
-        sample['input'] = [self.create(f'prompt_{choice}', source) for choice in self.options['choice']]
-        sample['reference'] = self.create_output(source)
+        sample['input'] = self.format('back_translation', source)
+        sample['test'] = self.format('test', source)
         return 'output'
 
-    def create_instruction(self, sample:dict):
-        prompt = self.create_prompt(sample)
-        output = self.create_output(sample)
+    def format_instruction(self, sample:dict):
+        prompt = self.format_prompt(sample)
+        output = self.format_output(sample)
         return f'{self.SEC_IN}{prompt}{self.SEC_OUT}{output}'
 
     def formatting_for_trainer(self, example):
@@ -121,16 +144,16 @@ class TemplateProcessor(object):
         for i in range(len(example[key])):
             for key in self.template_keys:
                 sample[key] = example[key][i]
-            output_texts.append(self.create_instruction(sample))
+            output_texts.append(self.format_instruction(sample))
         return output_texts
 
     def test_template(self, sample:dict, verbose=True):
         try:
-            prompt = self.create_prompt(sample)
+            prompt = self.format_prompt(sample)
         except KeyError as e:
             adhoc.warn(key_error=e, template=self.prompt, sample=sample)
         try:
-            reference = self.create_output(sample)
+            reference = self.format_output(sample)
         except KeyError as e:
             adhoc.warn(key_error=e, template=self.output, sample=sample)
         if verbose:
@@ -143,14 +166,15 @@ class TemplateProcessor(object):
         prompt=[]
         output=[]
         for sample in dataset:
-            prompt_length = len(tokenizer.encode(self.create_prompt(sample)))
-            output_length = len(tokenizer.encode(self.create_output(sample)))
+            prompt_length = len(tokenizer.encode(self.format_prompt(sample)))
+            output_length = len(tokenizer.encode(self.format_output(sample)))
             prompt.append(prompt_length)
             output.append(output_length)
             total.append(prompt_length+output_length)
-        adhoc.notice('データセットのトークン長を調べてみたよ')
-        data = {'prompt': prompt, 'output': output, 'total': total}
-        print(pd.DataFrame(data).describe(percentiles=[.8, .9, .95]))
+        if max(output) > 256:
+            adhoc.notice('データセットのトークン長を調べてみたよ')
+            data = {'prompt': prompt, 'output': output, 'total': total}
+            print(pd.DataFrame(data).describe(percentiles=[.8, .9, .95]))
         if q < 1:
             q = int(q*100)
         if return_max_new_tokens:
@@ -163,8 +187,8 @@ class TemplateProcessor(object):
     def filter(self, dataset, tokenizer, max_length=None, min_length=None, head=None, return_as_dict=False):
         sample_list = []
         for sample in dataset:
-            prompt_length = len(tokenizer.encode(self.create_prompt(sample)))
-            total_length = len(tokenizer.encode(self.create_output(sample))) + prompt_length
+            prompt_length = len(tokenizer.encode(self.format_prompt(sample)))
+            total_length = len(tokenizer.encode(self.format_output(sample))) + prompt_length
             if max_length:
                 if prompt_length > max_length or total_length > max_length:
                     continue
@@ -186,19 +210,55 @@ def has_schema(data: dict, keys:str):
             return False
     return True
 
+def contains_japanese(text: str) -> bool:
+    for char in text:
+        if '\u3040' <= char <= '\u30FF' or '\u4E00' <= char <= '\u9FFF' or '\uFF66' <= char <= '\uFF9D':
+            return True
+    return False
+
 def guess_template(sample: dict):
+    if has_schema(sample, 'instruction|text|function_signature|test|entry_point'):
+        # MIHE形式 仮
+        if contains_japanese(sample['text']):
+            return {
+                "prompt": "次の仕様を満たすようにPython関数を完成させてください。\n\n{text}\n\nfrom typing import List, Tuple, Optional\n\ndef {function_signature}:\n",
+                "reference": "{prompt}{canonical_solution}",
+                "test": "\n{test}\n\ncheck({entry_point})\n",
+            }
+        else:
+            return {
+                "prompt": "Complete a Python function to meet the following specifications.\n\n{text}\n\nfrom typing import List, Tuple, Optional\n\ndef {function_signature}:\n",
+                "reference": "{prompt}{canonical_solution}",
+                "test": "\n{test}\n\ncheck({entry_point})\n",
+            }
     if has_schema(sample, 'instruction|input|output'):
         # Alpaca形式
         return {
             "prompt": "{instruction}\n{input}",
             "reference": "{output}",
         }
+    if has_schema(sample, 'question|answer|answer_number|equation_solution'):
+        # MSGM形式
+        if contains_japanese(sample['question']):
+            return {
+                "prompt": "{question}\n答えは、",
+                "reference": "{answer_number}",
+                "prompt_n": "{question}\n答えは、",
+            }
+        else:
+            return {
+                "prompt": "{question}\nThe answer is ",
+                "reference": "{answer_number}",
+                "prompt_n": "{question}\nThe answer is ",
+            }
+
     if has_schema(sample, 'prompt|test|entry_point|canonical_solution'):
         # HumanEval
         return {
             "prompt": "{prompt}",
             "reference": "{canonical_solution}\n",
             "test": "\n{test}\n\ncheck({entry_point})\n",
+            "back_translation": "{instruction}\n\n{prompt}{canonical_solution}\n",
         }
     if has_schema(sample, 'question|choice0|choice1|choice2|choice3|choice4|label'):
         # JCommonSenseQA
@@ -223,11 +283,16 @@ def guess_template(sample: dict):
             "prompt_C": "{question}\n{C}",
             "prompt_D": "{question}\n{D}",
         }
-    if has_schema(sample, 'in|out'):
+    if has_schema(sample, 'text'):
+        # Kogitune 事前学習形式
+        return {
+            "prompt": "{text}",
+            "reference": "",
+        }
+    if has_schema(sample, 'prompt'):
         # Kogitune 標準形式
         return {
-            "prompt": "{in}",
-            "reference": "{out}",
+            "prompt": "{prompt}",
         }
     return None
 

@@ -51,9 +51,13 @@ GENERATOR_ARGS = [
 
 def model_generator_args_from_path(model_path, aargs):
     generator_args = aargs['generator_config|generator_kwargs|generator_args'] or {}
-    adhoc.copy_dict_keys(aargs, generator_args, *GENERATOR_ARGS)    
+    adhoc.copy_dict_keys(aargs, generator_args, *GENERATOR_ARGS) 
+    # print('@@', generator_args)
+    # print('@@@@', generator_args)    
     model_path, model_args = adhoc.parse_path_args(model_path)
     adhoc.move_dict_keys(model_args, generator_args, *GENERATOR_ARGS)
+    # print('@@', generator_args)
+    # print('@@@@', generator_args)
     return model_path, model_args, generator_args
 
 # =====================
@@ -73,6 +77,7 @@ class Model(object):
         Base class for abstracting a pretrained model.
         """
         self.model_path = model_path
+        self.tokenizer = None
         self.model_tag = aargs[f'model_tag|tag|={basename(model_path)}']
         self.verbose_count = aargs['verbose_count|=5']
         self.generator_args = {}
@@ -82,14 +87,17 @@ class Model(object):
 
     def verbose(self, *args):
         if self.verbose_count > 0:
-            adhoc.print(*args, face='🔍')
+            adhoc.verbose_print(*args, face='👀')
             self.verbose_count -= 1
 
-    def configure(self, template: TemplateProcessor, datalist:List[dict]):
+    def configure(self, template: TemplateProcessor, datalist:List[dict], aargs):
         genargs = self.generator_args
         if 'max_length' not in genargs and 'max_new_tokens' not in genargs:
-            max_new_tokens = template.calc_length(datalist, return_max_new_tokens=True)
+            max_new_tokens = template.calc_length(datalist, 
+                                                  tokenizer=self.tokenizer, 
+                                                  return_max_new_tokens=True)
             genargs['max_new_tokens'] = max_new_tokens
+            aargs['max_new_tokens'] = max_new_tokens
             adhoc.notice(f'max_new_tokens={max_new_tokens}を設定したよ')
 
     def compute_loss(self, input_text)->float:
@@ -132,6 +140,7 @@ class Model(object):
 
 class OpenAIModel(Model):
     def __init__(self, model_path, aargs):
+        model_path, model_args, generator_args = model_generator_args_from_path(model_path, aargs)
         super().__init__(model_path, aargs)
         try:
             from openai import OpenAI
@@ -141,14 +150,21 @@ class OpenAIModel(Model):
             ## OpenAIを実行するまでエラーを出さない
             raise e
         # Default arguments for OpenAI API
-        default_args = {
-            "temperature": aargs['temperature|=0.2'],
-            "top_p": aargs['top_p|=0.95'],
-            "max_tokens": aargs['max_tokens|max_length|=512'], 
-        }
-        self.generator_args = default_args
+        #         default_args = {
+        #             "temperature": aargs['temperature|=0.0'],
+        #             "top_p": aargs['top_p|=0.95'],
+        # #            "max_tokens": aargs['max_new_tokens|max_length|=256'], 
+        #         }
+        self.generator_args = generator_args
+        if 'do_sample' in self.generator_args:
+            self.generator_args.pop('do_sample')
 
     def generate(self, input_text: str, n=1, **kwargs):
+        if 'max_new_tokens' in self.generator_args:
+            # すごくアドホックな解決策
+            self.generator_args['max_tokens'] = self.generator_args.pop('max_new_tokens')
+        if 'num_return_sequences' in self.generator_args:
+            self.generator_args.pop('num_return_sequences')
         response = self.client.chat.completions.create(
             model=self.model_path,
             messages=[{"role": "user", "content": input_text}],
@@ -283,18 +299,18 @@ def load_model_generator_args(model_path, aargs):
         model = load_hfmodel(model_path, model_args)
     return model, generator_args
 
-def get_generator_kwargs(aargs: adhoc.Arguments):
-    kwargs = dict(
-        do_sample = aargs['do_sample=|True'],
-        temperature = aargs['temperature|=0.2'],
-        top_p = aargs['top_p|=0.95'],
-        return_full_text = aargs['return_full_text|=False'],
-    )
-    if 'max_length' in aargs:
-        kwargs['max_length'] = aargs['max_length']
-    else:
-        kwargs["max_new_tokens"] = aargs['max_new_tokens|max_tokens|=512']
-    return kwargs
+# def get_generator_kwargs(aargs: adhoc.Arguments):
+#     kwargs = dict(
+#         do_sample = aargs['do_sample|=False'],
+#         temperature = aargs['temperature|=0.2'],
+#         top_p = aargs['top_p|=0.95'],
+#         return_full_text = aargs['return_full_text|=False'],
+#     )
+#     if 'max_length' in aargs:
+#         kwargs['max_length'] = aargs['max_length']
+#     else:
+#         kwargs["max_new_tokens"] = aargs['max_new_tokens|max_tokens|=512']
+#     return kwargs
 
 # define data streamer
 
@@ -347,6 +363,46 @@ class HFModel(Model):
             outputs = self.model(**inputs, labels=labels)
             loss = outputs.loss
         return loss.item()
+
+    def compute_sample_loss(self, sample_list: Union[List[dict], dict]):
+        for sample in list_tqdm(sample_list, desc=f'{self}'):
+            input_text = sample['input']
+            input_ids = torch.tensor(self.tokenizer.encode(input_text)).unsqueeze(0)
+            input_ids = input_ids.to(self.model.device)
+            # inputs = self.tokenizer(input_text, return_tensors="pt")
+            # inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            # labels = inputs["input_ids"].clone()
+            # 不要なキーを除去
+            # inputs.pop("token_type_ids", None)
+            with torch.no_grad():
+                outputs = self.model(input_ids, labels=input_ids)
+                # outputs = self.model(**inputs, labels=labels)
+                loss, logits = outputs[:2]
+            sample['loss'] = loss.item() # log-likelihood
+            # mink and mink++
+            input_ids = input_ids[0][1:].unsqueeze(-1)
+            probs = F.softmax(logits[0, :-1], dim=-1)
+            log_probs = F.log_softmax(logits[0, :-1], dim=-1)
+            token_log_probs = log_probs.gather(dim=-1, index=input_ids).squeeze(-1)
+            mu = (probs * log_probs).sum(-1)
+            sigma = (probs * torch.square(log_probs)).sum(-1) - torch.square(mu)
+            ## mink
+            scores={}
+            for k in range(10, 101, 10):
+                k_length = int(len(token_log_probs) * k // 100)
+                topk = np.sort(token_log_probs.cpu())[:k_length]
+                scores[k] = -np.mean(topk).item()
+            sample['mink_prob'] = scores
+            ## mink++
+            scores={}
+            mink_plus = (token_log_probs - mu) / sigma.sqrt()
+            for k in range(10, 101, 10):
+                k_length = int(len(mink_plus) * k // 100)
+                topk = np.sort(mink_plus.cpu())[:k_length]
+                scores[k] = -np.mean(topk).item()
+            sample['mink_plus'] = scores
+            self.verbose(sample)
+
 
     def compute_next_token_prob(self, input_text: str, token_ids=None):
         inputs = self.tokenizer(input_text, return_tensors="pt")

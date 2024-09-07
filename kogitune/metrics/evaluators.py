@@ -51,7 +51,11 @@ class Metric(object):
         results['CI95%'] = confidence_interval
         return results
 
+    def precheck(self, result_list):
+        pass
+
     def evaluate(self, result_list, force_eval=False):
+        self.precheck(result_list)
         scores = []
         for record in adhoc.tqdm(result_list, desc=f'{self.name}'):
             if force_eval or self.name not in record:
@@ -82,20 +86,80 @@ class metric_perplexity(Metric):
     def eval_score(self, record:dict) -> float:
         return math.exp(record['loss'])
 
-    
+metric_ppl = metric_perplexity
+
+import zlib
+
+class metric_ppl_zlib(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('ppl/zlib', **kwargs)
+        self.required_key = 'loss'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        text = record['input']
+        encoded = text.encode("utf-8", errors='ignore')
+        compressed = zlib.compress(encoded, level=9)    
+        return math.exp(record['loss']) / max(1, len(compressed))
+
+metric_ppl = metric_perplexity
+
+class metric_loss(Metric):
+    def __init__(self, **kwargs):
+        super().__init__('loss', **kwargs)
+        self.required_key = 'loss'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['loss']
+
+class metric_mink_prob(Metric):
+    def __init__(self, **kwargs):
+        self.k = str(kwargs.get('k', 20))
+        super().__init__(f'min{self.k}_prob', **kwargs)
+        self.required_key = 'mink_prob'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['mink_prob'][self.k]
+
+class metric_mink_plus(Metric):
+    def __init__(self, **kwargs):
+        self.k = str(kwargs.get('k', 20))
+        super().__init__(f'min{self.k}++', **kwargs)
+        self.required_key = 'mink_plus'
+        self.scale = 1
+
+    def eval_score(self, record:dict) -> float:
+        return record['mink_plus'][self.k]
+
+
+import re
+
+def extract_number(text):
+    # 正規表現を使用して文字列から数字を抽出
+    match = re.search(r'\d+', text)
+    if match:
+        return f'{int(match.group())}'
+    else:
+        return ''
+
 class metric_exact_match(Metric):
     """
-    コード評価用Evaluatorクラス。HuggingFaceのevaluate-metric/code_evalを使用してスコアを算出する。
+    完全一致による評価尺度
     """
 
     def __init__(self, **kwargs):
-        super(Metric).__init__('exact_match', **kwargs)
+        super().__init__('exact_match', **kwargs)
         self.strict = kwargs.get('strict', True)
 
+
     def exact_match(self, output, reference):
-        if (self.strict and reference == output) or reference in output:
-            return 1
-        return 0
+        if self.strict:
+            if reference.isdigit():
+                output = extract_number(output)
+            return reference == output
+        return reference in output
 
     def eval_score(self, record:dict) -> float:
         outputs = listfy(record['output'])
@@ -103,20 +167,16 @@ class metric_exact_match(Metric):
         scores = np.array([self.exact_match(output, reference) for output in outputs])
         return scores.mean()
 
+
+
 # HumanEval pass@1
 #
 
-def humaneval_extract(prompt, generated_text):
-    # if generated_text == '':
-    #     return 'Empty Code!!'
-    stop_sequences=["\nclass", "\ndef", "\n#", "\n@", "\nprint", "\nif", "\n```"]
-    min_stop_index = len(generated_text)
-    for seq in stop_sequences:
-        stop_index = generated_text.find(seq)
-        if stop_index != -1 and stop_index < min_stop_index:
-            min_stop_index = stop_index
-    return prompt + "\n" + generated_text[:min_stop_index]
-
+from .pythons import (
+    extract_python_code, 
+    extract_from_code_completion,
+    get_code_fix_prompt
+)
 
 # {"0": [[0, {"task_id": 0, "passed": false, "result": "failed: name 'df_product_full' is not defined", "completion_id": 0}]]},
 
@@ -127,7 +187,7 @@ def extract_passed_result(d, result_list):
         else:
             for _, v in d.items():
                 extract_passed_result(v, result_list)
-    if isinstance(d, list):
+    if isinstance(d, (list, tuple)):
         for v in d:
             extract_passed_result(v, result_list)
 
@@ -143,14 +203,33 @@ class metric_pass_at_k(Metric):
         self.required_key = 'output'
         os.environ["HF_ALLOW_CODE_EVAL"] = "1"
         self.tool = evaluate.load('code_eval')  # code_eval
+        self.completion = True
+
+    def precheck(self, record_list):
+        counts = [1 for record in record_list if 'def ' in record['input']]
+        if len(counts) != len(record_list):
+            adhoc.print('コード補完ではないね')
+            self.completion = False
 
     def eval_score(self, record):
         test_cases = [record['test']]
-        extracted_code = [humaneval_extract(record['input'], x) for x in listfy(record['output'])]
+        if self.completion:
+            extracted_code = [extract_from_code_completion(record['input'], x) for x in listfy(record['output'])]
+        else:
+            extracted_code = [extract_python_code(x) for x in listfy(record['output'])]
         candidates = [extracted_code]
-        pass_at_k, results = self.tool.compute(references=test_cases, predictions=candidates, k=[self.k])
-        record['generated_code'] = extracted_code
-        record[f'{self.name}_results'] = results
+        record['generated_code'] = extracted_code[0] if len(extracted_code) == 1 else extracted_code
+        adhoc.verbose_print('実行中..', record['generated_code'])
+        pass_at_k, results = self.tool.compute(
+            references=test_cases, 
+            predictions=candidates, 
+            k=[self.k])
+    
+        result_list = []
+        extract_passed_result(results, result_list)
+        record[f'results_{self.name}'] = result_list[0] if len(result_list) == 1 else result_list
+        if pass_at_k[self.name] == 0.0:
+            record['repair_prompt'] = get_code_fix_prompt(record['generated_code'], record['test'])
         return pass_at_k[self.name]
 
 metric_pass_at_1 = metric_pass_at_k
@@ -250,9 +329,9 @@ class F1Evaluator(Evaluator):
 
 #######################
 
-def evaluate_metric(result_list, metric_path, force_eval=False):
+def evaluate_metric(result_list, metric_path, force_eval=True):
     metric_name, metric_args = adhoc.parse_path_args(metric_path)
-    name = metric_name.replace('@', '_at_')
+    name = metric_name.replace('@', '_at_').replace('/', '_').replace('%', '').lower()
     name = f'metric_{name}'
     if name not in globals():
         adhoc.notice(f'{metric_name}が見つかりません')

@@ -99,8 +99,10 @@ def format_unit(num: int, scale=1000)->str:
 ### プリント
 
 WATCH_COUNT = {}
+ONCE = {}
 
 def aargs_print(*args, **kwargs):
+    global WATCH_COUNT, ONCE
     face = kwargs.pop('face', '🦊')
     if 'watch' in kwargs:
         watch_key = kwargs.pop('watch')
@@ -109,7 +111,11 @@ def aargs_print(*args, **kwargs):
             return
         WATCH_COUNT[watch_key] = c - 1
         face='🔍'
-#    once = kwargs.pop('once', None)
+    once = kwargs.pop('once', None)
+    if once is not None:
+        if once in ONCE:
+            return
+        ONCE[once] = once
     color = kwargs.pop('color', None)
     sep = kwargs.pop('sep', ' ')
     end = kwargs.pop('end', os.linesep)
@@ -119,6 +125,7 @@ def aargs_print(*args, **kwargs):
     print(f'{face}{text}', end=end)
     if len(LOGFILE_STACK) > 0:
         LOGFILE_STACK[-1].print(f'{face}{text}', end=end)
+
 
 def list_kwargs(**kwargs):
     ss = []
@@ -141,7 +148,8 @@ def saved(filepath:str, desc:str, rename_from=None):
         if os.path.exists(filepath):
             os.remove(filepath)
         os.rename(rename_from, filepath)
-    SAVED_LIST.append((filepath, desc))
+    if filepath not in [file for file, _ in SAVED_LIST]:
+        SAVED_LIST.append((filepath, desc))
 
 def report_saved_files():
     global SAVED_LIST
