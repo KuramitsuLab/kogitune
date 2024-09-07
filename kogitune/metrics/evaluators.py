@@ -331,7 +331,7 @@ class F1Evaluator(Evaluator):
 
 def evaluate_metric(result_list, metric_path, force_eval=True):
     metric_name, metric_args = adhoc.parse_path_args(metric_path)
-    name = metric_name.replace('@', '_at_').replace('/', '_').lower()
+    name = metric_name.replace('@', '_at_').replace('/', '_').replace('%', '').lower()
     name = f'metric_{name}'
     if name not in globals():
         adhoc.notice(f'{metric_name}が見つかりません')
